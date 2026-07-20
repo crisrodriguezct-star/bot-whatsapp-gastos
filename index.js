@@ -3,36 +3,33 @@ const app = express();
 
 app.use(express.json());
 
-// Ruta principal para validar que el servidor está vivo
-app.get('/', (req, res) => {
-  res.send('Servidor de WhatsApp funcionando 🚀');
-});
+// Token de verificación
+const VERIFY_TOKEN = process.env.VERIFY_TOKEN || 'Buenaadmin20';
 
-// Verificación del Webhook para Meta
+// Ruta GET para la verificación de Meta
 app.get('/webhook', (req, res) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
 
-  if (mode && token) {
-    if (mode === 'subscribe' && token === process.env.VERIFY_TOKEN) {
-      console.log('WEBHOOK VERIFICADO CORRECTAMENTE');
-      res.status(200).send(challenge);
-    } else {
-      res.sendStatus(403);
-    }
+  if (mode && token === VERIFY_TOKEN) {
+    console.log('WEBHOOK VERIFICADO CORRECTAMENTE');
+    res.status(200).send(challenge);
   } else {
-    res.sendStatus(400);
+    res.sendStatus(403);
   }
 });
 
-// Recepción de mensajes
+// Ruta POST para recibir los mensajes de WhatsApp
 app.post('/webhook', (req, res) => {
-  console.log('Mensaje entrante:', JSON.stringify(req.body, null, 2));
+  console.log('📩 MENSAJE ENTRANTE RECIBIDO:');
+  console.log(JSON.stringify(req.body, null, 2));
+
+  // Responder 200 OK inmediatamente a Meta para confirmar recepción
   res.status(200).send('EVENT_RECEIVED');
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`Servidor activo en puerto ${PORT}`);
 });
