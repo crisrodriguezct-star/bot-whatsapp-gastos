@@ -10,25 +10,6 @@ const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 
-// Memoria temporal para dar seguimiento al flujo interactivo
-const sesiones = {};
-
-// Configuración de autenticación con Google Sheets
-let sheets;
-try {
-  if (process.env.GOOGLE_CREDENTIALS) {
-    const credentials = JSON.paconst express = require('express');
-const { google } = require('googleapis');
-
-const app = express();
-app.use(express.json());
-
-const PORT = process.env.PORT || 3000;
-const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
-const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
-const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
-const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
-
 const sesiones = {};
 
 // Configuración de autenticación con Google Sheets
