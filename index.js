@@ -10,6 +10,9 @@ const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 
+// Memoria temporal para dar seguimiento al flujo interactivo
+const sesiones = {};
+
 // Configuración de autenticación con Google Sheets
 let sheets;
 try {
@@ -51,76 +54,101 @@ function obtenerCategoria(concepto) {
   return 'General';
 }
 
-// Función para enviar mensaje de respuesta a WhatsApp
-async function enviarRespuestaWhatsApp(toPhoneNumber, textoRespuesta) {
-  if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) {
-    console.warn('⚠️ Faltan variables WHATSAPP_TOKEN o PHONE_NUMBER_ID para enviar mensaje.');
-    return;
-  }
+// Envío genérico de API Meta
+async function enviarPeticionMeta(payload) {
+  if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) return;
 
   try {
-    const response = await fetch(`https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`, {
+    await fetch(`https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${WHATSAPP_TOKEN}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        to: toPhoneNumber,
-        type: 'text',
-        text: { body: textoRespuesta },
-      }),
+      body: JSON.stringify(payload),
     });
-
-    if (response.ok) {
-      console.log(`📤 Respuesta de confirmación enviada a ${toPhoneNumber}`);
-    } else {
-      const errorData = await response.json();
-      console.error('❌ Error devuelto por Meta al enviar WhatsApp:', JSON.stringify(errorData));
-    }
   } catch (error) {
-    console.error('❌ Error al enviar mensaje por WhatsApp:', error.message);
+    console.error('❌ Error enviando mensaje a Meta:', error.message);
   }
 }
 
-// Endpoint de verificación para Meta Webhook
-app.get('/webhook', (req, res) => {
-  const mode = req.query['hub.mode'];
-  const token = req.query['hub.verify_token'];
-  const challenge = req.query['hub.challenge'];
+// Enviar texto simple
+async function enviarTexto(to, texto) {
+  await enviarPeticionMeta({
+    messaging_product: 'whatsapp',
+    to,
+    type: 'text',
+    text: { body: texto }
+  });
+}
 
-  if (mode && token) {
-    if (mode === 'subscribe' && token === VERIFY_TOKEN) {
-      console.log('WEBHOOK_VERIFIED');
-      res.status(200).send(challenge);
-    } else {
-      res.sendStatus(403);
+// Enviar botones interactivas (Máximo 3 botones por mensaje)
+async function enviarBotones(to, textoBody, botones) {
+  const buttonsPayload = botones.map((b, index) => ({
+    type: 'reply',
+    reply: {
+      id: b.id,
+      title: b.title.substring(0, 20) // Límite de Meta: 20 caracteres
     }
-  }
-});
+  }));
 
-// Función para registrar una nueva fila en Google Sheets
-async function registrarEnGoogleSheets(concepto, monto, categoria, obra) {
-  if (!sheets || !SPREADSHEET_ID) {
-    console.error('❌ Google Sheets no está configurado correctamente.');
-    return null;
-  }
+  await enviarPeticionMeta({
+    messaging_product: 'whatsapp',
+    to,
+    type: 'interactive',
+    interactive: {
+      type: 'button',
+      body: { text: textoBody },
+      action: { buttons: buttonsPayload }
+    }
+  });
+}
+
+// Enviar lista interactiva (Para cuando hay 4 o más opciones, como en Obras)
+async function enviarListaObras(to, textoBody) {
+  await enviarPeticionMeta({
+    messaging_product: 'whatsapp',
+    to,
+    type: 'interactive',
+    interactive: {
+      type: 'list',
+      body: { text: textoBody },
+      button: 'Ver Obras',
+      action: {
+        sections: [
+          {
+            title: 'Selecciona la Sucursal/Obra',
+            rows: [
+              { id: 'OBRA_Pelicano', title: 'Suc. Pelicano' },
+              { id: 'OBRA_Caldera', title: 'Suc. Caldera' },
+              { id: 'OBRA_Nativitas', title: 'Suc. Nativitas' },
+              { id: 'OBRA_Salud', title: 'Suc. Salud' }
+            ]
+          }
+        ]
+      }
+    }
+  });
+}
+
+// Registrar o actualizar fila en Google Sheets
+async function guardarEnSheets(datos) {
+  if (!sheets || !SPREADSHEET_ID) return;
 
   try {
-    const idMovimiento = 'MOV-' + Date.now().toString().slice(-6);
     const fechaHora = new Date().toLocaleString('es-MX', { timeZone: 'America/Mexico_City' });
+    const metodoCompleto = datos.subMetodo ? `${datos.metodo} (${datos.subMetodo})` : datos.metodo;
 
     const valores = [
       [
-        idMovimiento,       // A: ID_MOVIMIENTO
-        fechaHora,          // B: FECHA_HORA
-        obra,               // C: OBRA
-        'Efectivo/Digital', // D: METODO_PAGO
-        categoria,          // E: CATEGORIA_SIMPLIFICADA
-        monto,              // F: MONTO
-        concepto,           // G: CONCEPTO_DESCRIPCION
-        'Bot WhatsApp'      // H: QUIEN_REGISTRO
+        datos.idMovimiento,
+        fechaHora,
+        datos.obra,
+        metodoCompleto,
+        datos.categoria,
+        datos.monto,
+        datos.concepto,
+        'Bot WhatsApp'
       ]
     ];
 
@@ -128,88 +156,160 @@ async function registrarEnGoogleSheets(concepto, monto, categoria, obra) {
       spreadsheetId: SPREADSHEET_ID,
       range: 'Hoja 1!A:H',
       valueInputOption: 'USER_ENTERED',
-      requestBody: {
-        values: valores,
-      },
+      requestBody: { values: valores },
     });
 
-    console.log(`✅ Fila agregada exitosamente: ${concepto} - $${monto} [Obra: ${obra}]`);
-    return idMovimiento;
+    console.log(`✅ Registro completado en Sheets: ${datos.idMovimiento}`);
   } catch (error) {
-    console.error('❌ Error al escribir en Google Sheets:', error.message);
-    return null;
+    console.error('❌ Error escribiendo en Sheets:', error.message);
   }
 }
 
-// Endpoint para recibir mensajes del Webhook
+// Endpoint de verificación Webhook
+app.get('/webhook', (req, res) => {
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+
+  if (mode === 'subscribe' && token === VERIFY_TOKEN) {
+    res.status(200).send(challenge);
+  } else {
+    res.sendStatus(403);
+  }
+});
+
+// Endpoint principal
 app.post('/webhook', async (req, res) => {
   const body = req.body;
 
-  if (body.object) {
-    if (
-      body.entry &&
-      body.entry[0].changes &&
-      body.entry[0].changes[0].value.messages &&
-      body.entry[0].changes[0].value.messages[0]
-    ) {
-      const message = body.entry[0].changes[0].value.messages[0];
-      const fromPhoneNumber = message.from;
+  if (body.object && body.entry?.[0]?.changes?.[0]?.value?.messages?.[0]) {
+    const msg = body.entry[0].changes[0].value.messages[0];
+    const from = msg.from;
 
-      if (message.type === 'text') {
-        const textBody = message.text.body.trim();
-        console.log('📩 Mensaje recibido:', textBody);
+    // 1. RECEPCIÓN DE MENSAJE DE TEXTO (NUEVO GASTO)
+    if (msg.type === 'text') {
+      const textBody = msg.text.body.trim();
+      const partes = textBody.split(/\s+/);
+      const posibleMonto = parseFloat(partes[partes.length - 1]);
 
-        let obra = 'General';
-        let textoLimpio = textBody;
+      let concepto = '';
+      let monto = 0;
 
-        // 1. INTENTO VÍA HASHTAG (#Obra)
-        const matchHashtag = textoLimpio.match(/#(\w+)/);
-        if (matchHashtag) {
-          obra = matchHashtag[1];
-          textoLimpio = textoLimpio.replace(/#\w+/, '').trim();
-        } else {
-          // 2. INTENTO VÍA PALABRA CLAVE ("obra X" o "para X")
-          const matchPalabraClave = textoLimpio.match(/(?:obra|para)\s+([a-zA-Z0-9_áéíóúÁÉÍÓÚñÑ]+)/i);
-          if (matchPalabraClave) {
-            obra = matchPalabraClave[1];
-            textoLimpio = textoLimpio.replace(/(?:obra|para)\s+[a-zA-Z0-9_áéíóúÁÉÍÓÚñÑ]+/i, '').trim();
-          }
-        }
+      if (!isNaN(posibleMonto)) {
+        concepto = partes.slice(0, -1).join(' ') || 'Gasto no especificado';
+        monto = posibleMonto;
+      } else {
+        concepto = textBody;
+        monto = 0;
+      }
 
-        const partes = textoLimpio.split(/\s+/);
-        const posibleMonto = parseFloat(partes[partes.length - 1]);
+      const idMovimiento = 'MOV-' + Date.now().toString().slice(-6);
+      const categoria = obtenerCategoria(concepto);
 
-        let concepto = '';
-        let monto = 0;
+      // Guardamos el estado inicial en memoria
+      sesiones[from] = {
+        idMovimiento,
+        concepto,
+        monto,
+        categoria,
+        obra: 'Pendiente',
+        metodo: 'Pendiente',
+        subMetodo: ''
+      };
 
-        if (!isNaN(posibleMonto)) {
-          concepto = partes.slice(0, -1).join(' ') || 'Gasto no especificado';
-          monto = posibleMonto;
-        } else {
-          concepto = textoLimpio;
-          monto = 0;
-        }
+      // Paso 1: Pedir Obra mediante Lista Interactiva
+      await enviarListaObras(from, `📝 *Gasto:* ${concepto} ($${monto.toFixed(2)})\n\n🏗️ *Paso 1:* Selecciona la sucursal/obra correspondiente:`);
+    }
 
-        const categoria = obtenerCategoria(concepto);
-        const idMovimiento = await registrarEnGoogleSheets(concepto, monto, categoria, obra);
+    // 2. RECEPCIÓN DE RESPUESTAS INTERACTIVAS (BOTONES O LISTAS)
+    else if (msg.type === 'interactive') {
+      const sesion = sesiones[from];
+      if (!sesion) {
+        await enviarTexto(from, '⚠️ No hay un gasto activo en proceso. Por favor ingresa un nuevo gasto (Ej: Cemento 1500).');
+        res.sendStatus(200);
+        return;
+      }
 
-        if (idMovimiento) {
-          const mensajeConfirmacion = `✅ *Gasto Registrado*\n\n` +
-            `🆔 *ID:* ${idMovimiento}\n` +
-            `💵 *Monto:* $${monto.toFixed(2)}\n` +
-            `🏗️ *Obra:* ${obra}\n` +
-            `📝 *Concepto:* ${concepto}\n` +
-            `🏷️ *Categoría:* ${categoria}`;
+      const respuestaId = msg.interactive.button_reply?.id || msg.interactive.list_reply?.id;
 
-          await enviarRespuestaWhatsApp(fromPhoneNumber, mensajeConfirmacion);
+      // --- RESPUESTA DE OBRA ---
+      if (respuestaId.startsWith('OBRA_')) {
+        const obraMap = {
+          'OBRA_Pelicano': 'Suc. Pelicano',
+          'OBRA_Caldera': 'Suc. Caldera',
+          'OBRA_Nativitas': 'Suc. Nativitas',
+          'OBRA_Salud': 'Suc. Salud'
+        };
+        sesion.obra = obraMap[respuestaId] || 'General';
+
+        // Paso 2: Preguntar Método de Pago con Botones
+        await enviarBotones(from, `🏗️ *Obra:* ${sesion.obra}\n\n💳 *Paso 2:* ¿Cómo se realizó el pago?`, [
+          { id: 'PAY_Efectivo', title: 'Efectivo' },
+          { id: 'PAY_Transf', title: 'Transferencia' },
+          { id: 'PAY_Tarjeta', title: 'Tarjeta' }
+        ]);
+      }
+
+      // --- RESPUESTA DE MÉTODO DE PAGO ---
+      else if (respuestaId.startsWith('PAY_')) {
+        if (respuestaId === 'PAY_Efectivo') {
+          sesion.metodo = 'Efectivo';
+          await finalizarRegistro(from, sesion);
+        } else if (respuestaId === 'PAY_Transf') {
+          sesion.metodo = 'Transferencia';
+          await enviarBotones(from, '🏦 *Paso 3:* Selecciona la cuenta de origen:', [
+            { id: 'SUB_BanamexBeto', title: 'Banamex Beto' },
+            { id: 'SUB_BBVARigo', title: 'BBVA Rigo' },
+            { id: 'SUB_BBVABeto', title: 'BBVA Beto' }
+          ]);
+        } else if (respuestaId === 'PAY_Tarjeta') {
+          sesion.metodo = 'Tarjeta';
+          await enviarBotones(from, '💳 *Paso 3:* Selecciona la tarjeta utilizada:', [
+            { id: 'SUB_NU', title: 'NU' },
+            { id: 'SUB_DIDI', title: 'DIDI' },
+            { id: 'SUB_MercadoPago', title: 'MercadoPago' }
+          ]);
         }
       }
+
+      // --- RESPUESTA DE SUB-MÉTODO (CUENTA O TARJETA) ---
+      else if (respuestaId.startsWith('SUB_')) {
+        const subMap = {
+          'SUB_BanamexBeto': 'Banamex Beto',
+          'SUB_BBVARigo': 'BBVA Rigo',
+          'SUB_BBVABeto': 'BBVA Beto',
+          'SUB_NU': 'NU',
+          'SUB_DIDI': 'DIDI',
+          'SUB_MercadoPago': 'MercadoPago'
+        };
+        sesion.subMetodo = subMap[respuestaId] || '';
+        await finalizarRegistro(from, sesion);
+      }
     }
+
     res.sendStatus(200);
   } else {
     res.sendStatus(404);
   }
 });
+
+// Función para guardar en Sheets, confirmar y borrar sesión
+async function finalizarRegistro(from, sesion) {
+  await guardarEnSheets(sesion);
+
+  const metodoTexto = sesion.subMetodo ? `${sesion.metodo} (${sesion.subMetodo})` : sesion.metodo;
+
+  const resumen = `✅ *Gasto Registrado con Éxito*\n\n` +
+    `🆔 *ID:* ${sesion.idMovimiento}\n` +
+    `💵 *Monto:* $${sesion.monto.toFixed(2)}\n` +
+    `📝 *Concepto:* ${sesion.concepto}\n` +
+    `🏷️ *Categoría:* ${sesion.categoria}\n` +
+    `🏗️ *Obra:* ${sesion.obra}\n` +
+    `💳 *Pago:* ${metodoTexto}`;
+
+  await enviarTexto(from, resumen);
+  delete sesiones[from];
+}
 
 app.listen(PORT, () => {
   console.log(`Servidor escuchando en el puerto ${PORT}`);
