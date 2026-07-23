@@ -1,6 +1,5 @@
 const express = require('express');
 const { google } = require('googleapis');
-const axios = require('axios'); // Para enviar la respuesta a WhatsApp
 
 const app = express();
 app.use(express.json());
@@ -52,7 +51,7 @@ function obtenerCategoria(concepto) {
   return 'General';
 }
 
-// Función para enviar mensaje de respuesta a WhatsApp
+// Función para enviar mensaje de respuesta a WhatsApp (Usando Fetch nativo)
 async function enviarRespuestaWhatsApp(toPhoneNumber, textoRespuesta) {
   if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) {
     console.warn('⚠️ Faltan variables WHATSAPP_TOKEN o PHONE_NUMBER_ID para enviar mensaje.');
@@ -60,23 +59,28 @@ async function enviarRespuestaWhatsApp(toPhoneNumber, textoRespuesta) {
   }
 
   try {
-    await axios({
+    const response = await fetch(`https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`, {
       method: 'POST',
-      url: `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`,
       headers: {
         'Authorization': `Bearer ${WHATSAPP_TOKEN}`,
         'Content-Type': 'application/json',
       },
-      data: {
+      body: JSON.stringify({
         messaging_product: 'whatsapp',
         to: toPhoneNumber,
         type: 'text',
         text: { body: textoRespuesta },
-      },
+      }),
     });
-    console.log(`📤 Respuesta de confirmación enviada a ${toPhoneNumber}`);
+
+    if (response.ok) {
+      console.log(`📤 Respuesta de confirmación enviada a ${toPhoneNumber}`);
+    } else {
+      const errorData = await response.json();
+      console.error('❌ Error devuelto por Meta al enviar WhatsApp:', JSON.stringify(errorData));
+    }
   } catch (error) {
-    console.error('❌ Error al enviar mensaje por WhatsApp:', error.response ? error.response.data : error.message);
+    console.error('❌ Error al enviar mensaje por WhatsApp:', error.message);
   }
 }
 
@@ -149,7 +153,7 @@ app.post('/webhook', async (req, res) => {
       body.entry[0].changes[0].value.messages[0]
     ) {
       const message = body.entry[0].changes[0].value.messages[0];
-      const fromPhoneNumber = message.from; // Número del que viene el mensaje
+      const fromPhoneNumber = message.from;
 
       if (message.type === 'text') {
         const textBody = message.text.body.trim();
@@ -172,7 +176,6 @@ app.post('/webhook', async (req, res) => {
         const categoria = obtenerCategoria(concepto);
         const idMovimiento = await registrarEnGoogleSheets(concepto, monto, categoria);
 
-        // Si se registró con éxito, le respondemos al usuario por WhatsApp
         if (idMovimiento) {
           const mensajeConfirmacion = `✅ *Gasto Registrado*\n\n` +
             `🆔 *ID:* ${idMovimiento}\n` +
