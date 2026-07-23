@@ -51,7 +51,7 @@ function obtenerCategoria(concepto) {
   return 'General';
 }
 
-// Función para enviar mensaje de respuesta a WhatsApp (Usando Fetch nativo)
+// Función para enviar mensaje de respuesta a WhatsApp (Usando Fetch nativo de Node.js)
 async function enviarRespuestaWhatsApp(toPhoneNumber, textoRespuesta) {
   if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) {
     console.warn('⚠️ Faltan variables WHATSAPP_TOKEN o PHONE_NUMBER_ID para enviar mensaje.');
