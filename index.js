@@ -1,5 +1,6 @@
 const express = require('express');
 const { google } = require('googleapis');
+const axios = require('axios'); // Para enviar la respuesta a WhatsApp
 
 const app = express();
 app.use(express.json());
@@ -7,6 +8,8 @@ app.use(express.json());
 const PORT = process.env.PORT || 3000;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
+const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
+const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 
 // Configuración de autenticación con Google Sheets
 let sheets;
@@ -26,6 +29,57 @@ try {
   console.error('❌ Error al inicializar Google Sheets API:', error.message);
 }
 
+// Función para clasificar categorías automáticamente
+function obtenerCategoria(concepto) {
+  const texto = concepto.toLowerCase();
+  
+  if (/gasolina|diésel|diesel|caseta|estacionamiento|peaje|taller|flete/i.test(texto)) {
+    return 'Transporte / Vehículo';
+  }
+  if (/comida|almuerzo|cena|desayuno|oxxo|7eleven|restaurante|agua|café|cafe/i.test(texto)) {
+    return 'Alimentos y Consumo';
+  }
+  if (/cemento|varilla|arena|grava|pintura|cable|tubo|madera|tabique|material/i.test(texto)) {
+    return 'Materiales';
+  }
+  if (/herramienta|disco|broca|pala|martillo|equipo|reparacion/i.test(texto)) {
+    return 'Herramientas y Equipo';
+  }
+  if (/nomina|sueldo|raya|pago|trabajador|peon|albañil/i.test(texto)) {
+    return 'Mano de Obra';
+  }
+
+  return 'General';
+}
+
+// Función para enviar mensaje de respuesta a WhatsApp
+async function enviarRespuestaWhatsApp(toPhoneNumber, textoRespuesta) {
+  if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) {
+    console.warn('⚠️ Faltan variables WHATSAPP_TOKEN o PHONE_NUMBER_ID para enviar mensaje.');
+    return;
+  }
+
+  try {
+    await axios({
+      method: 'POST',
+      url: `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`,
+      headers: {
+        'Authorization': `Bearer ${WHATSAPP_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      data: {
+        messaging_product: 'whatsapp',
+        to: toPhoneNumber,
+        type: 'text',
+        text: { body: textoRespuesta },
+      },
+    });
+    console.log(`📤 Respuesta de confirmación enviada a ${toPhoneNumber}`);
+  } catch (error) {
+    console.error('❌ Error al enviar mensaje por WhatsApp:', error.response ? error.response.data : error.message);
+  }
+}
+
 // Endpoint de verificación para Meta Webhook
 app.get('/webhook', (req, res) => {
   const mode = req.query['hub.mode'];
@@ -43,28 +97,26 @@ app.get('/webhook', (req, res) => {
 });
 
 // Función para registrar una nueva fila en Google Sheets
-async function registrarEnGoogleSheets(concepto, monto) {
+async function registrarEnGoogleSheets(concepto, monto, categoria) {
   if (!sheets || !SPREADSHEET_ID) {
     console.error('❌ Google Sheets no está configurado correctamente.');
-    return;
+    return null;
   }
 
   try {
     const idMovimiento = 'MOV-' + Date.now().toString().slice(-6);
     const fechaHora = new Date().toLocaleString('es-MX', { timeZone: 'America/Mexico_City' });
 
-    // Mapeo de tus columnas:
-    // A: ID_MOVIMIENTO | B: FECHA_HORA | C: OBRA | D: METODO_PAGO | E: CATEGORIA_SIMPLIFICADA | F: MONTO | G: CONCEPTO_DESCRIPCION | H: QUIEN_REGISTRO
     const valores = [
       [
-        idMovimiento,       // A
-        fechaHora,          // B
-        'General',          // C
-        'Efectivo/Digital', // D
-        'General',          // E
-        monto,              // F
-        concepto,           // G
-        'Bot WhatsApp'      // H
+        idMovimiento,       // A: ID_MOVIMIENTO
+        fechaHora,          // B: FECHA_HORA
+        'General',          // C: OBRA
+        'Efectivo/Digital', // D: METODO_PAGO
+        categoria,          // E: CATEGORIA_SIMPLIFICADA
+        monto,              // F: MONTO
+        concepto,           // G: CONCEPTO_DESCRIPCION
+        'Bot WhatsApp'      // H: QUIEN_REGISTRO
       ]
     ];
 
@@ -77,9 +129,11 @@ async function registrarEnGoogleSheets(concepto, monto) {
       },
     });
 
-    console.log(`✅ Fila agregada exitosamente: ${concepto} - $${monto}`);
+    console.log(`✅ Fila agregada exitosamente: ${concepto} - $${monto} [Categoría: ${categoria}]`);
+    return idMovimiento;
   } catch (error) {
     console.error('❌ Error al escribir en Google Sheets:', error.message);
+    return null;
   }
 }
 
@@ -95,21 +149,38 @@ app.post('/webhook', async (req, res) => {
       body.entry[0].changes[0].value.messages[0]
     ) {
       const message = body.entry[0].changes[0].value.messages[0];
+      const fromPhoneNumber = message.from; // Número del que viene el mensaje
 
       if (message.type === 'text') {
         const textBody = message.text.body.trim();
         console.log('📩 Mensaje recibido:', textBody);
 
-        // Separación de concepto y monto (Ejemplo: "this is a text message")
         const partes = textBody.split(/\s+/);
         const posibleMonto = parseFloat(partes[partes.length - 1]);
 
+        let concepto = '';
+        let monto = 0;
+
         if (!isNaN(posibleMonto)) {
-          const concepto = partes.slice(0, -1).join(' ') || 'Gasto no especificado';
-          await registrarEnGoogleSheets(concepto, posibleMonto);
+          concepto = partes.slice(0, -1).join(' ') || 'Gasto no especificado';
+          monto = posibleMonto;
         } else {
-          // Si el mensaje no trae número, guardamos todo el texto y ponemos monto 0 para probar
-          await registrarEnGoogleSheets(textBody, 0);
+          concepto = textBody;
+          monto = 0;
+        }
+
+        const categoria = obtenerCategoria(concepto);
+        const idMovimiento = await registrarEnGoogleSheets(concepto, monto, categoria);
+
+        // Si se registró con éxito, le respondemos al usuario por WhatsApp
+        if (idMovimiento) {
+          const mensajeConfirmacion = `✅ *Gasto Registrado*\n\n` +
+            `🆔 *ID:* ${idMovimiento}\n` +
+            `💵 *Monto:* $${monto.toFixed(2)}\n` +
+            `📝 *Concepto:* ${concepto}\n` +
+            `🏷️ *Categoría:* ${categoria}`;
+
+          await enviarRespuestaWhatsApp(fromPhoneNumber, mensajeConfirmacion);
         }
       }
     }
