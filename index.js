@@ -51,7 +51,7 @@ function obtenerCategoria(concepto) {
   return 'General';
 }
 
-// Función para enviar mensaje de respuesta a WhatsApp (Usando Fetch nativo de Node.js)
+// Función para enviar mensaje de respuesta a WhatsApp
 async function enviarRespuestaWhatsApp(toPhoneNumber, textoRespuesta) {
   if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) {
     console.warn('⚠️ Faltan variables WHATSAPP_TOKEN o PHONE_NUMBER_ID para enviar mensaje.');
@@ -101,7 +101,7 @@ app.get('/webhook', (req, res) => {
 });
 
 // Función para registrar una nueva fila en Google Sheets
-async function registrarEnGoogleSheets(concepto, monto, categoria) {
+async function registrarEnGoogleSheets(concepto, monto, categoria, obra) {
   if (!sheets || !SPREADSHEET_ID) {
     console.error('❌ Google Sheets no está configurado correctamente.');
     return null;
@@ -115,7 +115,7 @@ async function registrarEnGoogleSheets(concepto, monto, categoria) {
       [
         idMovimiento,       // A: ID_MOVIMIENTO
         fechaHora,          // B: FECHA_HORA
-        'General',          // C: OBRA
+        obra,               // C: OBRA
         'Efectivo/Digital', // D: METODO_PAGO
         categoria,          // E: CATEGORIA_SIMPLIFICADA
         monto,              // F: MONTO
@@ -133,7 +133,7 @@ async function registrarEnGoogleSheets(concepto, monto, categoria) {
       },
     });
 
-    console.log(`✅ Fila agregada exitosamente: ${concepto} - $${monto} [Categoría: ${categoria}]`);
+    console.log(`✅ Fila agregada exitosamente: ${concepto} - $${monto} [Obra: ${obra}]`);
     return idMovimiento;
   } catch (error) {
     console.error('❌ Error al escribir en Google Sheets:', error.message);
@@ -159,7 +159,24 @@ app.post('/webhook', async (req, res) => {
         const textBody = message.text.body.trim();
         console.log('📩 Mensaje recibido:', textBody);
 
-        const partes = textBody.split(/\s+/);
+        let obra = 'General';
+        let textoLimpio = textBody;
+
+        // 1. INTENTO VÍA HASHTAG (#Obra)
+        const matchHashtag = textoLimpio.match(/#(\w+)/);
+        if (matchHashtag) {
+          obra = matchHashtag[1];
+          textoLimpio = textoLimpio.replace(/#\w+/, '').trim();
+        } else {
+          // 2. INTENTO VÍA PALABRA CLAVE ("obra X" o "para X")
+          const matchPalabraClave = textoLimpio.match(/(?:obra|para)\s+([a-zA-Z0-9_áéíóúÁÉÍÓÚñÑ]+)/i);
+          if (matchPalabraClave) {
+            obra = matchPalabraClave[1];
+            textoLimpio = textoLimpio.replace(/(?:obra|para)\s+[a-zA-Z0-9_áéíóúÁÉÍÓÚñÑ]+/i, '').trim();
+          }
+        }
+
+        const partes = textoLimpio.split(/\s+/);
         const posibleMonto = parseFloat(partes[partes.length - 1]);
 
         let concepto = '';
@@ -169,17 +186,18 @@ app.post('/webhook', async (req, res) => {
           concepto = partes.slice(0, -1).join(' ') || 'Gasto no especificado';
           monto = posibleMonto;
         } else {
-          concepto = textBody;
+          concepto = textoLimpio;
           monto = 0;
         }
 
         const categoria = obtenerCategoria(concepto);
-        const idMovimiento = await registrarEnGoogleSheets(concepto, monto, categoria);
+        const idMovimiento = await registrarEnGoogleSheets(concepto, monto, categoria, obra);
 
         if (idMovimiento) {
           const mensajeConfirmacion = `✅ *Gasto Registrado*\n\n` +
             `🆔 *ID:* ${idMovimiento}\n` +
             `💵 *Monto:* $${monto.toFixed(2)}\n` +
+            `🏗️ *Obra:* ${obra}\n` +
             `📝 *Concepto:* ${concepto}\n` +
             `🏷️ *Categoría:* ${categoria}`;
 
