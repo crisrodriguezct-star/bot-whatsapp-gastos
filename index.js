@@ -240,15 +240,18 @@ async function obtenerListaMovimientosPendientes() {
       const fila = filas[i];
       const id = fila[0];
       const obra = fila[2];
-      const monto = fila[5];
+      let montoStr = fila[5] || '0';
       const concepto = fila[6];
       const estatus = fila[8];
       const link = fila[9];
 
+      // Formatear monto limpiando caracteres dobles si ya trae el signo $
+      montoStr = montoStr.toString().replace('$', '').trim();
+
       if (estatus === 'Pendiente 🟡' || (!link || link === 'N/A')) {
-        pendientes.push({ id, obra, concepto, monto });
+        pendientes.push({ id, obra, concepto, monto: montoStr });
       }
-      if (pendientes.length >= 3) break; // Máximo 3 para los botones de WhatsApp
+      if (pendientes.length >= 3) break;
     }
     return pendientes;
   } catch (error) {
@@ -308,7 +311,6 @@ async function actualizarLinkYEstatusEnSheets(idMovimiento, linkFactura) {
     }
 
     if (filaIndex !== -1) {
-      // Actualiza Estatus a Facturado 🟢 (Columna I) y Link (Columna J)
       await sheets.spreadsheets.values.update({
         spreadsheetId: SPREADSHEET_ID,
         range: `Hoja 1!I${filaIndex}:J${filaIndex}`,
@@ -339,7 +341,6 @@ app.post('/webhook', async (req, res) => {
     if (msg.type === 'text') {
       const textBody = msg.text.body.trim();
 
-      // Consultar pendientes
       if (/^(facturas|pendientes|factura)$/i.test(textBody)) {
         const pendientes = await obtenerListaMovimientosPendientes();
         if (pendientes.length === 0) {
@@ -530,7 +531,7 @@ async function finalizarRegistro(from, sesion) {
     `💵 *Monto:* $${sesion.monto.toFixed(2)}\n` +
     `📝 *Concepto:* ${sesion.concepto}\n` +
     `🏗️ *Obra:* ${sesion.obra}\n` +
-    `💳 *Pago:* ${sesion.metodoText}\n` +
+    `💳 *Pago:* ${metodoTexto}\n` +
     `📄 *Factura:* ${sesion.estatusFactura}`;
 
   if (sesion.estatusFactura === 'Facturado 🟢') {
