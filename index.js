@@ -224,6 +224,39 @@ async function obtenerUltimoMovimientoDeSheets() {
   }
 }
 
+async function obtenerListaMovimientosPendientes() {
+  if (!sheets || !SPREADSHEET_ID) return [];
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: 'Hoja 1!A:J'
+    });
+
+    const filas = res.data.values;
+    if (!filas || filas.length < 2) return [];
+
+    const pendientes = [];
+    for (let i = filas.length - 1; i >= 1; i--) {
+      const fila = filas[i];
+      const id = fila[0];
+      const obra = fila[2];
+      const monto = fila[5];
+      const concepto = fila[6];
+      const estatus = fila[8];
+      const link = fila[9];
+
+      if (estatus === 'Pendiente 🟡' || (!link || link === 'N/A')) {
+        pendientes.push({ id, obra, concepto, monto });
+      }
+      if (pendientes.length >= 3) break; // Máximo 3 para los botones de WhatsApp
+    }
+    return pendientes;
+  } catch (error) {
+    console.error('❌ Error consultando pendientes:', error.message);
+    return [];
+  }
+}
+
 async function guardarEnSheets(datos) {
   if (!sheets || !SPREADSHEET_ID) return;
   try {
@@ -255,7 +288,7 @@ async function guardarEnSheets(datos) {
   }
 }
 
-async function actualizarLinkFacturaEnSheets(idMovimiento, linkFactura) {
+async function actualizarLinkYEstatusEnSheets(idMovimiento, linkFactura) {
   if (!sheets || !SPREADSHEET_ID) return;
   try {
     const res = await sheets.spreadsheets.values.get({
@@ -275,16 +308,17 @@ async function actualizarLinkFacturaEnSheets(idMovimiento, linkFactura) {
     }
 
     if (filaIndex !== -1) {
+      // Actualiza Estatus a Facturado 🟢 (Columna I) y Link (Columna J)
       await sheets.spreadsheets.values.update({
         spreadsheetId: SPREADSHEET_ID,
-        range: `Hoja 1!J${filaIndex}`,
+        range: `Hoja 1!I${filaIndex}:J${filaIndex}`,
         valueInputOption: 'USER_ENTERED',
-        requestBody: { values: [[linkFactura]] }
+        requestBody: { values: [['Facturado 🟢', linkFactura]] }
       });
-      console.log(`✅ Link actualizado en Sheets: ${idMovimiento}`);
+      console.log(`✅ Estatus y Link actualizados en Sheets: ${idMovimiento}`);
     }
   } catch (error) {
-    console.error('❌ Error actualizando link:', error.message);
+    console.error('❌ Error actualizando estatus y link:', error.message);
   }
 }
 
@@ -304,6 +338,23 @@ app.post('/webhook', async (req, res) => {
 
     if (msg.type === 'text') {
       const textBody = msg.text.body.trim();
+
+      // Consultar pendientes
+      if (/^(facturas|pendientes|factura)$/i.test(textBody)) {
+        const pendientes = await obtenerListaMovimientosPendientes();
+        if (pendientes.length === 0) {
+          await enviarTexto(from, '🎉 ¡Excelente! No tienes ningún gasto pendiente de factura.');
+        } else {
+          const botones = pendientes.map(p => ({
+            id: `SEL_${p.id}`,
+            title: `${p.concepto.slice(0, 10)} $${p.monto}`
+          }));
+          await enviarBotones(from, '📋 *Selecciona el gasto que vas a facturar:*', botones);
+        }
+        res.sendStatus(200);
+        return;
+      }
+
       const partes = textBody.split(/\s+/);
       const posibleMonto = parseFloat(partes[partes.length - 1]);
 
@@ -339,13 +390,36 @@ app.post('/webhook', async (req, res) => {
         { id: 'OBRA_Nativitas', title: 'Nativitas' }
       ]);
     } else if (msg.type === 'interactive') {
+      const respuestaId = msg.interactive.button_reply?.id;
+
+      if (respuestaId?.startsWith('SEL_')) {
+        const idSelec = respuestaId.replace('SEL_', '');
+        const resSheets = await sheets.spreadsheets.values.get({
+          spreadsheetId: SPREADSHEET_ID,
+          range: 'Hoja 1!A:G'
+        });
+        const filas = resSheets.data.values || [];
+        const filaEncontrada = filas.find(f => f[0] === idSelec);
+
+        if (filaEncontrada) {
+          ultimosRegistros[from] = {
+            id: idSelec,
+            obra: filaEncontrada[2],
+            concepto: filaEncontrada[6]
+          };
+          await enviarTexto(from, `🎯 *Gasto seleccionado:* ${filaEncontrada[6]} (${filaEncontrada[0]})\n\n📎 Por favor, *envía la foto, PDF o XML de la factura ahora*.`);
+        } else {
+          await enviarTexto(from, '⚠️ No se encontró la información de ese gasto.');
+        }
+        res.sendStatus(200);
+        return;
+      }
+
       const sesion = sesiones[from];
       if (!sesion) {
         res.sendStatus(200);
         return;
       }
-
-      const respuestaId = msg.interactive.button_reply?.id;
 
       if (respuestaId?.startsWith('OBRA_')) {
         const obraMap = {
@@ -421,15 +495,15 @@ app.post('/webhook', async (req, res) => {
         const driveLink = await guardarArchivoEnDrive(mediaId, nombreLimpio, mimeType);
 
         if (driveLink) {
-          await actualizarLinkFacturaEnSheets(registroPendiente.id, driveLink);
-          await enviarTexto(from, `✅ *Factura adjuntada exitosamente a Google Drive*\n\n📄 *Enlace:* ${driveLink}`);
+          await actualizarLinkYEstatusEnSheets(registroPendiente.id, driveLink);
+          await enviarTexto(from, `✅ *Factura adjuntada y estatus actualizado a Facturado 🟢*\n\n📄 *Enlace:* ${driveLink}`);
         } else {
-          await enviarTexto(from, '⚠️ Ocurrió un error al subir el archivo a Drive. Revisa la consola de Render.');
+          await enviarTexto(from, '⚠️ Ocurrió un error al subir el archivo a Drive.');
         }
 
         delete ultimosRegistros[from];
       } else {
-        await enviarTexto(from, '⚠️ No se encontró ningún gasto pendiente de factura para asociar este archivo.');
+        await enviarTexto(from, '⚠️ No se encontró ningún gasto pendiente para asociar este archivo.');
       }
     }
 
@@ -456,7 +530,7 @@ async function finalizarRegistro(from, sesion) {
     `💵 *Monto:* $${sesion.monto.toFixed(2)}\n` +
     `📝 *Concepto:* ${sesion.concepto}\n` +
     `🏗️ *Obra:* ${sesion.obra}\n` +
-    `💳 *Pago:* ${metodoTexto}\n` +
+    `💳 *Pago:* ${sesion.metodoText}\n` +
     `📄 *Factura:* ${sesion.estatusFactura}`;
 
   if (sesion.estatusFactura === 'Facturado 🟢') {
