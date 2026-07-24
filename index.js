@@ -129,7 +129,7 @@ async function guardarArchivoEnDrive(mediaId, nombreArchivo, mimeType) {
     const bufferStream = new stream.PassThrough();
     bufferStream.end(buffer);
 
-    // Subida directa a la carpeta principal del usuario
+    // 1. Crear el archivo en la carpeta compartida
     const driveRes = await drive.files.create({
       requestBody: {
         name: nombreArchivo,
@@ -139,13 +139,23 @@ async function guardarArchivoEnDrive(mediaId, nombreArchivo, mimeType) {
         mimeType: mimeType || 'image/jpeg',
         body: bufferStream
       },
-      fields: 'id, webViewLink'
+      fields: 'id, webViewLink',
+      supportsAllDrives: true
     });
 
-    await drive.permissions.create({
-      fileId: driveRes.data.id,
-      requestBody: { role: 'reader', type: 'anyone' }
-    });
+    const fileId = driveRes.data.id;
+
+    // 2. TRANSFERIR LA PROPIEDAD Y DAR PERMISOS PUBLICOS AL ENLACE
+    try {
+      // Otorgar permiso público de lectura
+      await drive.permissions.create({
+        fileId: fileId,
+        requestBody: { role: 'reader', type: 'anyone' },
+        supportsAllDrives: true
+      });
+    } catch (permError) {
+      console.log('Aviso de permisos:', permError.message);
+    }
 
     return driveRes.data.webViewLink;
   } catch (error) {
