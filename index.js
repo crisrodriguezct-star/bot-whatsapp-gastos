@@ -103,7 +103,7 @@ function descargarBufferMeta(url, token) {
       }
 
       if (res.statusCode !== 200) {
-        return reject(new Error(`Error al descargar de Meta: Estado HTTP ${res.statusCode}`));
+        return reject(new Error(`HTTP Error ${res.statusCode}`));
       }
 
       const chunks = [];
@@ -125,9 +125,7 @@ async function obtenerOCrearCarpetaMes(folderIdPadre) {
     const query = `'${folderIdPadre}' in parents and name = '${nombreCarpeta}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
     const res = await drive.files.list({
       q: query,
-      fields: 'files(id, name)',
-      supportsAllDrives: true,
-      includeItemsFromAllDrives: true
+      fields: 'files(id, name)'
     });
 
     if (res.data.files.length > 0) {
@@ -140,8 +138,7 @@ async function obtenerOCrearCarpetaMes(folderIdPadre) {
       };
       const carpetaCreada = await drive.files.create({
         requestBody: fileMetadata,
-        fields: 'id',
-        supportsAllDrives: true
+        fields: 'id'
       });
       return carpetaCreada.data.id;
     }
@@ -167,7 +164,7 @@ async function guardarArchivoEnDrive(mediaId, nombreArchivo, mimeType) {
     const bufferStream = new stream.PassThrough();
     bufferStream.end(buffer);
 
-    // Subida pasando la propiedad supportsAllDrives
+    // SOLUCIÓN AL ERROR DE STORAGE QUOTA EN DRIVE
     const driveRes = await drive.files.create({
       requestBody: {
         name: nombreArchivo,
@@ -177,14 +174,13 @@ async function guardarArchivoEnDrive(mediaId, nombreArchivo, mimeType) {
         mimeType: mimeType || 'image/jpeg',
         body: bufferStream
       },
-      fields: 'id, webViewLink',
-      supportsAllDrives: true
+      fields: 'id, webViewLink'
     });
 
+    // Otorgar permisos globales al archivo subido
     await drive.permissions.create({
       fileId: driveRes.data.id,
-      requestBody: { role: 'reader', type: 'anyone' },
-      supportsAllDrives: true
+      requestBody: { role: 'reader', type: 'anyone' }
     });
 
     return driveRes.data.webViewLink;
