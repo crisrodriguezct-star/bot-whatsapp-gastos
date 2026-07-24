@@ -24,7 +24,7 @@ try {
       credentials,
       scopes: [
         'https://www.googleapis.com/auth/spreadsheets',
-        'https://www.googleapis.com/auth/drive.file'
+        'https://www.googleapis.com/auth/drive'
       ],
     });
     sheets = google.sheets({ version: 'v4', auth });
@@ -88,7 +88,6 @@ async function enviarBotones(to, textoBody, botones) {
   });
 }
 
-// Función auxiliar para descargar medios de Meta siguiendo redirecciones HTTP
 function descargarBufferMeta(url, token) {
   return new Promise((resolve, reject) => {
     const opciones = {
@@ -99,7 +98,6 @@ function descargarBufferMeta(url, token) {
     };
 
     https.get(url, opciones, (res) => {
-      // Manejar redirecciones de la CDN de Meta (301, 302, 307)
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         return descargarBufferMeta(res.headers.location, token).then(resolve).catch(reject);
       }
@@ -125,7 +123,12 @@ async function obtenerOCrearCarpetaMes(folderIdPadre) {
 
   try {
     const query = `'${folderIdPadre}' in parents and name = '${nombreCarpeta}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
-    const res = await drive.files.list({ q: query, fields: 'files(id, name)' });
+    const res = await drive.files.list({
+      q: query,
+      fields: 'files(id, name)',
+      supportsAllDrives: true,
+      includeItemsFromAllDrives: true
+    });
 
     if (res.data.files.length > 0) {
       return res.data.files[0].id;
@@ -136,8 +139,9 @@ async function obtenerOCrearCarpetaMes(folderIdPadre) {
         parents: [folderIdPadre]
       };
       const carpetaCreada = await drive.files.create({
-        resource: fileMetadata,
-        fields: 'id'
+        requestBody: fileMetadata,
+        fields: 'id',
+        supportsAllDrives: true
       });
       return carpetaCreada.data.id;
     }
@@ -151,23 +155,19 @@ async function guardarArchivoEnDrive(mediaId, nombreArchivo, mimeType) {
   if (!drive || !DRIVE_FOLDER_ID) return null;
 
   try {
-    // 1. Consulta URL de descarga en la API de Meta
     const mediaRes = await fetch(`https://graph.facebook.com/v18.0/${mediaId}`, {
       headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}` }
     });
     const mediaData = await mediaRes.json();
     if (!mediaData.url) return null;
 
-    // 2. Descarga el buffer siguiendo las redirecciones de la CDN de Meta
     const buffer = await descargarBufferMeta(mediaData.url, WHATSAPP_TOKEN);
-
-    // 3. Obtiene o crea carpeta del mes en Drive
     const idCarpetaDestino = await obtenerOCrearCarpetaMes(DRIVE_FOLDER_ID);
 
-    // 4. Sube el buffer a Google Drive
     const bufferStream = new stream.PassThrough();
     bufferStream.end(buffer);
 
+    // Subida pasando la propiedad supportsAllDrives
     const driveRes = await drive.files.create({
       requestBody: {
         name: nombreArchivo,
@@ -177,12 +177,14 @@ async function guardarArchivoEnDrive(mediaId, nombreArchivo, mimeType) {
         mimeType: mimeType || 'image/jpeg',
         body: bufferStream
       },
-      fields: 'id, webViewLink'
+      fields: 'id, webViewLink',
+      supportsAllDrives: true
     });
 
     await drive.permissions.create({
       fileId: driveRes.data.id,
-      requestBody: { role: 'reader', type: 'anyone' }
+      requestBody: { role: 'reader', type: 'anyone' },
+      supportsAllDrives: true
     });
 
     return driveRes.data.webViewLink;
@@ -270,7 +272,6 @@ app.post('/webhook', async (req, res) => {
     const msg = body.entry[0].changes[0].value.messages[0];
     const from = msg.from;
 
-    // 1. MENSAJE DE TEXTO
     if (msg.type === 'text') {
       const textBody = msg.text.body.trim();
       const partes = textBody.split(/\s+/);
@@ -307,10 +308,7 @@ app.post('/webhook', async (req, res) => {
         { id: 'OBRA_Caldera', title: 'Caldera' },
         { id: 'OBRA_Nativitas', title: 'Nativitas' }
       ]);
-    } 
-
-    // 2. BOTONES INTERACTIVOS
-    else if (msg.type === 'interactive') {
+    } else if (msg.type === 'interactive') {
       const sesion = sesiones[from];
       if (!sesion) {
         res.sendStatus(200);
@@ -372,10 +370,7 @@ app.post('/webhook', async (req, res) => {
         }
         await finalizarRegistro(from, sesion);
       }
-    }
-
-    // 3. ARCHIVOS / IMÁGENES (Acepta fotos de Cámara/Galería y PDFs)
-    else if (msg.type === 'document' || msg.type === 'image') {
+    } else if (msg.type === 'document' || msg.type === 'image') {
       const registroPendiente = ultimosRegistros[from];
 
       if (registroPendiente) {
@@ -393,7 +388,7 @@ app.post('/webhook', async (req, res) => {
           await actualizarLinkFacturaEnSheets(registroPendiente.id, driveLink);
           await enviarTexto(from, `✅ *Factura adjuntada exitosamente a Google Drive*\n\n📄 *Enlace:* ${driveLink}`);
         } else {
-          await enviarTexto(from, '⚠️ Hubo un detalle al descargar la imagen. Por favor intenta enviarla nuevamente.');
+          await enviarTexto(from, '⚠️ Ocurrió un error al subir el archivo a Drive. Revisa la consola.');
         }
 
         delete ultimosRegistros[from];
