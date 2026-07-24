@@ -1,5 +1,6 @@
 const express = require('express');
 const { google } = require('googleapis');
+const stream = require('stream');
 
 const app = express();
 app.use(express.json());
@@ -121,21 +122,28 @@ async function guardarArchivoEnDrive(mediaId, nombreArchivo, mimeType) {
   if (!drive || !DRIVE_FOLDER_ID) return null;
 
   try {
+    // 1. Obtener URL de descarga desde Meta
     const mediaRes = await fetch(`https://graph.facebook.com/v18.0/${mediaId}`, {
       headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}` }
     });
     const mediaData = await mediaRes.json();
     if (!mediaData.url) return null;
 
+    // 2. Descargar con Bearer token en cabecera limpia
     const fileRes = await fetch(mediaData.url, {
-      headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}` }
+      headers: {
+        'Authorization': `Bearer ${WHATSAPP_TOKEN}`,
+        'User-Agent': 'Mozilla/5.0'
+      }
     });
+
     const arrayBuffer = await fileRes.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
+    // 3. Crear o buscar subcarpeta del mes
     const idCarpetaDestino = await obtenerOCrearCarpetaMes(DRIVE_FOLDER_ID);
 
-    const stream = require('stream');
+    // 4. Subir a Drive
     const bufferStream = new stream.PassThrough();
     bufferStream.end(buffer);
 
@@ -145,7 +153,7 @@ async function guardarArchivoEnDrive(mediaId, nombreArchivo, mimeType) {
         parents: [idCarpetaDestino]
       },
       media: {
-        mimeType: mimeType,
+        mimeType: mimeType || 'image/jpeg',
         body: bufferStream
       },
       fields: 'id, webViewLink'
@@ -158,7 +166,7 @@ async function guardarArchivoEnDrive(mediaId, nombreArchivo, mimeType) {
 
     return driveRes.data.webViewLink;
   } catch (error) {
-    console.error('❌ Error subida Drive:', error.message);
+    console.error('❌ Error descarga/subida:', error.message);
     return null;
   }
 }
@@ -241,7 +249,7 @@ app.post('/webhook', async (req, res) => {
     const msg = body.entry[0].changes[0].value.messages[0];
     const from = msg.from;
 
-    // 1. MENSAJE DE TEXTO (NUEVO GASTO)
+    // 1. MENSAJE DE TEXTO
     if (msg.type === 'text') {
       const textBody = msg.text.body.trim();
       const partes = textBody.split(/\s+/);
@@ -280,7 +288,7 @@ app.post('/webhook', async (req, res) => {
       ]);
     } 
 
-    // 2. RECEPCIÓN DE BOTONES INTERACTIVOS
+    // 2. BOTONES INTERACTIVOS
     else if (msg.type === 'interactive') {
       const sesion = sesiones[from];
       if (!sesion) {
@@ -290,7 +298,6 @@ app.post('/webhook', async (req, res) => {
 
       const respuestaId = msg.interactive.button_reply?.id;
 
-      // PASO 1: OBRA
       if (respuestaId?.startsWith('OBRA_')) {
         const obraMap = {
           'OBRA_Pelicano': 'Suc. Pelicano',
@@ -304,10 +311,7 @@ app.post('/webhook', async (req, res) => {
           { id: 'PAY_Transf', title: 'Transferencia' },
           { id: 'PAY_Tarjeta', title: 'Tarjeta' }
         ]);
-      } 
-      
-      // PASO 2: MÉTODO DE PAGO
-      else if (respuestaId?.startsWith('PAY_')) {
+      } else if (respuestaId?.startsWith('PAY_')) {
         if (respuestaId === 'PAY_Efectivo') {
           sesion.metodo = 'Efectivo';
           await pedirFactura(from, sesion);
@@ -326,10 +330,7 @@ app.post('/webhook', async (req, res) => {
             { id: 'SUB_MercadoPago', title: 'MercadoPago' }
           ]);
         }
-      } 
-      
-      // PASO 3: SUB-MÉTODO (CUENTA O TARJETA) -> AQUÍ ESTÁ EL CAMBIO
-      else if (respuestaId?.startsWith('SUB_')) {
+      } else if (respuestaId?.startsWith('SUB_')) {
         const subMap = {
           'SUB_BanamexBeto': 'Banamex Beto',
           'SUB_BBVARigo': 'BBVA Rigo',
@@ -339,13 +340,8 @@ app.post('/webhook', async (req, res) => {
           'SUB_MercadoPago': 'MercadoPago'
         };
         sesion.subMetodo = subMap[respuestaId] || '';
-        
-        // FORZAMOS LA PREGUNTA DE FACTURA
         await pedirFactura(from, sesion);
-      } 
-      
-      // PASO 4: ESTATUS DE FACTURA Y CIERRE
-      else if (respuestaId?.startsWith('FAC_')) {
+      } else if (respuestaId?.startsWith('FAC_')) {
         if (respuestaId === 'FAC_Si') {
           sesion.estatusFactura = 'Facturado 🟢';
         } else if (respuestaId === 'FAC_Pendiente') {
@@ -357,7 +353,7 @@ app.post('/webhook', async (req, res) => {
       }
     }
 
-    // 3. RECEPCIÓN DE ARCHIVOS (PDF / XML / IMAGEN)
+    // 3. ARCHIVOS / IMÁGENES
     else if (msg.type === 'document' || msg.type === 'image') {
       const registroPendiente = ultimosRegistros[from];
 
@@ -376,7 +372,7 @@ app.post('/webhook', async (req, res) => {
           await actualizarLinkFacturaEnSheets(registroPendiente.id, driveLink);
           await enviarTexto(from, `✅ *Factura adjuntada exitosamente a Google Drive*\n\n📄 *Enlace:* ${driveLink}`);
         } else {
-          await enviarTexto(from, '⚠️ No se pudo subir el archivo a Drive. Revisa los permisos de la carpeta.');
+          await enviarTexto(from, '⚠️ No se pudo procesar la imagen de WhatsApp. Intenta enviarla como documento PDF o archivo adjunto.');
         }
 
         delete ultimosRegistros[from];
