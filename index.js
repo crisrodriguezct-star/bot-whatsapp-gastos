@@ -1,5 +1,6 @@
 const express = require('express');
 const { google } = require('googleapis');
+const https = require('https');
 const stream = require('stream');
 
 const app = express();
@@ -87,6 +88,34 @@ async function enviarBotones(to, textoBody, botones) {
   });
 }
 
+// Función auxiliar para descargar medios de Meta siguiendo redirecciones HTTP
+function descargarBufferMeta(url, token) {
+  return new Promise((resolve, reject) => {
+    const opciones = {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'User-Agent': 'Node.js'
+      }
+    };
+
+    https.get(url, opciones, (res) => {
+      // Manejar redirecciones de la CDN de Meta (301, 302, 307)
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        return descargarBufferMeta(res.headers.location, token).then(resolve).catch(reject);
+      }
+
+      if (res.statusCode !== 200) {
+        return reject(new Error(`Error al descargar de Meta: Estado HTTP ${res.statusCode}`));
+      }
+
+      const chunks = [];
+      res.on('data', (chunk) => chunks.push(chunk));
+      res.on('end', () => resolve(Buffer.concat(chunks)));
+      res.on('error', (err) => reject(err));
+    }).on('error', (err) => reject(err));
+  });
+}
+
 async function obtenerOCrearCarpetaMes(folderIdPadre) {
   if (!drive || !folderIdPadre) return folderIdPadre;
 
@@ -122,28 +151,20 @@ async function guardarArchivoEnDrive(mediaId, nombreArchivo, mimeType) {
   if (!drive || !DRIVE_FOLDER_ID) return null;
 
   try {
-    // 1. Obtener URL de descarga desde Meta
+    // 1. Consulta URL de descarga en la API de Meta
     const mediaRes = await fetch(`https://graph.facebook.com/v18.0/${mediaId}`, {
       headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}` }
     });
     const mediaData = await mediaRes.json();
     if (!mediaData.url) return null;
 
-    // 2. Descargar con Bearer token en cabecera limpia
-    const fileRes = await fetch(mediaData.url, {
-      headers: {
-        'Authorization': `Bearer ${WHATSAPP_TOKEN}`,
-        'User-Agent': 'Mozilla/5.0'
-      }
-    });
+    // 2. Descarga el buffer siguiendo las redirecciones de la CDN de Meta
+    const buffer = await descargarBufferMeta(mediaData.url, WHATSAPP_TOKEN);
 
-    const arrayBuffer = await fileRes.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-
-    // 3. Crear o buscar subcarpeta del mes
+    // 3. Obtiene o crea carpeta del mes en Drive
     const idCarpetaDestino = await obtenerOCrearCarpetaMes(DRIVE_FOLDER_ID);
 
-    // 4. Subir a Drive
+    // 4. Sube el buffer a Google Drive
     const bufferStream = new stream.PassThrough();
     bufferStream.end(buffer);
 
@@ -166,7 +187,7 @@ async function guardarArchivoEnDrive(mediaId, nombreArchivo, mimeType) {
 
     return driveRes.data.webViewLink;
   } catch (error) {
-    console.error('❌ Error descarga/subida:', error.message);
+    console.error('❌ Error en subida a Drive:', error.message);
     return null;
   }
 }
@@ -353,7 +374,7 @@ app.post('/webhook', async (req, res) => {
       }
     }
 
-    // 3. ARCHIVOS / IMÁGENES
+    // 3. ARCHIVOS / IMÁGENES (Acepta fotos de Cámara/Galería y PDFs)
     else if (msg.type === 'document' || msg.type === 'image') {
       const registroPendiente = ultimosRegistros[from];
 
@@ -361,7 +382,7 @@ app.post('/webhook', async (req, res) => {
         await enviarTexto(from, '⏳ Subiendo factura a Google Drive...');
 
         const mediaId = msg.type === 'document' ? msg.document.id : msg.image.id;
-        const mimeType = msg.type === 'document' ? msg.document.mime_type : msg.image.mime_type;
+        const mimeType = msg.type === 'document' ? (msg.document.mime_type || 'application/pdf') : (msg.image.mime_type || 'image/jpeg');
         const ext = msg.type === 'document' ? (msg.document.filename?.split('.').pop() || 'pdf') : 'jpg';
 
         const nombreLimpio = `${registroPendiente.id}_${registroPendiente.obra.replace(/\s+/g, '_')}_${registroPendiente.concepto.replace(/\s+/g, '_')}.${ext}`;
@@ -372,7 +393,7 @@ app.post('/webhook', async (req, res) => {
           await actualizarLinkFacturaEnSheets(registroPendiente.id, driveLink);
           await enviarTexto(from, `✅ *Factura adjuntada exitosamente a Google Drive*\n\n📄 *Enlace:* ${driveLink}`);
         } else {
-          await enviarTexto(from, '⚠️ No se pudo procesar la imagen de WhatsApp. Intenta enviarla como documento PDF o archivo adjunto.');
+          await enviarTexto(from, '⚠️ Hubo un detalle al descargar la imagen. Por favor intenta enviarla nuevamente.');
         }
 
         delete ultimosRegistros[from];
@@ -406,7 +427,7 @@ async function finalizarRegistro(from, sesion) {
     `📄 *Factura:* ${sesion.estatusFactura}`;
 
   if (sesion.estatusFactura === 'Facturado 🟢') {
-    resumen += `\n\n📎 *Por favor, envía el archivo (PDF, XML o Imagen) de la factura a este chat.*`;
+    resumen += `\n\n📎 *Por favor, envía el archivo (PDF, XML o Foto) de la factura a este chat.*`;
     ultimosRegistros[from] = {
       id: sesion.idMovimiento,
       obra: sesion.obra,
