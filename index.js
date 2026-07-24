@@ -17,22 +17,23 @@ const sesiones = {};
 const ultimosRegistros = {};
 
 let sheets, drive;
+
 try {
-  if (process.env.GOOGLE_CREDENTIALS) {
-    const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS);
-    const auth = new google.auth.GoogleAuth({
-      credentials,
-      scopes: [
-        'https://www.googleapis.com/auth/spreadsheets',
-        'https://www.googleapis.com/auth/drive'
-      ],
-    });
-    sheets = google.sheets({ version: 'v4', auth });
-    drive = google.drive({ version: 'v3', auth });
-    console.log('✅ Google APIs configuradas correctamente.');
-  }
+  const oauth2Client = new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    'https://developers.google.com/oauthplayground'
+  );
+
+  oauth2Client.setCredentials({
+    refresh_token: process.env.GOOGLE_REFRESH_TOKEN
+  });
+
+  sheets = google.sheets({ version: 'v4', auth: oauth2Client });
+  drive = google.drive({ version: 'v3', auth: oauth2Client });
+  console.log('✅ Google OAuth2 configurado correctamente.');
 } catch (error) {
-  console.error('❌ Error Google APIs:', error.message);
+  console.error('❌ Error OAuth2 Google:', error.message);
 }
 
 function obtenerCategoria(concepto) {
@@ -115,7 +116,10 @@ function descargarBufferMeta(url, token) {
 }
 
 async function guardarArchivoEnDrive(mediaId, nombreArchivo, mimeType) {
-  if (!drive || !DRIVE_FOLDER_ID) return null;
+  if (!drive || !DRIVE_FOLDER_ID) {
+    console.error('❌ Drive o FOLDER_ID no están inicializados.');
+    return null;
+  }
 
   try {
     const mediaRes = await fetch(`https://graph.facebook.com/v18.0/${mediaId}`, {
@@ -129,37 +133,61 @@ async function guardarArchivoEnDrive(mediaId, nombreArchivo, mimeType) {
     const bufferStream = new stream.PassThrough();
     bufferStream.end(buffer);
 
-    // 1. Crear el archivo en la carpeta compartida
     const driveRes = await drive.files.create({
       requestBody: {
         name: nombreArchivo,
         parents: [DRIVE_FOLDER_ID]
       },
       media: {
-        mimeType: mimeType || 'image/jpeg',
+        mimeType: mimeType || 'application/pdf',
         body: bufferStream
       },
-      fields: 'id, webViewLink',
-      supportsAllDrives: true
+      fields: 'id, webViewLink'
     });
 
-    const fileId = driveRes.data.id;
-
-    // 2. TRANSFERIR LA PROPIEDAD Y DAR PERMISOS PUBLICOS AL ENLACE
     try {
-      // Otorgar permiso público de lectura
       await drive.permissions.create({
-        fileId: fileId,
-        requestBody: { role: 'reader', type: 'anyone' },
-        supportsAllDrives: true
+        fileId: driveRes.data.id,
+        requestBody: { role: 'reader', type: 'anyone' }
       });
-    } catch (permError) {
-      console.log('Aviso de permisos:', permError.message);
+    } catch (pErr) {
+      console.log('Aviso Permisos:', pErr.message);
     }
 
     return driveRes.data.webViewLink;
   } catch (error) {
-    console.error('❌ Error en subida a Drive:', error.message);
+    console.error('❌ Error DETALLADO en Drive:', error?.response?.data || error.message);
+    return null;
+  }
+}
+
+async function obtenerUltimoMovimientoDeSheets() {
+  if (!sheets || !SPREADSHEET_ID) return null;
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: 'Hoja 1!A:J'
+    });
+
+    const filas = res.data.values;
+    if (!filas || filas.length < 2) return null;
+
+    // Buscar la última fila que requiera factura y no tenga link adjunto
+    for (let i = filas.length - 1; i >= 1; i--) {
+      const fila = filas[i];
+      const id = fila[0];
+      const obra = fila[2];
+      const concepto = fila[6];
+      const estatus = fila[8];
+      const link = fila[9];
+
+      if ((estatus === 'Facturado 🟢' || estatus === 'Pendiente 🟡') && (!link || link === 'N/A')) {
+        return { id, obra, concepto };
+      }
+    }
+    return null;
+  } catch (error) {
+    console.error('❌ Error leyendo Sheets:', error.message);
     return null;
   }
 }
@@ -311,7 +339,7 @@ app.post('/webhook', async (req, res) => {
             { id: 'SUB_BBVARigo', title: 'BBVA Rigo' },
             { id: 'SUB_BBVABeto', title: 'BBVA Beto' }
           ]);
-        } else if (respuestaId === 'PAY_Tarjeta') {
+        } else if (respuestaId?.startsWith('PAY_Tarjeta')) {
           sesion.metodo = 'Tarjeta';
           await enviarBotones(from, '💳 *Selecciona la tarjeta:*', [
             { id: 'SUB_NU', title: 'NU' },
@@ -341,7 +369,12 @@ app.post('/webhook', async (req, res) => {
         await finalizarRegistro(from, sesion);
       }
     } else if (msg.type === 'document' || msg.type === 'image') {
-      const registroPendiente = ultimosRegistros[from];
+      let registroPendiente = ultimosRegistros[from];
+
+      // Si se reinició el servidor o no está en memoria, buscar la última fila pendiente en Sheets
+      if (!registroPendiente) {
+        registroPendiente = await obtenerUltimoMovimientoDeSheets();
+      }
 
       if (registroPendiente) {
         await enviarTexto(from, '⏳ Subiendo factura a Google Drive...');
@@ -360,10 +393,12 @@ app.post('/webhook', async (req, res) => {
           await actualizarLinkFacturaEnSheets(registroPendiente.id, driveLink);
           await enviarTexto(from, `✅ *Factura adjuntada exitosamente a Google Drive*\n\n📄 *Enlace:* ${driveLink}`);
         } else {
-          await enviarTexto(from, '⚠️ Ocurrió un error al subir el archivo a Drive. Revisa los permisos.');
+          await enviarTexto(from, '⚠️ Ocurrió un error al subir el archivo a Drive. Revisa la consola de Render.');
         }
 
         delete ultimosRegistros[from];
+      } else {
+        await enviarTexto(from, '⚠️ No se encontró ningún gasto pendiente de factura para asociar este archivo.');
       }
     }
 
