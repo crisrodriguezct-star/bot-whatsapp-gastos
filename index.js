@@ -114,40 +114,6 @@ function descargarBufferMeta(url, token) {
   });
 }
 
-async function obtenerOCrearCarpetaMes(folderIdPadre) {
-  if (!drive || !folderIdPadre) return folderIdPadre;
-
-  const fechaActual = new Date();
-  const meses = ['01_Enero', '02_Febrero', '03_Marzo', '04_Abril', '05_Mayo', '06_Junio', '07_Julio', '08_Agosto', '09_Septiembre', '10_Octubre', '11_Noviembre', '12_Diciembre'];
-  const nombreCarpeta = `${fechaActual.getFullYear()}/${meses[fechaActual.getMonth()]}`;
-
-  try {
-    const query = `'${folderIdPadre}' in parents and name = '${nombreCarpeta}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
-    const res = await drive.files.list({
-      q: query,
-      fields: 'files(id, name)'
-    });
-
-    if (res.data.files.length > 0) {
-      return res.data.files[0].id;
-    } else {
-      const fileMetadata = {
-        name: nombreCarpeta,
-        mimeType: 'application/vnd.google-apps.folder',
-        parents: [folderIdPadre]
-      };
-      const carpetaCreada = await drive.files.create({
-        requestBody: fileMetadata,
-        fields: 'id'
-      });
-      return carpetaCreada.data.id;
-    }
-  } catch (error) {
-    console.error('❌ Error carpeta Drive:', error.message);
-    return folderIdPadre;
-  }
-}
-
 async function guardarArchivoEnDrive(mediaId, nombreArchivo, mimeType) {
   if (!drive || !DRIVE_FOLDER_ID) return null;
 
@@ -159,16 +125,15 @@ async function guardarArchivoEnDrive(mediaId, nombreArchivo, mimeType) {
     if (!mediaData.url) return null;
 
     const buffer = await descargarBufferMeta(mediaData.url, WHATSAPP_TOKEN);
-    const idCarpetaDestino = await obtenerOCrearCarpetaMes(DRIVE_FOLDER_ID);
 
     const bufferStream = new stream.PassThrough();
     bufferStream.end(buffer);
 
-    // SOLUCIÓN AL ERROR DE STORAGE QUOTA EN DRIVE
+    // Subida directa a la carpeta principal del usuario
     const driveRes = await drive.files.create({
       requestBody: {
         name: nombreArchivo,
-        parents: [idCarpetaDestino]
+        parents: [DRIVE_FOLDER_ID]
       },
       media: {
         mimeType: mimeType || 'image/jpeg',
@@ -177,7 +142,6 @@ async function guardarArchivoEnDrive(mediaId, nombreArchivo, mimeType) {
       fields: 'id, webViewLink'
     });
 
-    // Otorgar permisos globales al archivo subido
     await drive.permissions.create({
       fileId: driveRes.data.id,
       requestBody: { role: 'reader', type: 'anyone' }
@@ -376,7 +340,9 @@ app.post('/webhook', async (req, res) => {
         const mimeType = msg.type === 'document' ? (msg.document.mime_type || 'application/pdf') : (msg.image.mime_type || 'image/jpeg');
         const ext = msg.type === 'document' ? (msg.document.filename?.split('.').pop() || 'pdf') : 'jpg';
 
-        const nombreLimpio = `${registroPendiente.id}_${registroPendiente.obra.replace(/\s+/g, '_')}_${registroPendiente.concepto.replace(/\s+/g, '_')}.${ext}`;
+        const fechaObj = new Date();
+        const mesAnio = `${fechaObj.getFullYear()}-${String(fechaObj.getMonth() + 1).padStart(2, '0')}`;
+        const nombreLimpio = `${mesAnio}_${registroPendiente.id}_${registroPendiente.obra.replace(/\s+/g, '_')}_${registroPendiente.concepto.replace(/\s+/g, '_')}.${ext}`;
 
         const driveLink = await guardarArchivoEnDrive(mediaId, nombreLimpio, mimeType);
 
@@ -384,7 +350,7 @@ app.post('/webhook', async (req, res) => {
           await actualizarLinkFacturaEnSheets(registroPendiente.id, driveLink);
           await enviarTexto(from, `✅ *Factura adjuntada exitosamente a Google Drive*\n\n📄 *Enlace:* ${driveLink}`);
         } else {
-          await enviarTexto(from, '⚠️ Ocurrió un error al subir el archivo a Drive. Revisa la consola.');
+          await enviarTexto(from, '⚠️ Ocurrió un error al subir el archivo a Drive. Revisa los permisos.');
         }
 
         delete ultimosRegistros[from];
