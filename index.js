@@ -226,7 +226,7 @@ async function calcularSaldoEfectivoPorObra(obraBuscada) {
   try {
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: 'Hoja 1!A:F'
+      range: 'Hoja 1!A:I'
     });
     const filas = res.data.values || [];
     let ingresos = 0;
@@ -237,6 +237,10 @@ async function calcularSaldoEfectivoPorObra(obraBuscada) {
       const obra = fila[2] || '';
       const metodo = fila[3] || '';
       let montoStr = fila[5] || '0';
+      const estatus = fila[8] || '';
+
+      if (estatus.includes('CANCELADO')) continue;
+
       montoStr = montoStr.toString().replace('$', '').replace(/,/g, '').trim();
       const monto = parseFloat(montoStr) || 0;
 
@@ -252,6 +256,41 @@ async function calcularSaldoEfectivoPorObra(obraBuscada) {
   } catch (error) {
     console.error('❌ Error calculando saldo por obra:', error.message);
     return 0;
+  }
+}
+
+async function cancelarUltimoRegistro() {
+  if (!sheets || !SPREADSHEET_ID) return null;
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: 'Hoja 1!A:I'
+    });
+    const filas = res.data.values || [];
+    if (filas.length < 2) return null;
+
+    for (let i = filas.length - 1; i >= 1; i--) {
+      const estatusActual = filas[i][8] || '';
+      if (!estatusActual.includes('CANCELADO')) {
+        const filaIndex = i + 1;
+        const idMovimiento = filas[i][0];
+        const concepto = filas[i][6];
+        const monto = filas[i][5];
+
+        await sheets.spreadsheets.values.update({
+          spreadsheetId: SPREADSHEET_ID,
+          range: `Hoja 1!I${filaIndex}`,
+          valueInputOption: 'USER_ENTERED',
+          requestBody: { values: [['CANCELADO ⚪']] }
+        });
+
+        return { idMovimiento, concepto, monto };
+      }
+    }
+    return null;
+  } catch (error) {
+    console.error('❌ Error cancelando registro:', error.message);
+    return null;
   }
 }
 
@@ -309,7 +348,9 @@ async function obtenerListaMovimientosPendientes() {
       montoStr = montoStr.toString().replace('$', '').trim();
 
       if (estatus === 'Pendiente 🟡' || (!link || link === 'N/A')) {
-        pendientes.push({ id, obra, concepto, monto: montoStr });
+        if (!estatus.includes('CANCELADO')) {
+          pendientes.push({ id, obra, concepto, monto: montoStr });
+        }
       }
       if (pendientes.length >= 10) break;
     }
@@ -401,7 +442,18 @@ app.post('/webhook', async (req, res) => {
     if (msg.type === 'text') {
       const textBody = msg.text.body.trim();
 
-      if (/^(facturas|pendientes|factura)$/i.test(textBody)) {
+      if (/^(cancelar|cancelar ultimo|borrar ultimo)$/i.test(textBody)) {
+        const cancelado = await cancelarUltimoRegistro();
+        if (cancelado) {
+          await enviarTexto(from, `⚪ *Último registro cancelado correctamente:*\n\n🆔 *ID:* ${cancelado.idMovimiento}\n📝 *Concepto:* ${cancelado.concepto}\n💵 *Monto:* $${cancelado.monto}`);
+        } else {
+          await enviarTexto(from, '⚠️ No se encontró ningún registro previo para cancelar.');
+        }
+        res.sendStatus(200);
+        return;
+      }
+
+      if (/^(facturas|pendientes|factura|pendiente|ver pendientes|ver facturas)$/i.test(textBody)) {
         const pendientes = await obtenerListaMovimientosPendientes();
         if (pendientes.length === 0) {
           await enviarTexto(from, '🎉 ¡Excelente! No tienes ningún gasto pendiente de factura.');
