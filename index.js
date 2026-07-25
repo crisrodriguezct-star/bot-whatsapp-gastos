@@ -16,6 +16,22 @@ const DRIVE_FOLDER_ID = process.env.DRIVE_FOLDER_ID;
 const sesiones = {};
 const ultimosRegistros = {};
 
+// Mapeo de Números de Teléfono a Nombres
+const DIRECTORIO_USUARIOS = {
+  '3336673972': 'Paty',
+  '3314107902': 'Rigo',
+  '3331747434': 'Miguelonches',
+  '3314856080': 'Gato',
+  '3313008395': 'Cris'
+};
+
+function obtenerNombreUsuario(numeroFrom) {
+  if (!numeroFrom) return 'Usuario WhatsApp';
+  // Extrae los últimos 10 dígitos del número de WhatsApp para hacer match exacto
+  const diezDigitos = numeroFrom.replace(/\D/g, '').slice(-10);
+  return DIRECTORIO_USUARIOS[diezDigitos] || `Usuario (${diezDigitos})`;
+}
+
 let sheets, drive;
 
 try {
@@ -47,7 +63,7 @@ function obtenerCategoria(concepto) {
 }
 
 function enviarPeticionMeta(payload) {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) {
       console.error('❌ Falta WHATSAPP_TOKEN o PHONE_NUMBER_ID');
       return resolve();
@@ -435,7 +451,7 @@ async function guardarEnSheets(datos) {
       datos.categoria,
       datos.monto,
       datos.concepto,
-      'Bot WhatsApp',
+      datos.usuario || 'Usuario WhatsApp',
       datos.estatusFactura || 'No Requiere 🔴',
       datos.linkFactura || 'N/A'
     ]];
@@ -446,7 +462,7 @@ async function guardarEnSheets(datos) {
       valueInputOption: 'USER_ENTERED',
       requestBody: { values: valores },
     });
-    console.log(`✅ Registrado en Sheets: ${datos.idMovimiento}`);
+    console.log(`✅ Registrado en Sheets por ${datos.usuario}: ${datos.idMovimiento}`);
   } catch (error) {
     console.error('❌ Error en Sheets:', error.message);
   }
@@ -498,6 +514,7 @@ app.post('/webhook', async (req, res) => {
   if (body.object && body.entry?.[0]?.changes?.[0]?.value?.messages?.[0]) {
     const msg = body.entry[0].changes[0].value.messages[0];
     const from = msg.from;
+    const nombreUsuario = obtenerNombreUsuario(from);
 
     if (msg.type === 'text') {
       const textBody = msg.text.body.trim();
@@ -542,7 +559,7 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // PRESUPUESTO LIBERADO DE FARMACIA (Reconoce: presupuesto, ingreso, ingreso farmacia, pago farmacia)
+      // PRESUPUESTO LIBERADO DE FARMACIA
       const matchPresupuesto = textBody.match(/^(presupuesto|ingreso|ingreso farmacia|pago farmacia)\s+(\d+(\.\d+)?)/i);
       if (matchPresupuesto) {
         const montoIngreso = parseFloat(matchPresupuesto[2]);
@@ -552,10 +569,11 @@ app.post('/webhook', async (req, res) => {
           tipoAccion: 'PRESUPUESTO',
           idMovimiento,
           monto: montoIngreso,
-          concepto: 'Presupuesto Liberado / Pago Farmacia'
+          concepto: 'Presupuesto Liberado / Pago Farmacia',
+          usuario: nombreUsuario
         };
 
-        await enviarBotones(from, `🏦 *Presupuesto Farmacia:* $${montoIngreso.toFixed(2)}\n\n🏗️ *¿A qué sucursal ingresa este pago?*`, [
+        await enviarBotones(from, `🏦 *Presupuesto Farmacia:* $${montoIngreso.toFixed(2)}\n👤 *Registra:* ${nombreUsuario}\n\n🏗️ *¿A qué sucursal ingresa este pago?*`, [
           { id: 'ACTOBRA_Pelicano', title: 'Pelicano' },
           { id: 'ACTOBRA_Caldera', title: 'Caldera' },
           { id: 'ACTOBRA_Nativitas', title: 'Nativitas' }
@@ -567,7 +585,7 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // ENTREGA DE CAJA CHICA A PAPÁS (Reconoce: caja, efectivo, dotacion, fondo)
+      // ENTREGA DE CAJA CHICA A PAPÁS
       const matchCaja = textBody.match(/^(caja|efectivo|dotacion|fondo)\s+(\d+(\.\d+)?)/i);
       if (matchCaja) {
         const montoCaja = parseFloat(matchCaja[2]);
@@ -577,10 +595,11 @@ app.post('/webhook', async (req, res) => {
           tipoAccion: 'CAJA_CHICA',
           idMovimiento,
           monto: montoCaja,
-          concepto: 'Dotación de Efectivo (Caja Chica)'
+          concepto: 'Dotación de Efectivo (Caja Chica)',
+          usuario: nombreUsuario
         };
 
-        await enviarBotones(from, `💵 *Entrega de Efectivo:* $${montoCaja.toFixed(2)}\n\n🏗️ *¿Para la Caja Chica de qué sucursal?*`, [
+        await enviarBotones(from, `💵 *Entrega de Efectivo:* $${montoCaja.toFixed(2)}\n👤 *Registra:* ${nombreUsuario}\n\n🏗️ *¿Para la Caja Chica de qué sucursal?*`, [
           { id: 'ACTOBRA_Pelicano', title: 'Pelicano' },
           { id: 'ACTOBRA_Caldera', title: 'Caldera' },
           { id: 'ACTOBRA_Nativitas', title: 'Nativitas' }
@@ -620,10 +639,11 @@ app.post('/webhook', async (req, res) => {
         metodo: 'Efectivo',
         subMetodo: '',
         estatusFactura: 'No Requiere 🔴',
-        linkFactura: 'N/A'
+        linkFactura: 'N/A',
+        usuario: nombreUsuario
       };
 
-      await enviarBotones(from, `📝 *Gasto:* ${concepto} ($${monto.toFixed(2)})\n\n🏗️ *Selecciona la Sucursal:*`, [
+      await enviarBotones(from, `📝 *Gasto:* ${concepto} ($${monto.toFixed(2)})\n👤 *Registra:* ${nombreUsuario}\n\n🏗️ *Selecciona la Sucursal:*`, [
         { id: 'OBRA_Pelicano', title: 'Pelicano' },
         { id: 'OBRA_Caldera', title: 'Caldera' },
         { id: 'OBRA_Nativitas', title: 'Nativitas' }
@@ -702,6 +722,7 @@ app.post('/webhook', async (req, res) => {
           categoria: sesion.tipoAccion === 'PRESUPUESTO' ? 'Cobro Cliente' : 'Fondo de Caja',
           monto: sesion.monto,
           concepto: sesion.concepto,
+          usuario: sesion.usuario,
           estatusFactura: 'No Requiere 🔴',
           linkFactura: 'N/A'
         });
@@ -710,9 +731,9 @@ app.post('/webhook', async (req, res) => {
         
         let msgRespuesta = '';
         if (sesion.tipoAccion === 'PRESUPUESTO') {
-          msgRespuesta = `🏦 *Presupuesto de Farmacia Registrado*\n\n🏗️ *Sucursal:* ${obraElegida}\n💵 *Monto:* $${sesion.monto.toFixed(2)}\n📊 *Total Acumulado Semana:* $${saldosActualizados.presupuestoGlobal.toFixed(2)} MXN`;
+          msgRespuesta = `🏦 *Presupuesto de Farmacia Registrado*\n\n👤 *Registró:* ${sesion.usuario}\n🏗️ *Sucursal:* ${obraElegida}\n💵 *Monto:* $${sesion.monto.toFixed(2)}\n📊 *Total Acumulado Semana:* $${saldosActualizados.presupuestoGlobal.toFixed(2)} MXN`;
         } else {
-          msgRespuesta = `💵 *Entrega de Efectivo (Caja Chica) Registrada*\n\n🏗️ *Sucursal:* ${obraElegida}\n💵 *Monto Entregado:* $${sesion.monto.toFixed(2)}\n💰 *Nuevo Efectivo Disponible en Mano:* $${saldosActualizados.cajaChica.toFixed(2)} MXN`;
+          msgRespuesta = `💵 *Entrega de Efectivo (Caja Chica) Registrada*\n\n👤 *Registró:* ${sesion.usuario}\n🏗️ *Sucursal:* ${obraElegida}\n💵 *Monto Entregado:* $${sesion.monto.toFixed(2)}\n💰 *Nuevo Efectivo Disponible en Mano:* $${saldosActualizados.cajaChica.toFixed(2)} MXN`;
         }
 
         await enviarTexto(from, msgRespuesta);
@@ -797,7 +818,7 @@ app.post('/webhook', async (req, res) => {
 
         if (driveLink) {
           await actualizarLinkYEstatusEnSheets(registroPendiente.id, driveLink);
-          await enviarTexto(from, `✅ *Factura adjuntada y estatus actualizado a Facturado 🟢*\n\n📄 *Enlace:* ${driveLink}`);
+          await enviarTexto(from, `✅ *Factura adjuntada por ${nombreUsuario} y estatus actualizado a Facturado 🟢*\n\n📄 *Enlace:* ${driveLink}`);
         } else {
           await enviarTexto(from, '⚠️ Ocurrió un error al subir el archivo a Drive.');
         }
@@ -828,6 +849,7 @@ async function finalizarRegistro(from, sesion) {
   
   let resumen = `✅ *Gasto Registrado con Éxito*\n\n` +
     `🆔 *ID:* ${sesion.idMovimiento}\n` +
+    `👤 *Registró:* ${sesion.usuario}\n` +
     `💵 *Monto:* $${sesion.monto.toFixed(2)}\n` +
     `📝 *Concepto:* ${sesion.concepto}\n` +
     `🏗️ *Obra:* ${sesion.obra}\n` +
