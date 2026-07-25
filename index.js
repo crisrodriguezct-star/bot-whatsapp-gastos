@@ -542,8 +542,8 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // PRESUPUESTO LIBERADO DE FARMACIA
-      const matchPresupuesto = textBody.match(/^(presupuesto|ingreso farmacia|pago farmacia)\s+(\d+(\.\d+)?)/i);
+      // PRESUPUESTO LIBERADO DE FARMACIA (Reconoce: presupuesto, ingreso, ingreso farmacia, pago farmacia)
+      const matchPresupuesto = textBody.match(/^(presupuesto|ingreso|ingreso farmacia|pago farmacia)\s+(\d+(\.\d+)?)/i);
       if (matchPresupuesto) {
         const montoIngreso = parseFloat(matchPresupuesto[2]);
         const idMovimiento = 'ING-' + Date.now().toString().slice(-6);
@@ -567,7 +567,7 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // ENTREGA DE CAJA CHICA A PAPÁS
+      // ENTREGA DE CAJA CHICA A PAPÁS (Reconoce: caja, efectivo, dotacion, fondo)
       const matchCaja = textBody.match(/^(caja|efectivo|dotacion|fondo)\s+(\d+(\.\d+)?)/i);
       if (matchCaja) {
         const montoCaja = parseFloat(matchCaja[2]);
