@@ -11,19 +11,6 @@ const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
-const DRIVE_FOLDER_ID = process.env.const express = require('express');
-const { google } = require('googleapis');
-const https = require('https');
-const stream = require('stream');
-
-const app = express();
-app.use(express.json());
-
-const PORT = process.env.PORT || 3000;
-const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
-const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
-const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
-const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 const DRIVE_FOLDER_ID = process.env.DRIVE_FOLDER_ID;
 
 const sesiones = {};
@@ -234,7 +221,7 @@ async function guardarArchivoEnDrive(mediaId, nombreArchivo, mimeType) {
   }
 }
 
-async function calcularSaldosPorObra(obraBuscada) {
+async function calcularSaldosSemanalesPorObra(obraBuscada) {
   if (!sheets || !SPREADSHEET_ID) return { presupuestoGlobal: 0, cajaChica: 0 };
   try {
     const res = await sheets.spreadsheets.values.get({
@@ -246,14 +233,29 @@ async function calcularSaldosPorObra(obraBuscada) {
     let dotacionesCaja = 0;
     let egresosEfectivo = 0;
 
+    const hoy = new Date();
+    const diaSemana = hoy.getDay();
+    const diferenciaLunes = hoy.getDate() - diaSemana + (diaSemana === 0 ? -6 : 1);
+    const inicioSemana = new Date(hoy.setDate(diferenciaLunes));
+    inicioSemana.setHours(0, 0, 0, 0);
+
     for (let i = 1; i < filas.length; i++) {
       const fila = filas[i];
+      const fechaTexto = fila[1] || '';
       const obra = fila[2] || '';
       const metodo = fila[3] || '';
       let montoStr = fila[5] || '0';
       const estatus = fila[8] || '';
 
       if (estatus.includes('CANCELADO')) continue;
+
+      if (fechaTexto) {
+        const partesFecha = fechaTexto.split(',')[0].split('/');
+        if (partesFecha.length === 3) {
+          const fechaFila = new Date(partesFecha[2], partesFecha[1] - 1, partesFecha[0]);
+          if (fechaFila < inicioSemana) continue;
+        }
+      }
 
       montoStr = montoStr.toString().replace('$', '').replace(/,/g, '').trim();
       const monto = parseFloat(montoStr) || 0;
@@ -273,7 +275,7 @@ async function calcularSaldosPorObra(obraBuscada) {
       cajaChica: dotacionesCaja - egresosEfectivo
     };
   } catch (error) {
-    console.error('❌ Error calculando saldos por obra:', error.message);
+    console.error('❌ Error calculando saldos semanales por obra:', error.message);
     return { presupuestoGlobal: 0, cajaChica: 0 };
   }
 }
@@ -488,8 +490,8 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      if (/^(saldo|reporte|resumen|mes)$/i.test(textBody)) {
-        await enviarBotones(from, '💰 *¿De qué Sucursal deseas consultar el Saldo del Mes?*', [
+      if (/^(saldo|reporte|resumen|semana|corte)$/i.test(textBody)) {
+        await enviarBotones(from, '💰 *¿De qué Sucursal deseas consultar el Saldo de la Semana?*', [
           { id: 'SALDO_Pelicano', title: 'Pelicano' },
           { id: 'SALDO_Caldera', title: 'Caldera' },
           { id: 'SALDO_Nativitas', title: 'Nativitas' }
@@ -603,10 +605,10 @@ app.post('/webhook', async (req, res) => {
           'SALDO_Salud': 'Suc. Salud'
         };
         const obraSeleccionada = obraMap[respuestaId] || 'Suc. Salud';
-        const saldos = await calcularSaldosPorObra(obraSeleccionada);
-        await enviarTexto(from, `📊 *Resumen Financiero del Mes - ${obraSeleccionada}*\n\n` +
-          `🏦 *Presupuesto Liberado Farmacia:* $${saldos.presupuestoGlobal.toFixed(2)} MXN\n` +
-          `💵 *Saldo Efectivo Disponible (Mano):* $${saldos.cajaChica.toFixed(2)} MXN`);
+        const saldos = await calcularSaldosSemanalesPorObra(obraSeleccionada);
+        await enviarTexto(from, `📊 *Corte Semanal - ${obraSeleccionada}*\n\n` +
+          `🏦 *Presupuesto Semana Farmacia:* $${saldos.presupuestoGlobal.toFixed(2)} MXN\n` +
+          `💵 *Efectivo Disponible Caja Chica:* $${saldos.cajaChica.toFixed(2)} MXN`);
         res.sendStatus(200);
         return;
       }
@@ -663,11 +665,11 @@ app.post('/webhook', async (req, res) => {
           linkFactura: 'N/A'
         });
 
-        const saldosActualizados = await calcularSaldosPorObra(obraElegida);
+        const saldosActualizados = await calcularSaldosSemanalesPorObra(obraElegida);
         
         let msgRespuesta = '';
         if (sesion.tipoAccion === 'PRESUPUESTO') {
-          msgRespuesta = `🏦 *Presupuesto de Farmacia Registrado*\n\n🏗️ *Sucursal:* ${obraElegida}\n💵 *Monto:* $${sesion.monto.toFixed(2)}\n📊 *Total Acumulado Farmacia:* $${saldosActualizados.presupuestoGlobal.toFixed(2)} MXN`;
+          msgRespuesta = `🏦 *Presupuesto de Farmacia Registrado*\n\n🏗️ *Sucursal:* ${obraElegida}\n💵 *Monto:* $${sesion.monto.toFixed(2)}\n📊 *Total Acumulado Semana:* $${saldosActualizados.presupuestoGlobal.toFixed(2)} MXN`;
         } else {
           msgRespuesta = `💵 *Entrega de Efectivo (Caja Chica) Registrada*\n\n🏗️ *Sucursal:* ${obraElegida}\n💵 *Monto Entregado:* $${sesion.monto.toFixed(2)}\n💰 *Nuevo Efectivo Disponible en Mano:* $${saldosActualizados.cajaChica.toFixed(2)} MXN`;
         }
