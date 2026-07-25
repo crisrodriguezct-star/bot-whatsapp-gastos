@@ -89,6 +89,33 @@ async function enviarBotones(to, textoBody, botones) {
   });
 }
 
+async function enviarLista(to, textoBody, tituloBoton, tituloSeccion, opciones) {
+  const rowsPayload = opciones.map(o => ({
+    id: o.id,
+    title: o.title.substring(0, 24),
+    description: o.description ? o.description.substring(0, 72) : ''
+  }));
+
+  await enviarPeticionMeta({
+    messaging_product: 'whatsapp',
+    to,
+    type: 'interactive',
+    interactive: {
+      type: 'list',
+      body: { text: textoBody },
+      action: {
+        button: tituloBoton.substring(0, 20),
+        sections: [
+          {
+            title: tituloSeccion.substring(0, 24),
+            rows: rowsPayload
+          }
+        ]
+      }
+    }
+  });
+}
+
 function descargarBufferMeta(url, token) {
   return new Promise((resolve, reject) => {
     const opciones = {
@@ -245,13 +272,12 @@ async function obtenerListaMovimientosPendientes() {
       const estatus = fila[8];
       const link = fila[9];
 
-      // Formatear monto limpiando caracteres dobles si ya trae el signo $
       montoStr = montoStr.toString().replace('$', '').trim();
 
       if (estatus === 'Pendiente 🟡' || (!link || link === 'N/A')) {
         pendientes.push({ id, obra, concepto, monto: montoStr });
       }
-      if (pendientes.length >= 3) break;
+      if (pendientes.length >= 10) break; // Hasta 10 elementos permitidos en lista
     }
     return pendientes;
   } catch (error) {
@@ -346,11 +372,12 @@ app.post('/webhook', async (req, res) => {
         if (pendientes.length === 0) {
           await enviarTexto(from, '🎉 ¡Excelente! No tienes ningún gasto pendiente de factura.');
         } else {
-          const botones = pendientes.map(p => ({
+          const opciones = pendientes.map(p => ({
             id: `SEL_${p.id}`,
-            title: `${p.concepto.slice(0, 10)} $${p.monto}`
+            title: p.concepto,
+            description: `${p.obra} | $${p.monto} (${p.id})`
           }));
-          await enviarBotones(from, '📋 *Selecciona el gasto que vas a facturar:*', botones);
+          await enviarLista(from, '📋 *Gastos pendientes de factura:*', 'Ver Pendientes', 'Selecciona uno:', opciones);
         }
         res.sendStatus(200);
         return;
@@ -385,13 +412,17 @@ app.post('/webhook', async (req, res) => {
         linkFactura: 'N/A'
       };
 
-      await enviarBotones(from, `📝 *Gasto:* ${concepto} ($${monto.toFixed(2)})\n\n🏗️ *Selecciona la Sucursal:*`, [
-        { id: 'OBRA_Pelicano', title: 'Pelicano' },
-        { id: 'OBRA_Caldera', title: 'Caldera' },
-        { id: 'OBRA_Nativitas', title: 'Nativitas' }
-      ]);
+      const sucursales = [
+        { id: 'OBRA_Pelicano', title: 'Suc. Pelicano', description: 'Sucursal Pelicano' },
+        { id: 'OBRA_Caldera', title: 'Suc. Caldera', description: 'Sucursal Caldera' },
+        { id: 'OBRA_Nativitas', title: 'Suc. Nativitas', description: 'Sucursal Nativitas' },
+        { id: 'OBRA_Salud', title: 'Suc. Salud', description: 'Sucursal Salud' }
+      ];
+
+      await enviarLista(from, `📝 *Gasto:* ${concepto} ($${monto.toFixed(2)})\n\n🏗️ *Selecciona la Sucursal:*`, 'Ver Sucursales', 'Sucursales Disponibles', sucursales);
+
     } else if (msg.type === 'interactive') {
-      const respuestaId = msg.interactive.button_reply?.id;
+      const respuestaId = msg.interactive.button_reply?.id || msg.interactive.list_reply?.id;
 
       if (respuestaId?.startsWith('SEL_')) {
         const idSelec = respuestaId.replace('SEL_', '');
@@ -426,7 +457,8 @@ app.post('/webhook', async (req, res) => {
         const obraMap = {
           'OBRA_Pelicano': 'Suc. Pelicano',
           'OBRA_Caldera': 'Suc. Caldera',
-          'OBRA_Nativitas': 'Suc. Nativitas'
+          'OBRA_Nativitas': 'Suc. Nativitas',
+          'OBRA_Salud': 'Suc. Salud'
         };
         sesion.obra = obraMap[respuestaId] || 'Suc. Salud';
 
@@ -524,7 +556,7 @@ async function pedirFactura(from, sesion) {
 
 async function finalizarRegistro(from, sesion) {
   await guardarEnSheets(sesion);
-  const metodoTexto = sesion.subMetodo ? `${sesion.metodo} (${sesion.subMetodo})` : sesion.metodo;
+  const metodoTexto = sesion.subMetodo ? `${sesion.metodo} (${sesion.subMetodo})` : datosMetodo(sesion);
   
   let resumen = `✅ *Gasto Registrado con Éxito*\n\n` +
     `🆔 *ID:* ${sesion.idMovimiento}\n` +
@@ -545,6 +577,10 @@ async function finalizarRegistro(from, sesion) {
 
   await enviarTexto(from, resumen);
   delete sesiones[from];
+}
+
+function datosMetodo(s) {
+  return s.subMetodo ? `${s.metodo} (${s.subMetodo})` : s.metodo;
 }
 
 app.listen(PORT, () => console.log(`Servidor en puerto ${PORT}`));
