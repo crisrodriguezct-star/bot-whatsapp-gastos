@@ -11,6 +11,19 @@ const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
+const DRIVE_FOLDER_ID = process.env.const express = require('express');
+const { google } = require('googleapis');
+const https = require('https');
+const stream = require('stream');
+
+const app = express();
+app.use(express.json());
+
+const PORT = process.env.PORT || 3000;
+const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
+const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
+const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
+const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 const DRIVE_FOLDER_ID = process.env.DRIVE_FOLDER_ID;
 
 const sesiones = {};
@@ -221,16 +234,17 @@ async function guardarArchivoEnDrive(mediaId, nombreArchivo, mimeType) {
   }
 }
 
-async function calcularSaldoEfectivoPorObra(obraBuscada) {
-  if (!sheets || !SPREADSHEET_ID) return 0;
+async function calcularSaldosPorObra(obraBuscada) {
+  if (!sheets || !SPREADSHEET_ID) return { presupuestoGlobal: 0, cajaChica: 0 };
   try {
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
       range: 'Hoja 1!A:I'
     });
     const filas = res.data.values || [];
-    let ingresos = 0;
-    let egresos = 0;
+    let presupuestoGlobal = 0;
+    let dotacionesCaja = 0;
+    let egresosEfectivo = 0;
 
     for (let i = 1; i < filas.length; i++) {
       const fila = filas[i];
@@ -245,17 +259,22 @@ async function calcularSaldoEfectivoPorObra(obraBuscada) {
       const monto = parseFloat(montoStr) || 0;
 
       if (obra.toLowerCase() === obraBuscada.toLowerCase()) {
-        if (metodo.includes('Ingreso Efectivo')) {
-          ingresos += monto;
+        if (metodo.includes('Ingreso Presupuesto')) {
+          presupuestoGlobal += monto;
+        } else if (metodo.includes('Dotación Caja Chica')) {
+          dotacionesCaja += monto;
         } else if (metodo.startsWith('Efectivo')) {
-          egresos += monto;
+          egresosEfectivo += monto;
         }
       }
     }
-    return ingresos - egresos;
+    return {
+      presupuestoGlobal,
+      cajaChica: dotacionesCaja - egresosEfectivo
+    };
   } catch (error) {
-    console.error('❌ Error calculando saldo por obra:', error.message);
-    return 0;
+    console.error('❌ Error calculando saldos por obra:', error.message);
+    return { presupuestoGlobal: 0, cajaChica: 0 };
   }
 }
 
@@ -469,8 +488,8 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      if (/^saldo$/i.test(textBody)) {
-        await enviarBotones(from, '💰 *¿De qué Sucursal deseas consultar el Saldo en Efectivo?*', [
+      if (/^(saldo|reporte|resumen|mes)$/i.test(textBody)) {
+        await enviarBotones(from, '💰 *¿De qué Sucursal deseas consultar el Saldo del Mes?*', [
           { id: 'SALDO_Pelicano', title: 'Pelicano' },
           { id: 'SALDO_Caldera', title: 'Caldera' },
           { id: 'SALDO_Nativitas', title: 'Nativitas' }
@@ -482,30 +501,57 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      const matchIngreso = textBody.match(/^(ingreso|fondo)\s+(\d+(\.\d+)?)/i);
-      if (matchIngreso) {
-        const montoIngreso = parseFloat(matchIngreso[2]);
+      // PRESUPUESTO LIBERADO DE FARMACIA
+      const matchPresupuesto = textBody.match(/^(presupuesto|ingreso farmacia|pago farmacia)\s+(\d+(\.\d+)?)/i);
+      if (matchPresupuesto) {
+        const montoIngreso = parseFloat(matchPresupuesto[2]);
         const idMovimiento = 'ING-' + Date.now().toString().slice(-6);
-        
+
         sesiones[from] = {
-          esIngreso: true,
+          tipoAccion: 'PRESUPUESTO',
           idMovimiento,
           monto: montoIngreso,
-          concepto: 'Dotación / Ingreso de Efectivo'
+          concepto: 'Presupuesto Liberado / Pago Farmacia'
         };
 
-        await enviarBotones(from, `📥 *Ingreso:* $${montoIngreso.toFixed(2)}\n\n🏗️ *¿A qué sucursal ingresará este dinero?*`, [
-          { id: 'INGOBRA_Pelicano', title: 'Pelicano' },
-          { id: 'INGOBRA_Caldera', title: 'Caldera' },
-          { id: 'INGOBRA_Nativitas', title: 'Nativitas' }
+        await enviarBotones(from, `🏦 *Presupuesto Farmacia:* $${montoIngreso.toFixed(2)}\n\n🏗️ *¿A qué sucursal ingresa este pago?*`, [
+          { id: 'ACTOBRA_Pelicano', title: 'Pelicano' },
+          { id: 'ACTOBRA_Caldera', title: 'Caldera' },
+          { id: 'ACTOBRA_Nativitas', title: 'Nativitas' }
         ]);
         await enviarBotones(from, '👇 *Otras Sucursales:*', [
-          { id: 'INGOBRA_Salud', title: 'Salud' }
+          { id: 'ACTOBRA_Salud', title: 'Salud' }
         ]);
         res.sendStatus(200);
         return;
       }
 
+      // ENTREGA DE CAJA CHICA A PAPÁS
+      const matchCaja = textBody.match(/^(caja|efectivo|dotacion|fondo)\s+(\d+(\.\d+)?)/i);
+      if (matchCaja) {
+        const montoCaja = parseFloat(matchCaja[2]);
+        const idMovimiento = 'DOT-' + Date.now().toString().slice(-6);
+
+        sesiones[from] = {
+          tipoAccion: 'CAJA_CHICA',
+          idMovimiento,
+          monto: montoCaja,
+          concepto: 'Dotación de Efectivo (Caja Chica)'
+        };
+
+        await enviarBotones(from, `💵 *Entrega de Efectivo:* $${montoCaja.toFixed(2)}\n\n🏗️ *¿Para la Caja Chica de qué sucursal?*`, [
+          { id: 'ACTOBRA_Pelicano', title: 'Pelicano' },
+          { id: 'ACTOBRA_Caldera', title: 'Caldera' },
+          { id: 'ACTOBRA_Nativitas', title: 'Nativitas' }
+        ]);
+        await enviarBotones(from, '👇 *Otras Sucursales:*', [
+          { id: 'ACTOBRA_Salud', title: 'Salud' }
+        ]);
+        res.sendStatus(200);
+        return;
+      }
+
+      // REGISTRO REGULAR DE GASTOS
       const partes = textBody.split(/\s+/);
       const posibleMonto = parseFloat(partes[partes.length - 1]);
 
@@ -524,7 +570,7 @@ app.post('/webhook', async (req, res) => {
       const categoria = obtenerCategoria(concepto);
 
       sesiones[from] = {
-        esIngreso: false,
+        tipoAccion: 'GASTO',
         idMovimiento,
         concepto,
         monto,
@@ -557,8 +603,10 @@ app.post('/webhook', async (req, res) => {
           'SALDO_Salud': 'Suc. Salud'
         };
         const obraSeleccionada = obraMap[respuestaId] || 'Suc. Salud';
-        const saldoCalc = await calcularSaldoEfectivoPorObra(obraSeleccionada);
-        await enviarTexto(from, `💵 *Saldo disponible en Efectivo*\n🏗️ *${obraSeleccionada}:* $${saldoCalc.toFixed(2)} MXN`);
+        const saldos = await calcularSaldosPorObra(obraSeleccionada);
+        await enviarTexto(from, `📊 *Resumen Financiero del Mes - ${obraSeleccionada}*\n\n` +
+          `🏦 *Presupuesto Liberado Farmacia:* $${saldos.presupuestoGlobal.toFixed(2)} MXN\n` +
+          `💵 *Saldo Efectivo Disponible (Mano):* $${saldos.cajaChica.toFixed(2)} MXN`);
         res.sendStatus(200);
         return;
       }
@@ -592,29 +640,39 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      if (respuestaId?.startsWith('INGOBRA_')) {
+      if (respuestaId?.startsWith('ACTOBRA_')) {
         const obraMap = {
-          'INGOBRA_Pelicano': 'Suc. Pelicano',
-          'INGOBRA_Caldera': 'Suc. Caldera',
-          'INGOBRA_Nativitas': 'Suc. Nativitas',
-          'INGOBRA_Salud': 'Suc. Salud'
+          'ACTOBRA_Pelicano': 'Suc. Pelicano',
+          'ACTOBRA_Caldera': 'Suc. Caldera',
+          'ACTOBRA_Nativitas': 'Suc. Nativitas',
+          'ACTOBRA_Salud': 'Suc. Salud'
         };
         const obraElegida = obraMap[respuestaId] || 'Suc. Salud';
+
+        const metodoRegistrar = sesion.tipoAccion === 'PRESUPUESTO' ? 'Ingreso Presupuesto' : 'Dotación Caja Chica';
 
         await guardarEnSheets({
           idMovimiento: sesion.idMovimiento,
           obra: obraElegida,
-          metodo: 'Ingreso Efectivo',
+          metodo: metodoRegistrar,
           subMetodo: '',
-          categoria: 'Fondo de Caja',
+          categoria: sesion.tipoAccion === 'PRESUPUESTO' ? 'Cobro Cliente' : 'Fondo de Caja',
           monto: sesion.monto,
           concepto: sesion.concepto,
           estatusFactura: 'No Requiere 🔴',
           linkFactura: 'N/A'
         });
 
-        const nuevoSaldo = await calcularSaldoEfectivoPorObra(obraElegida);
-        await enviarTexto(from, `📥 *Ingreso de Efectivo Registrado*\n\n🏗️ *Sucursal:* ${obraElegida}\n💵 *Monto:* $${sesion.monto.toFixed(2)}\n💰 *Nuevo Saldo disponible:* $${nuevoSaldo.toFixed(2)} MXN`);
+        const saldosActualizados = await calcularSaldosPorObra(obraElegida);
+        
+        let msgRespuesta = '';
+        if (sesion.tipoAccion === 'PRESUPUESTO') {
+          msgRespuesta = `🏦 *Presupuesto de Farmacia Registrado*\n\n🏗️ *Sucursal:* ${obraElegida}\n💵 *Monto:* $${sesion.monto.toFixed(2)}\n📊 *Total Acumulado Farmacia:* $${saldosActualizados.presupuestoGlobal.toFixed(2)} MXN`;
+        } else {
+          msgRespuesta = `💵 *Entrega de Efectivo (Caja Chica) Registrada*\n\n🏗️ *Sucursal:* ${obraElegida}\n💵 *Monto Entregado:* $${sesion.monto.toFixed(2)}\n💰 *Nuevo Efectivo Disponible en Mano:* $${saldosActualizados.cajaChica.toFixed(2)} MXN`;
+        }
+
+        await enviarTexto(from, msgRespuesta);
         delete sesiones[from];
         res.sendStatus(200);
         return;
