@@ -221,6 +221,40 @@ async function guardarArchivoEnDrive(mediaId, nombreArchivo, mimeType) {
   }
 }
 
+async function calcularSaldoEfectivoPorObra(obraBuscada) {
+  if (!sheets || !SPREADSHEET_ID) return 0;
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: 'Hoja 1!A:F'
+    });
+    const filas = res.data.values || [];
+    let ingresos = 0;
+    let egresos = 0;
+
+    for (let i = 1; i < filas.length; i++) {
+      const fila = filas[i];
+      const obra = fila[2] || '';
+      const metodo = fila[3] || '';
+      let montoStr = fila[5] || '0';
+      montoStr = montoStr.toString().replace('$', '').replace(/,/g, '').trim();
+      const monto = parseFloat(montoStr) || 0;
+
+      if (obra.toLowerCase() === obraBuscada.toLowerCase()) {
+        if (metodo.includes('Ingreso Efectivo')) {
+          ingresos += monto;
+        } else if (metodo.startsWith('Efectivo')) {
+          egresos += monto;
+        }
+      }
+    }
+    return ingresos - egresos;
+  } catch (error) {
+    console.error('❌ Error calculando saldo por obra:', error.message);
+    return 0;
+  }
+}
+
 async function obtenerUltimoMovimientoDeSheets() {
   if (!sheets || !SPREADSHEET_ID) return null;
   try {
@@ -277,7 +311,7 @@ async function obtenerListaMovimientosPendientes() {
       if (estatus === 'Pendiente 🟡' || (!link || link === 'N/A')) {
         pendientes.push({ id, obra, concepto, monto: montoStr });
       }
-      if (pendientes.length >= 10) break; // Hasta 10 elementos permitidos en lista
+      if (pendientes.length >= 10) break;
     }
     return pendientes;
   } catch (error) {
@@ -383,6 +417,43 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
+      if (/^saldo$/i.test(textBody)) {
+        await enviarBotones(from, '💰 *¿De qué Sucursal deseas consultar el Saldo en Efectivo?*', [
+          { id: 'SALDO_Pelicano', title: 'Pelicano' },
+          { id: 'SALDO_Caldera', title: 'Caldera' },
+          { id: 'SALDO_Nativitas', title: 'Nativitas' }
+        ]);
+        await enviarBotones(from, '👇 *Otras Sucursales:*', [
+          { id: 'SALDO_Salud', title: 'Salud' }
+        ]);
+        res.sendStatus(200);
+        return;
+      }
+
+      const matchIngreso = textBody.match(/^(ingreso|fondo)\s+(\d+(\.\d+)?)/i);
+      if (matchIngreso) {
+        const montoIngreso = parseFloat(matchIngreso[2]);
+        const idMovimiento = 'ING-' + Date.now().toString().slice(-6);
+        
+        sesiones[from] = {
+          esIngreso: true,
+          idMovimiento,
+          monto: montoIngreso,
+          concepto: 'Dotación / Ingreso de Efectivo'
+        };
+
+        await enviarBotones(from, `📥 *Ingreso:* $${montoIngreso.toFixed(2)}\n\n🏗️ *¿A qué sucursal ingresará este dinero?*`, [
+          { id: 'INGOBRA_Pelicano', title: 'Pelicano' },
+          { id: 'INGOBRA_Caldera', title: 'Caldera' },
+          { id: 'INGOBRA_Nativitas', title: 'Nativitas' }
+        ]);
+        await enviarBotones(from, '👇 *Otras Sucursales:*', [
+          { id: 'INGOBRA_Salud', title: 'Salud' }
+        ]);
+        res.sendStatus(200);
+        return;
+      }
+
       const partes = textBody.split(/\s+/);
       const posibleMonto = parseFloat(partes[partes.length - 1]);
 
@@ -401,6 +472,7 @@ app.post('/webhook', async (req, res) => {
       const categoria = obtenerCategoria(concepto);
 
       sesiones[from] = {
+        esIngreso: false,
         idMovimiento,
         concepto,
         monto,
@@ -412,17 +484,32 @@ app.post('/webhook', async (req, res) => {
         linkFactura: 'N/A'
       };
 
-      const sucursales = [
-        { id: 'OBRA_Pelicano', title: 'Suc. Pelicano', description: 'Sucursal Pelicano' },
-        { id: 'OBRA_Caldera', title: 'Suc. Caldera', description: 'Sucursal Caldera' },
-        { id: 'OBRA_Nativitas', title: 'Suc. Nativitas', description: 'Sucursal Nativitas' },
-        { id: 'OBRA_Salud', title: 'Suc. Salud', description: 'Sucursal Salud' }
-      ];
+      await enviarBotones(from, `📝 *Gasto:* ${concepto} ($${monto.toFixed(2)})\n\n🏗️ *Selecciona la Sucursal:*`, [
+        { id: 'OBRA_Pelicano', title: 'Pelicano' },
+        { id: 'OBRA_Caldera', title: 'Caldera' },
+        { id: 'OBRA_Nativitas', title: 'Nativitas' }
+      ]);
 
-      await enviarLista(from, `📝 *Gasto:* ${concepto} ($${monto.toFixed(2)})\n\n🏗️ *Selecciona la Sucursal:*`, 'Ver Sucursales', 'Sucursales Disponibles', sucursales);
+      await enviarBotones(from, '👇 *Otras Sucursales:*', [
+        { id: 'OBRA_Salud', title: 'Salud' }
+      ]);
 
     } else if (msg.type === 'interactive') {
       const respuestaId = msg.interactive.button_reply?.id || msg.interactive.list_reply?.id;
+
+      if (respuestaId?.startsWith('SALDO_')) {
+        const obraMap = {
+          'SALDO_Pelicano': 'Suc. Pelicano',
+          'SALDO_Caldera': 'Suc. Caldera',
+          'SALDO_Nativitas': 'Suc. Nativitas',
+          'SALDO_Salud': 'Suc. Salud'
+        };
+        const obraSeleccionada = obraMap[respuestaId] || 'Suc. Salud';
+        const saldoCalc = await calcularSaldoEfectivoPorObra(obraSeleccionada);
+        await enviarTexto(from, `💵 *Saldo disponible en Efectivo*\n🏗️ *${obraSeleccionada}:* $${saldoCalc.toFixed(2)} MXN`);
+        res.sendStatus(200);
+        return;
+      }
 
       if (respuestaId?.startsWith('SEL_')) {
         const idSelec = respuestaId.replace('SEL_', '');
@@ -449,6 +536,34 @@ app.post('/webhook', async (req, res) => {
 
       const sesion = sesiones[from];
       if (!sesion) {
+        res.sendStatus(200);
+        return;
+      }
+
+      if (respuestaId?.startsWith('INGOBRA_')) {
+        const obraMap = {
+          'INGOBRA_Pelicano': 'Suc. Pelicano',
+          'INGOBRA_Caldera': 'Suc. Caldera',
+          'INGOBRA_Nativitas': 'Suc. Nativitas',
+          'INGOBRA_Salud': 'Suc. Salud'
+        };
+        const obraElegida = obraMap[respuestaId] || 'Suc. Salud';
+
+        await guardarEnSheets({
+          idMovimiento: sesion.idMovimiento,
+          obra: obraElegida,
+          metodo: 'Ingreso Efectivo',
+          subMetodo: '',
+          categoria: 'Fondo de Caja',
+          monto: sesion.monto,
+          concepto: sesion.concepto,
+          estatusFactura: 'No Requiere 🔴',
+          linkFactura: 'N/A'
+        });
+
+        const nuevoSaldo = await calcularSaldoEfectivoPorObra(obraElegida);
+        await enviarTexto(from, `📥 *Ingreso de Efectivo Registrado*\n\n🏗️ *Sucursal:* ${obraElegida}\n💵 *Monto:* $${sesion.monto.toFixed(2)}\n💰 *Nuevo Saldo disponible:* $${nuevoSaldo.toFixed(2)} MXN`);
+        delete sesiones[from];
         res.sendStatus(200);
         return;
       }
@@ -556,7 +671,7 @@ async function pedirFactura(from, sesion) {
 
 async function finalizarRegistro(from, sesion) {
   await guardarEnSheets(sesion);
-  const metodoTexto = sesion.subMetodo ? `${sesion.metodo} (${sesion.subMetodo})` : datosMetodo(sesion);
+  const metodoTexto = datosMetodo(sesion);
   
   let resumen = `✅ *Gasto Registrado con Éxito*\n\n` +
     `🆔 *ID:* ${sesion.idMovimiento}\n` +
