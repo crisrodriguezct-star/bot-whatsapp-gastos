@@ -22,43 +22,43 @@ const DIRECTORIO_USUARIOS = {
   '3313008395': 'Cris'
 };
 
-// Categorías Principales (6 + Opción de ver más)
+// 1. Categorías Principales
 const CATEGORIAS_PRINCIPALES = [
-  { id: 'CAT_MAT_ALB', title: 'MATERIAL ALBAÑILERIA GRUESA' },
-  { id: 'CAT_MAT_EST', title: 'MATERIAL ESTRUCTURA METALICA' },
-  { id: 'CAT_MAT_HERR', title: 'MATERIAL HERRERIA' },
-  { id: 'CAT_DIESEL', title: 'DIESEL PLANTA' },
-  { id: 'CAT_INDIRECTOS', title: 'INDIRECTOS' },
-  { id: 'CAT_HONORARIOS', title: 'HONORARIOS' },
-  { id: 'CAT_MAS', title: '➕ Ver más categorías', description: 'Desplegar las 22 categorías restantes' }
+  { id: 'CAT_MAT_ALB', title: 'MATERIAL ALBAÑILERIA GRUESA', description: 'Cemento, varilla, tabique' },
+  { id: 'CAT_MAT_EST', title: 'MATERIAL ESTRUCTURA METALICA', description: 'Perfiles, vigas, acero' },
+  { id: 'CAT_MAT_HERR', title: 'MATERIAL HERRERIA', description: 'Pernos, soleras, tubos' },
+  { id: 'CAT_DIESEL', title: 'DIESEL PLANTA', description: 'Combustible maquinaria/planta' },
+  { id: 'CAT_INDIRECTOS', title: 'INDIRECTOS', description: 'Gastos generales de obra' },
+  { id: 'CAT_HONORARIOS', title: 'HONORARIOS', description: 'Pagos a Rigo, Paty o Casa' },
+  { id: 'CAT_BLOQUE_1', title: '📁 Más Materiales/Obra', description: 'Ver preliminares, acabados, instalaciones' },
+  { id: 'CAT_BLOQUE_2', title: '📁 Más Servicios/Admin', description: 'Ver viáticos, IMSS, contabilidad, fletes' }
 ];
 
-// Categorías Secundarias (22)
-const CATEGORIAS_SECUNDARIAS = [
+// 2. Bloque 1: Materiales y Trabajos de Campo
+const CATEGORIAS_MATERIALES = [
   { id: 'CAT_PREELIMINARES', title: '01) PREELIMINARES' },
-  { id: 'CAT_ALB_MDO', title: '02) ALBAÑILERIA GRUESA MDO' },
-  { id: 'CAT_PISOS_MDO', title: '03) PISOS Y RECUBRIMIENTOS MDO' },
-  { id: 'CAT_PISOS_MAT', title: '03) PISOS Y RECUBRIMIENTOS MAT' },
-  { id: 'CAT_EST_CONC_MDO', title: '04) ESTRUCTURA CONCRETO MDO' },
-  { id: 'CAT_EST_CONC_MAT', title: '04) ESTRUCTURA CONCRETO MAT' },
-  { id: 'CAT_EST_MET_MDO', title: '05) MDO ESTRUCTURA METALICA' },
-  { id: 'CAT_HERR_MDO', title: '06) MDO HERRERIA' },
+  { id: 'CAT_ALB_MDO', title: '02) ALBAÑILERIA MDO' },
+  { id: 'CAT_PISOS_MDO', title: '03) PISOS Y RECUBR. MDO' },
+  { id: 'CAT_PISOS_MAT', title: '03) PISOS Y RECUBR. MAT' },
+  { id: 'CAT_EST_CONC_MAT', title: '04) ESTRUCTURA CONCRETO' },
   { id: 'CAT_PLAFOND', title: '07) PLAFOND Y TABLAROCA' },
   { id: 'CAT_ALUMINIO', title: '08) ALUMINIO Y VIDRIOS' },
-  { id: 'CAT_CARPINTERIA', title: '08) CARPINTERIA' },
-  { id: 'CAT_PINTURA', title: '09) PINTURA' },
-  { id: 'CAT_CUBIERTAS', title: '10) CUBIERTAS' },
-  { id: 'CAT_CUB_LAMINA', title: '10) CUBIERTAS DE LAMINA' },
-  { id: 'CAT_ANUNCIO', title: '10) ANUNCIO MAT' },
-  { id: 'CAT_LIMPIEZA', title: '11) LIMPIEZA Y ACARREOS' },
-  { id: 'CAT_VARIOS', title: '12) VARIOS' },
   { id: 'CAT_HIDRAULICA', title: '13) INST HIDRAULICA' },
   { id: 'CAT_DRENAJES', title: '14) DRENAJES' },
-  { id: 'CAT_TERRACERIA', title: '15) TERRRACERIA Y MOVIMIENTO' },
-  { id: 'CAT_VIATICOS', title: '16) VIATICOS' },
+  { id: 'CAT_CUBIERTAS', title: '10) CUBIERTAS / ANUNCIO' }
+];
+
+// 3. Bloque 2: Servicios, Administración y Varios
+const CATEGORIAS_SERVICIOS = [
+  { id: 'CAT_PINTURA', title: '09) PINTURA' },
+  { id: 'CAT_CARPINTERIA', title: '08) CARPINTERIA' },
+  { id: 'CAT_LIMPIEZA', title: '11) LIMPIEZA Y ACARREOS' },
+  { id: 'CAT_TERRACERIA', title: '15) TERRACERIA / MOV.' },
+  { id: 'CAT_VIATICOS', title: '16) VIATICOS / GASOLINA' },
   { id: 'CAT_IMSS', title: '17) IMSS / ISN' },
   { id: 'CAT_CONTA', title: '18) CONTABILIDAD' },
-  { id: 'CAT_RESIDENCIA', title: '19) RESIDENCIA DE OBRA' }
+  { id: 'CAT_RESIDENCIA', title: '19) RESIDENCIA DE OBRA' },
+  { id: 'CAT_VARIOS', title: '12) VARIOS' }
 ];
 
 const CONTRATISTAS_VALIDOS = ['tablaroca', 'aluminio y vidrio', 'aluminio', 'cortinas', 'pintura', 'cubiertas'];
@@ -342,7 +342,7 @@ async function calcularReporteSaldos(obraBuscada) {
   }
 }
 
-async function calcularReporteContratistas() {
+async function calcularReporteContratistas(obraBuscada) {
   if (!sheets || !SPREADSHEET_ID) return {};
   try {
     const res = await sheets.spreadsheets.values.get({
@@ -354,6 +354,7 @@ async function calcularReporteContratistas() {
 
     for (let i = 1; i < filas.length; i++) {
       const fila = filas[i];
+      const obra = fila[2] || '';
       const concepto = (fila[6] || '').toLowerCase();
       const categoria = (fila[4] || '').toLowerCase();
       let montoStr = (fila[5] || '0').toString().replace('$', '').replace(/,/g, '').trim();
@@ -361,6 +362,9 @@ async function calcularReporteContratistas() {
       const estatus = fila[8] || '';
 
       if (estatus.includes('CANCELADO')) continue;
+
+      // Filtrar por obra si se seleccionó una en específico
+      if (obraBuscada && obra.toLowerCase() !== obraBuscada.toLowerCase()) continue;
 
       CONTRATISTAS_VALIDOS.forEach(c => {
         if (!resultado[c]) resultado[c] = { totalContrato: 0, pagado: 0 };
@@ -465,7 +469,7 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // REPORTE DE SALDOS Y EFECTIVO
+      // REPORTE DE SALDOS Y CORTE DE CAJA CHICA
       if (/^(saldo|corte|reporte|resumen)$/i.test(textBody)) {
         await enviarBotones(from, '📊 *¿De qué Sucursal deseas consultar el Reporte?*', [
           { id: 'REP_Pelicano', title: 'Pelicano' },
@@ -480,25 +484,23 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // CONSULTA CONTRATISTAS
+      // CONSULTA DE CONTRATISTAS POR OBRA
       if (/^(contratistas|destajos|contratos)$/i.test(textBody)) {
-        const rep = await calcularReporteContratistas();
-        let msgTexto = '👷‍♂️ *Estado Financiero de Contratistas:*\n\n';
-        Object.keys(rep).forEach(c => {
-          const t = rep[c];
-          const pendiente = t.totalContrato - t.pagado;
-          msgTexto += `📌 *${c.toUpperCase()}*\n` +
-            `  • Contrato Total: $${t.totalContrato.toFixed(2)}\n` +
-            `  • Pagado a la Fecha: $${t.pagado.toFixed(2)}\n` +
-            `  • Saldo Pendiente: $${pendiente.toFixed(2)}\n\n`;
-        });
-        await enviarTexto(from, msgTexto);
+        await enviarBotones(from, '👷‍♂️ *¿De qué Sucursal deseas ver los Contratistas?*', [
+          { id: 'REPCONTRATISTAS_Pelicano', title: 'Pelicano' },
+          { id: 'REPCONTRATISTAS_Caldera', title: 'Caldera' },
+          { id: 'REPCONTRATISTAS_Nativitas', title: 'Nativitas' }
+        ]);
+        await enviarBotones(from, '👇 *Otras Opciones:*', [
+          { id: 'REPCONTRATISTAS_Salud', title: 'Salud' },
+          { id: 'REPCONTRATISTAS_GLOBAL', title: 'Todas las Obras' }
+        ]);
         res.sendStatus(200);
         return;
       }
 
-      // CONSULTA PRESUPUESTOS DE FARMACIA
-      if (/^(presupuestos|ppto|presupuesto)$/i.test(textBody)) {
+      // CONSULTA AVANCE DE PRESUPUESTOS (COBRADO VS AUTORIZADO)
+      if (/^(avance|cobrado|avance presupuestos)$/i.test(textBody)) {
         const rep = await calcularReportePresupuestos();
         let msgTexto = '🏦 *Avance de Presupuestos Autorizados (Farmacias):*\n\n';
         Object.keys(rep).forEach(o => {
@@ -514,56 +516,62 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // REGISTRO DE CONTRATO A CONTRATISTA
+      // REGISTRO DE PRESUPUESTO AUTORIZADO (SOLO MONTO, PREGUNTA OBRA)
+      const matchPptoTotalAuto = textBody.match(/^(presupuesto autorizado|presupuesto total)\s+(\d+(\.\d+)?)/i);
+      if (matchPptoTotalAuto) {
+        const montoPpto = parseFloat(matchPptoTotalAuto[2]);
+
+        sesiones[from] = {
+          tipoAccion: 'PPTO_TOTAL',
+          idMovimiento: 'PPT-' + Date.now().toString().slice(-6),
+          monto: montoPpto,
+          concepto: 'Presupuesto Total Autorizado Farmacia',
+          usuario: nombreUsuario
+        };
+
+        await enviarBotones(from, `🏢 *Presupuesto Total Autorizado:* $${montoPpto.toFixed(2)}\n\n🏗️ *¿A qué sucursal pertenece este presupuesto?*`, [
+          { id: 'PPTOBRA_Pelicano', title: 'Pelicano' },
+          { id: 'PPTOBRA_Caldera', title: 'Caldera' },
+          { id: 'PPTOBRA_Nativitas', title: 'Nativitas' }
+        ]);
+        await enviarBotones(from, '👇 *Otras Opciones:*', [
+          { id: 'PPTOBRA_Salud', title: 'Salud' },
+          { id: 'PPTOBRA_Otro', title: 'Otro' }
+        ]);
+        res.sendStatus(200);
+        return;
+      }
+
+      // REGISTRO DE CONTRATO A CONTRATISTA (SOLO MONTO, PREGUNTA OBRA)
       const matchContrato = textBody.match(/^contrato\s+(.+)\s+(\d+(\.\d+)?)/i);
       if (matchContrato) {
         const nombreContratista = matchContrato[1].trim();
         const montoContrato = parseFloat(matchContrato[2]);
 
-        await guardarEnSheets({
+        sesiones[from] = {
+          tipoAccion: 'CONTRATO_CONTRATISTA',
           idMovimiento: 'CTR-' + Date.now().toString().slice(-6),
-          obra: 'General',
-          metodo: 'Asignación Contrato',
-          subMetodo: '',
-          categoria: '20) INDIRECTOS',
           monto: montoContrato,
-          concepto: `Contrato ${nombreContratista} Total Autorizado`,
-          usuario: nombreUsuario,
-          estatusFactura: 'No Requiere 🔴',
-          linkFactura: 'N/A'
-        });
+          contratista: nombreContratista.toUpperCase(),
+          concepto: `Contrato ${nombreContratista.toUpperCase()} Total Autorizado`,
+          usuario: nombreUsuario
+        };
 
-        await enviarTexto(from, `✅ *Contrato Registrado:* ${nombreContratista.toUpperCase()}\n💵 *Monto Total:* $${montoContrato.toFixed(2)}`);
+        await enviarBotones(from, `👷‍♂️ *Contrato ${nombreContratista.toUpperCase()}:* $${montoContrato.toFixed(2)}\n\n🏗️ *¿A qué sucursal pertenece este contrato?*`, [
+          { id: 'CTROBRA_Pelicano', title: 'Pelicano' },
+          { id: 'CTROBRA_Caldera', title: 'Caldera' },
+          { id: 'CTROBRA_Nativitas', title: 'Nativitas' }
+        ]);
+        await enviarBotones(from, '👇 *Otras Opciones:*', [
+          { id: 'CTROBRA_Salud', title: 'Salud' },
+          { id: 'CTROBRA_Otro', title: 'Otro' }
+        ]);
         res.sendStatus(200);
         return;
       }
 
-      // REGISTRO DE PRESUPUESTO TOTAL AUTORIZADO POR SUCURSAL
-      const matchPptoTotal = textBody.match(/^(ppto total|presupuesto total)\s+(.+)\s+(\d+(\.\d+)?)/i);
-      if (matchPptoTotal) {
-        const sucursalTexto = matchPptoTotal[2].trim();
-        const montoPpto = parseFloat(matchPptoTotal[3]);
-
-        await guardarEnSheets({
-          idMovimiento: 'PPT-' + Date.now().toString().slice(-6),
-          obra: `Suc. ${sucursalTexto.charAt(0).toUpperCase() + sucursalTexto.slice(1)}`,
-          metodo: 'Asignación Presupuesto',
-          subMetodo: '',
-          categoria: 'Cobro Cliente',
-          monto: montoPpto,
-          concepto: 'Presupuesto Total Autorizado Farmacia',
-          usuario: nombreUsuario,
-          estatusFactura: 'No Requiere 🔴',
-          linkFactura: 'N/A'
-        });
-
-        await enviarTexto(from, `✅ *Presupuesto Total Autorizado Registrado*\n🏗️ *Sucursal:* ${sucursalTexto}\n💵 *Monto:* $${montoPpto.toFixed(2)}`);
-        res.sendStatus(200);
-        return;
-      }
-
-      // INGRESO LIBERADO POR FARMACIA
-      const matchPresupuesto = textBody.match(/^(presupuesto|ingreso|pago farmacia)\s+(\d+(\.\d+)?)/i);
+      // INGRESO LIBERADO POR FARMACIA (PARTIDA DADA)
+      const matchPresupuesto = textBody.match(/^(ingreso|pago farmacia)\s+(\d+(\.\d+)?)/i);
       if (matchPresupuesto) {
         const montoIngreso = parseFloat(matchPresupuesto[2]);
 
@@ -575,7 +583,7 @@ app.post('/webhook', async (req, res) => {
           usuario: nombreUsuario
         };
 
-        await enviarBotones(from, `🏦 *Ingreso Farmacia:* $${montoIngreso.toFixed(2)}\n\n🏗️ *¿A qué sucursal ingresa este pago?*`, [
+        await enviarBotones(from, `🏦 *Ingreso Liberado Farmacia:* $${montoIngreso.toFixed(2)}\n\n🏗️ *¿A qué sucursal ingresa este pago?*`, [
           { id: 'ACTOBRA_Pelicano', title: 'Pelicano' },
           { id: 'ACTOBRA_Caldera', title: 'Caldera' },
           { id: 'ACTOBRA_Nativitas', title: 'Nativitas' }
@@ -686,8 +694,102 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
+      // REPORTE DE CONTRATISTAS FILTRADO POR SUCURSAL
+      if (respuestaId?.startsWith('REPCONTRATISTAS_')) {
+        const obraMap = {
+          'REPCONTRATISTAS_Pelicano': 'Suc. Pelicano',
+          'REPCONTRATISTAS_Caldera': 'Suc. Caldera',
+          'REPCONTRATISTAS_Nativitas': 'Suc. Nativitas',
+          'REPCONTRATISTAS_Salud': 'Suc. Salud',
+          'REPCONTRATISTAS_GLOBAL': null
+        };
+        const obraSel = obraMap[respuestaId];
+        const rep = await calcularReporteContratistas(obraSel);
+
+        let msgTexto = obraSel ? `👷‍♂️ *Contratistas en ${obraSel}:*\n\n` : `👷‍♂️ *Contratistas (Todas las Obras):*\n\n`;
+        let hayDatos = false;
+
+        Object.keys(rep).forEach(c => {
+          const t = rep[c];
+          if (t.totalContrato > 0 || t.pagado > 0) {
+            hayDatos = true;
+            const pendiente = t.totalContrato - t.pagado;
+            msgTexto += `📌 *${c.toUpperCase()}*\n` +
+              `  • Contrato Total: $${t.totalContrato.toFixed(2)}\n` +
+              `  • Pagado a la Fecha: $${t.pagado.toFixed(2)}\n` +
+              `  • Saldo Pendiente: $${pendiente.toFixed(2)}\n\n`;
+          }
+        });
+
+        if (!hayDatos) msgTexto += '⚠️ No hay contratos ni pagos registrados para esta sucursal.';
+
+        await enviarTexto(from, msgTexto);
+        res.sendStatus(200);
+        return;
+      }
+
       const sesion = sesiones[from];
       if (!sesion) {
+        res.sendStatus(200);
+        return;
+      }
+
+      // ASIGNACIÓN DE SUCURSAL PARA CONTRATO DE CONTRATISTA
+      if (respuestaId?.startsWith('CTROBRA_')) {
+        const obraMap = {
+          'CTROBRA_Pelicano': 'Suc. Pelicano',
+          'CTROBRA_Caldera': 'Suc. Caldera',
+          'CTROBRA_Nativitas': 'Suc. Nativitas',
+          'CTROBRA_Salud': 'Suc. Salud',
+          'CTROBRA_Otro': 'Suc. Otro'
+        };
+        const obraElegida = obraMap[respuestaId] || 'Suc. Otro';
+
+        await guardarEnSheets({
+          idMovimiento: sesion.idMovimiento,
+          obra: obraElegida,
+          metodo: 'Asignación Contrato',
+          subMetodo: '',
+          categoria: '20) INDIRECTOS',
+          monto: sesion.monto,
+          concepto: `Contrato ${sesion.contratista} Total Autorizado`,
+          usuario: sesion.usuario,
+          estatusFactura: 'No Requiere 🔴',
+          linkFactura: 'N/A'
+        });
+
+        await enviarTexto(from, `✅ *Contrato Registrado con Éxito*\n👷‍♂️ *Contratista:* ${sesion.contratista}\n🏗️ *Sucursal:* ${obraElegida}\n💵 *Monto Total:* $${sesion.monto.toFixed(2)}`);
+        delete sesiones[from];
+        res.sendStatus(200);
+        return;
+      }
+
+      // ASIGNACIÓN DE SUCURSAL PARA PRESUPUESTO AUTORIZADO
+      if (respuestaId?.startsWith('PPTOBRA_')) {
+        const obraMap = {
+          'PPTOBRA_Pelicano': 'Suc. Pelicano',
+          'PPTOBRA_Caldera': 'Suc. Caldera',
+          'PPTOBRA_Nativitas': 'Suc. Nativitas',
+          'PPTOBRA_Salud': 'Suc. Salud',
+          'PPTOBRA_Otro': 'Suc. Otro'
+        };
+        const obraElegida = obraMap[respuestaId] || 'Suc. Otro';
+
+        await guardarEnSheets({
+          idMovimiento: sesion.idMovimiento,
+          obra: obraElegida,
+          metodo: 'Asignación Presupuesto',
+          subMetodo: '',
+          categoria: 'Cobro Cliente',
+          monto: sesion.monto,
+          concepto: 'Presupuesto Total Autorizado Farmacia',
+          usuario: sesion.usuario,
+          estatusFactura: 'No Requiere 🔴',
+          linkFactura: 'N/A'
+        });
+
+        await enviarTexto(from, `✅ *Presupuesto Total Autorizado Registrado*\n🏗️ *Sucursal:* ${obraElegida}\n💵 *Monto:* $${sesion.monto.toFixed(2)}`);
+        delete sesiones[from];
         res.sendStatus(200);
         return;
       }
@@ -715,7 +817,7 @@ app.post('/webhook', async (req, res) => {
           linkFactura: 'N/A'
         });
 
-        await enviarTexto(from, `🏦 *Ingreso Registrado Correctamente*\n🏗️ *Sucursal:* ${obraElegida}\n💵 *Monto:* $${sesion.monto.toFixed(2)}`);
+        await enviarTexto(from, `🏦 *Ingreso Liberado Registrado Correctamente*\n🏗️ *Sucursal:* ${obraElegida}\n💵 *Monto:* $${sesion.monto.toFixed(2)}`);
         delete sesiones[from];
         res.sendStatus(200);
         return;
@@ -731,17 +833,23 @@ app.post('/webhook', async (req, res) => {
         };
         sesion.obra = obraMap[respuestaId] || 'Suc. Otro';
 
-        // Enviamos la lista interactiva de categorías (solución al límite de 3 botones)
         await enviarLista(from, `🏗️ *Obra:* ${sesion.obra}\n\n📌 *Selecciona la Categoría Principal:*`, 'Ver Categorías', 'Categorías Principales:', CATEGORIAS_PRINCIPALES);
 
       } else if (respuestaId?.startsWith('CAT_')) {
-        if (respuestaId === 'CAT_MAS') {
-          await enviarLista(from, '📋 *Categorías Secundarias:*', 'Ver Categorías', 'Selecciona una:', CATEGORIAS_SECUNDARIAS);
+        if (respuestaId === 'CAT_BLOQUE_1') {
+          await enviarLista(from, '📋 *Materiales y Obras:*', 'Ver Opciones', 'Selecciona una:', CATEGORIAS_MATERIALES);
           res.sendStatus(200);
           return;
         }
 
-        const catSel = CATEGORIAS_PRINCIPALES.concat(CATEGORIAS_SECUNDARIAS).find(c => c.id === respuestaId);
+        if (respuestaId === 'CAT_BLOQUE_2') {
+          await enviarLista(from, '📋 *Servicios y Administración:*', 'Ver Opciones', 'Selecciona una:', CATEGORIAS_SERVICIOS);
+          res.sendStatus(200);
+          return;
+        }
+
+        const todasCategorias = CATEGORIAS_PRINCIPALES.concat(CATEGORIAS_MATERIALES).concat(CATEGORIAS_SERVICIOS);
+        const catSel = todasCategorias.find(c => c.id === respuestaId);
         sesion.categoria = catSel ? catSel.title : '12) VARIOS';
 
         if (sesion.categoria === 'HONORARIOS') {
