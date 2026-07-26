@@ -1,7 +1,6 @@
 const express = require('express');
 const { google } = require('googleapis');
 const https = require('https');
-const stream = require('stream');
 
 const app = express();
 app.use(express.json());
@@ -11,10 +10,8 @@ const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
-const DRIVE_FOLDER_ID = process.env.DRIVE_FOLDER_ID;
 
 const sesiones = {};
-const ultimosRegistros = {};
 
 // Mapeo de Números de Teléfono a Nombres
 const DIRECTORIO_USUARIOS = {
@@ -25,14 +22,54 @@ const DIRECTORIO_USUARIOS = {
   '3313008395': 'Cris'
 };
 
+// Categorías Principales (6)
+const CATEGORIAS_PRINCIPALES = [
+  { id: 'CAT_MAT_ALB', title: 'MATERIAL ALBAÑILERIA GRUESA' },
+  { id: 'CAT_MAT_EST', title: 'MATERIAL ESTRUCTURA METALICA' },
+  { id: 'CAT_MAT_HERR', title: 'MATERIAL HERRERIA' },
+  { id: 'CAT_DIESEL', title: 'DIESEL PLANTA' },
+  { id: 'CAT_INDIRECTOS', title: 'INDIRECTOS' },
+  { id: 'CAT_HONORARIOS', title: 'HONORARIOS' },
+  { id: 'CAT_MAS', title: '➕ Ver más categorías' }
+];
+
+// Categorías Secundarias (22)
+const CATEGORIAS_SECUNDARIAS = [
+  { id: 'CAT_PREELIMINARES', title: '01) PREELIMINARES' },
+  { id: 'CAT_ALB_MDO', title: '02) ALBAÑILERIA GRUESA MDO' },
+  { id: 'CAT_PISOS_MDO', title: '03) PISOS Y RECUBRIMIENTOS MDO' },
+  { id: 'CAT_PISOS_MAT', title: '03) PISOS Y RECUBRIMIENTOS MAT' },
+  { id: 'CAT_EST_CONC_MDO', title: '04) ESTRUCTURA CONCRETO MDO' },
+  { id: 'CAT_EST_CONC_MAT', title: '04) ESTRUCTURA CONCRETO MAT' },
+  { id: 'CAT_EST_MET_MDO', title: '05) MDO ESTRUCTURA METALICA' },
+  { id: 'CAT_HERR_MDO', title: '06) MDO HERRERIA' },
+  { id: 'CAT_PLAFOND', title: '07) PLAFOND Y TABLAROCA' },
+  { id: 'CAT_ALUMINIO', title: '08) ALUMINIO Y VIDRIOS' },
+  { id: 'CAT_CARPINTERIA', title: '08) CARPINTERIA' },
+  { id: 'CAT_PINTURA', title: '09) PINTURA' },
+  { id: 'CAT_CUBIERTAS', title: '10) CUBIERTAS' },
+  { id: 'CAT_CUB_LAMINA', title: '10) CUBIERTAS DE LAMINA' },
+  { id: 'CAT_ANUNCIO', title: '10) ANUNCIO MAT' },
+  { id: 'CAT_LIMPIEZA', title: '11) LIMPIEZA Y ACARREOS' },
+  { id: 'CAT_VARIOS', title: '12) VARIOS' },
+  { id: 'CAT_HIDRAULICA', title: '13) INST HIDRAULICA' },
+  { id: 'CAT_DRENAJES', title: '14) DRENAJES' },
+  { id: 'CAT_TERRACERIA', title: '15) TERRRACERIA Y MOVIMIENTO' },
+  { id: 'CAT_VIATICOS', title: '16) VIATICOS' },
+  { id: 'CAT_IMSS', title: '17) IMSS / ISN' },
+  { id: 'CAT_CONTA', title: '18) CONTABILIDAD' },
+  { id: 'CAT_RESIDENCIA', title: '19) RESIDENCIA DE OBRA' }
+];
+
+const CONTRATISTAS_VALIDOS = ['tablaroca', 'aluminio y vidrio', 'aluminio', 'cortinas', 'pintura', 'cubiertas'];
+
 function obtenerNombreUsuario(numeroFrom) {
   if (!numeroFrom) return 'Usuario WhatsApp';
-  // Extrae los últimos 10 dígitos del número de WhatsApp para hacer match exacto
   const diezDigitos = numeroFrom.replace(/\D/g, '').slice(-10);
   return DIRECTORIO_USUARIOS[diezDigitos] || `Usuario (${diezDigitos})`;
 }
 
-let sheets, drive;
+let sheets;
 
 try {
   const oauth2Client = new google.auth.OAuth2(
@@ -46,20 +83,9 @@ try {
   });
 
   sheets = google.sheets({ version: 'v4', auth: oauth2Client });
-  drive = google.drive({ version: 'v3', auth: oauth2Client });
   console.log('✅ Google OAuth2 configurado correctamente.');
 } catch (error) {
   console.error('❌ Error OAuth2 Google:', error.message);
-}
-
-function obtenerCategoria(concepto) {
-  const texto = concepto.toLowerCase();
-  if (/gasolina|diésel|diesel|caseta|estacionamiento|peaje|taller|flete/i.test(texto)) return 'Transporte / Vehículo';
-  if (/comida|almuerzo|cena|desayuno|oxxo|7eleven|restaurante|agua|café|cafe/i.test(texto)) return 'Alimentos y Consumo';
-  if (/cemento|varilla|arena|grava|pintura|cable|tubo|madera|tabique|material/i.test(texto)) return 'Materiales';
-  if (/herramienta|disco|broca|pala|martillo|equipo|reparacion/i.test(texto)) return 'Herramientas y Equipo';
-  if (/nomina|sueldo|raya|pago|trabajador|peon|albañil/i.test(texto)) return 'Mano de Obra';
-  return 'General';
 }
 
 function enviarPeticionMeta(payload) {
@@ -85,14 +111,7 @@ function enviarPeticionMeta(payload) {
     const req = https.request(options, (res) => {
       let body = '';
       res.on('data', chunk => body += chunk);
-      res.on('end', () => {
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          resolve(body);
-        } else {
-          console.error(`❌ Error Meta (${res.statusCode}):`, body);
-          resolve();
-        }
-      });
+      res.on('end', () => resolve(body));
     });
 
     req.on('error', (error) => {
@@ -148,293 +167,10 @@ async function enviarLista(to, textoBody, tituloBoton, tituloSeccion, opciones) 
       body: { text: textoBody },
       action: {
         button: tituloBoton.substring(0, 20),
-        sections: [
-          {
-            title: tituloSeccion.substring(0, 24),
-            rows: rowsPayload
-          }
-        ]
+        sections: [{ title: tituloSeccion.substring(0, 24), rows: rowsPayload }]
       }
     }
   });
-}
-
-function descargarBufferMeta(url, token) {
-  return new Promise((resolve, reject) => {
-    const opciones = {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'User-Agent': 'Node.js'
-      }
-    };
-
-    https.get(url, opciones, (res) => {
-      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        return descargarBufferMeta(res.headers.location, token).then(resolve).catch(reject);
-      }
-
-      if (res.statusCode !== 200) {
-        return reject(new Error(`HTTP Error ${res.statusCode}`));
-      }
-
-      const chunks = [];
-      res.on('data', (chunk) => chunks.push(chunk));
-      res.on('end', () => resolve(Buffer.concat(chunks)));
-      res.on('error', (err) => reject(err));
-    }).on('error', (err) => reject(err));
-  });
-}
-
-async function obtenerOCrearCarpetaMes(parentFolderId) {
-  const fechaObj = new Date();
-  const anio = fechaObj.getFullYear();
-  const mesNumero = String(fechaObj.getMonth() + 1).padStart(2, '0');
-  const mesesNombres = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
-  const nombreCarpetaMes = `${anio}/${mesNumero}_${mesesNombres[fechaObj.getMonth()]}`;
-
-  try {
-    const query = `'${parentFolderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and name = '${nombreCarpetaMes}' and trashed = false`;
-    const resSearch = await drive.files.list({ q: query, fields: 'files(id, name)' });
-
-    if (resSearch.data.files && resSearch.data.files.length > 0) {
-      return resSearch.data.files[0].id;
-    }
-
-    const resFolder = await drive.files.create({
-      requestBody: {
-        name: nombreCarpetaMes,
-        mimeType: 'application/vnd.google-apps.folder',
-        parents: [parentFolderId]
-      },
-      fields: 'id'
-    });
-
-    return resFolder.data.id;
-  } catch (error) {
-    console.error('❌ Error gestionando carpeta del mes:', error.message);
-    return parentFolderId;
-  }
-}
-
-async function guardarArchivoEnDrive(mediaId, nombreArchivo, mimeType) {
-  if (!drive || !DRIVE_FOLDER_ID) {
-    console.error('❌ Drive o FOLDER_ID no están inicializados.');
-    return null;
-  }
-
-  try {
-    const mediaRes = await new Promise((resolve, reject) => {
-      https.get(`https://graph.facebook.com/v18.0/${mediaId}`, {
-        headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN.trim()}` }
-      }, (res) => {
-        let body = '';
-        res.on('data', chunk => body += chunk);
-        res.on('end', () => resolve(JSON.parse(body)));
-      }).on('error', reject);
-    });
-
-    if (!mediaRes.url) return null;
-
-    const buffer = await descargarBufferMeta(mediaRes.url, WHATSAPP_TOKEN.trim());
-
-    const bufferStream = new stream.PassThrough();
-    bufferStream.end(buffer);
-
-    const targetFolderId = await obtenerOCrearCarpetaMes(DRIVE_FOLDER_ID);
-
-    const driveRes = await drive.files.create({
-      requestBody: {
-        name: nombreArchivo,
-        parents: [targetFolderId]
-      },
-      media: {
-        mimeType: mimeType || 'application/pdf',
-        body: bufferStream
-      },
-      fields: 'id, webViewLink'
-    });
-
-    try {
-      await drive.permissions.create({
-        fileId: driveRes.data.id,
-        requestBody: { role: 'reader', type: 'anyone' }
-      });
-    } catch (pErr) {
-      console.log('Aviso Permisos:', pErr.message);
-    }
-
-    return driveRes.data.webViewLink;
-  } catch (error) {
-    console.error('❌ Error DETALLADO en Drive:', error?.response?.data || error.message);
-    return null;
-  }
-}
-
-async function calcularSaldosSemanalesPorObra(obraBuscada) {
-  if (!sheets || !SPREADSHEET_ID) return { presupuestoGlobal: 0, dotacionesCaja: 0, egresosTotales: 0, cajaChica: 0 };
-  try {
-    const res = await sheets.spreadsheets.values.get({
-      spreadsheetId: SPREADSHEET_ID,
-      range: 'Hoja 1!A:I'
-    });
-    const filas = res.data.values || [];
-    let presupuestoGlobal = 0;
-    let dotacionesCaja = 0;
-    let egresosEfectivo = 0;
-    let egresosTotales = 0;
-
-    const hoy = new Date();
-    const diaSemana = hoy.getDay();
-    const diferenciaLunes = hoy.getDate() - diaSemana + (diaSemana === 0 ? -6 : 1);
-    const inicioSemana = new Date(hoy.setDate(diferenciaLunes));
-    inicioSemana.setHours(0, 0, 0, 0);
-
-    for (let i = 1; i < filas.length; i++) {
-      const fila = filas[i];
-      const fechaTexto = fila[1] || '';
-      const obra = fila[2] || '';
-      const metodo = fila[3] || '';
-      let montoStr = fila[5] || '0';
-      const estatus = fila[8] || '';
-
-      if (estatus.includes('CANCELADO')) continue;
-
-      if (fechaTexto) {
-        const partesFecha = fechaTexto.split(',')[0].split('/');
-        if (partesFecha.length === 3) {
-          const fechaFila = new Date(partesFecha[2], partesFecha[1] - 1, partesFecha[0]);
-          if (fechaFila < inicioSemana) continue;
-        }
-      }
-
-      montoStr = montoStr.toString().replace('$', '').replace(/,/g, '').trim();
-      const monto = parseFloat(montoStr) || 0;
-
-      if (obra.toLowerCase() === obraBuscada.toLowerCase()) {
-        if (metodo.includes('Ingreso Presupuesto')) {
-          presupuestoGlobal += monto;
-        } else if (metodo.includes('Dotación Caja Chica')) {
-          dotacionesCaja += monto;
-        } else {
-          egresosTotales += monto;
-          if (metodo.startsWith('Efectivo')) {
-            egresosEfectivo += monto;
-          }
-        }
-      }
-    }
-    return {
-      presupuestoGlobal,
-      dotacionesCaja,
-      egresosTotales,
-      cajaChica: dotacionesCaja - egresosEfectivo
-    };
-  } catch (error) {
-    console.error('❌ Error calculando saldos semanales por obra:', error.message);
-    return { presupuestoGlobal: 0, dotacionesCaja: 0, egresosTotales: 0, cajaChica: 0 };
-  }
-}
-
-async function cancelarUltimoRegistro() {
-  if (!sheets || !SPREADSHEET_ID) return null;
-  try {
-    const res = await sheets.spreadsheets.values.get({
-      spreadsheetId: SPREADSHEET_ID,
-      range: 'Hoja 1!A:I'
-    });
-    const filas = res.data.values || [];
-    if (filas.length < 2) return null;
-
-    for (let i = filas.length - 1; i >= 1; i--) {
-      const estatusActual = filas[i][8] || '';
-      if (!estatusActual.includes('CANCELADO')) {
-        const filaIndex = i + 1;
-        const idMovimiento = filas[i][0];
-        const concepto = filas[i][6];
-        const monto = filas[i][5];
-
-        await sheets.spreadsheets.values.update({
-          spreadsheetId: SPREADSHEET_ID,
-          range: `Hoja 1!I${filaIndex}`,
-          valueInputOption: 'USER_ENTERED',
-          requestBody: { values: [['CANCELADO ⚪']] }
-        });
-
-        return { idMovimiento, concepto, monto };
-      }
-    }
-    return null;
-  } catch (error) {
-    console.error('❌ Error cancelando registro:', error.message);
-    return null;
-  }
-}
-
-async function obtenerUltimoMovimientoDeSheets() {
-  if (!sheets || !SPREADSHEET_ID) return null;
-  try {
-    const res = await sheets.spreadsheets.values.get({
-      spreadsheetId: SPREADSHEET_ID,
-      range: 'Hoja 1!A:J'
-    });
-
-    const filas = res.data.values;
-    if (!filas || filas.length < 2) return null;
-
-    for (let i = filas.length - 1; i >= 1; i--) {
-      const fila = filas[i];
-      const id = fila[0];
-      const obra = fila[2];
-      const concepto = fila[6];
-      const estatus = fila[8];
-      const link = fila[9];
-
-      if ((estatus === 'Facturado 🟢' || estatus === 'Pendiente 🟡') && (!link || link === 'N/A')) {
-        return { id, obra, concepto };
-      }
-    }
-    return null;
-  } catch (error) {
-    console.error('❌ Error leyendo Sheets:', error.message);
-    return null;
-  }
-}
-
-async function obtenerListaMovimientosPendientes() {
-  if (!sheets || !SPREADSHEET_ID) return [];
-  try {
-    const res = await sheets.spreadsheets.values.get({
-      spreadsheetId: SPREADSHEET_ID,
-      range: 'Hoja 1!A:J'
-    });
-
-    const filas = res.data.values;
-    if (!filas || filas.length < 2) return [];
-
-    const pendientes = [];
-    for (let i = filas.length - 1; i >= 1; i--) {
-      const fila = filas[i];
-      const id = fila[0];
-      const obra = fila[2];
-      let montoStr = fila[5] || '0';
-      const concepto = fila[6];
-      const estatus = fila[8];
-      const link = fila[9];
-
-      montoStr = montoStr.toString().replace('$', '').trim();
-
-      if (estatus === 'Pendiente 🟡' || (!link || link === 'N/A')) {
-        if (!estatus.includes('CANCELADO')) {
-          pendientes.push({ id, obra, concepto, monto: montoStr });
-        }
-      }
-      if (pendientes.length >= 10) break;
-    }
-    return pendientes;
-  } catch (error) {
-    console.error('❌ Error consultando pendientes:', error.message);
-    return [];
-  }
 }
 
 async function guardarEnSheets(datos) {
@@ -460,44 +196,225 @@ async function guardarEnSheets(datos) {
       spreadsheetId: SPREADSHEET_ID,
       range: 'Hoja 1!A:J',
       valueInputOption: 'USER_ENTERED',
-      requestBody: { values: valores },
+      requestBody: { values: valores }
     });
-    console.log(`✅ Registrado en Sheets por ${datos.usuario}: ${datos.idMovimiento}`);
+    console.log(`✅ Registrado en Sheets: ${datos.idMovimiento}`);
   } catch (error) {
-    console.error('❌ Error en Sheets:', error.message);
+    console.error('❌ Error guardando en Sheets:', error.message);
   }
 }
 
-async function actualizarLinkYEstatusEnSheets(idMovimiento, linkFactura) {
-  if (!sheets || !SPREADSHEET_ID) return;
+async function cancelarUltimoRegistro() {
+  if (!sheets || !SPREADSHEET_ID) return null;
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: 'Hoja 1!A:I'
+    });
+    const filas = res.data.values || [];
+    if (filas.length < 2) return null;
+
+    for (let i = filas.length - 1; i >= 1; i--) {
+      const estatusActual = filas[i][8] || '';
+      if (!estatusActual.includes('CANCELADO')) {
+        const filaIndex = i + 1;
+        const idMovimiento = filas[i][0];
+        const concepto = filas[i][6];
+        const monto = filas[i][5];
+
+        await sheets.spreadsheets.values.update({
+          spreadsheetId: SPREADSHEET_ID,
+          range: `Hoja 1!F${filaIndex}:I${filaIndex}`,
+          valueInputOption: 'USER_ENTERED',
+          requestBody: { values: [[0, concepto, filas[i][7] || '', '❌ CANCELADO']] }
+        });
+
+        return { idMovimiento, concepto, monto };
+      }
+    }
+    return null;
+  } catch (error) {
+    console.error('❌ Error cancelando registro:', error.message);
+    return null;
+  }
+}
+
+async function obtenerMovimientosPendientes() {
+  if (!sheets || !SPREADSHEET_ID) return [];
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: 'Hoja 1!A:I'
+    });
+    const filas = res.data.values || [];
+    const pendientes = [];
+
+    for (let i = filas.length - 1; i >= 1; i--) {
+      const fila = filas[i];
+      const id = fila[0];
+      const obra = fila[2];
+      const monto = fila[5];
+      const concepto = fila[6];
+      const estatus = fila[8] || '';
+
+      if (estatus.includes('Pendiente 🟡')) {
+        pendientes.push({ id, obra, concepto, monto });
+      }
+      if (pendientes.length >= 10) break;
+    }
+    return pendientes;
+  } catch (error) {
+    console.error('❌ Error obteniendo pendientes:', error.message);
+    return [];
+  }
+}
+
+async function marcarComoFacturado(idMovimiento) {
+  if (!sheets || !SPREADSHEET_ID) return false;
   try {
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
       range: 'Hoja 1!A:A'
     });
-
-    const filas = res.data.values;
-    if (!filas) return;
-
-    let filaIndex = -1;
+    const filas = res.data.values || [];
     for (let i = 0; i < filas.length; i++) {
       if (filas[i][0] === idMovimiento) {
-        filaIndex = i + 1;
-        break;
+        const filaIndex = i + 1;
+        await sheets.spreadsheets.values.update({
+          spreadsheetId: SPREADSHEET_ID,
+          range: `Hoja 1!I${filaIndex}`,
+          valueInputOption: 'USER_ENTERED',
+          requestBody: { values: [['Facturado 🟢']] }
+        });
+        return true;
+      }
+    }
+    return false;
+  } catch (error) {
+    console.error('❌ Error actualizando estatus factura:', error.message);
+    return false;
+  }
+}
+
+async function calcularReporteSaldos(obraBuscada) {
+  if (!sheets || !SPREADSHEET_ID) return { dotacionesCaja: 0, egresosEfectivo: 0, cajaDisponible: 0, facturadoEfectivo: 0 };
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: 'Hoja 1!A:I'
+    });
+    const filas = res.data.values || [];
+    let dotacionesCaja = 0;
+    let egresosEfectivo = 0;
+    let facturadoEfectivo = 0;
+
+    for (let i = 1; i < filas.length; i++) {
+      const fila = filas[i];
+      const obra = fila[2] || '';
+      const metodo = fila[3] || '';
+      let montoStr = (fila[5] || '0').toString().replace('$', '').replace(/,/g, '').trim();
+      const monto = parseFloat(montoStr) || 0;
+      const estatus = fila[8] || '';
+
+      if (estatus.includes('CANCELADO')) continue;
+
+      if (metodo.includes('Dotación Caja Chica')) {
+        dotacionesCaja += monto;
+      } else if (metodo.startsWith('Efectivo')) {
+        if (!obraBuscada || obra.toLowerCase() === obraBuscada.toLowerCase()) {
+          egresosEfectivo += monto;
+          if (estatus.includes('Facturado 🟢')) {
+            facturadoEfectivo += monto;
+          }
+        }
       }
     }
 
-    if (filaIndex !== -1) {
-      await sheets.spreadsheets.values.update({
-        spreadsheetId: SPREADSHEET_ID,
-        range: `Hoja 1!I${filaIndex}:J${filaIndex}`,
-        valueInputOption: 'USER_ENTERED',
-        requestBody: { values: [['Facturado 🟢', linkFactura]] }
-      });
-      console.log(`✅ Estatus y Link actualizados en Sheets: ${idMovimiento}`);
-    }
+    return {
+      dotacionesCaja,
+      egresosEfectivo,
+      cajaDisponible: dotacionesCaja - egresosEfectivo,
+      facturadoEfectivo
+    };
   } catch (error) {
-    console.error('❌ Error actualizando estatus y link:', error.message);
+    console.error('❌ Error en reporte saldos:', error.message);
+    return { dotacionesCaja: 0, egresosEfectivo: 0, cajaDisponible: 0, facturadoEfectivo: 0 };
+  }
+}
+
+async function calcularReporteContratistas() {
+  if (!sheets || !SPREADSHEET_ID) return {};
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: 'Hoja 1!A:I'
+    });
+    const filas = res.data.values || [];
+    const resultado = {};
+
+    for (let i = 1; i < filas.length; i++) {
+      const fila = filas[i];
+      const concepto = (fila[6] || '').toLowerCase();
+      const categoria = (fila[4] || '').toLowerCase();
+      let montoStr = (fila[5] || '0').toString().replace('$', '').replace(/,/g, '').trim();
+      const monto = parseFloat(montoStr) || 0;
+      const estatus = fila[8] || '';
+
+      if (estatus.includes('CANCELADO')) continue;
+
+      CONTRATISTAS_VALIDOS.forEach(c => {
+        if (!resultado[c]) resultado[c] = { totalContrato: 0, pagado: 0 };
+
+        if (concepto.includes(`contrato ${c}`)) {
+          resultado[c].totalContrato += monto;
+        } else if (concepto.includes(c) || categoria.includes(c)) {
+          resultado[c].pagado += monto;
+        }
+      });
+    }
+    return resultado;
+  } catch (error) {
+    console.error('❌ Error calculando contratistas:', error.message);
+    return {};
+  }
+}
+
+async function calcularReportePresupuestos() {
+  if (!sheets || !SPREADSHEET_ID) return {};
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: 'Hoja 1!A:I'
+    });
+    const filas = res.data.values || [];
+    const obras = ['Suc. Pelicano', 'Suc. Caldera', 'Suc. Nativitas', 'Suc. Salud', 'Suc. Otro'];
+    const resultado = {};
+
+    obras.forEach(o => resultado[o] = { presupuestoTotal: 0, liberado: 0 });
+
+    for (let i = 1; i < filas.length; i++) {
+      const fila = filas[i];
+      const obra = fila[2] || '';
+      const metodo = fila[3] || '';
+      const concepto = (fila[6] || '').toLowerCase();
+      let montoStr = (fila[5] || '0').toString().replace('$', '').replace(/,/g, '').trim();
+      const monto = parseFloat(montoStr) || 0;
+      const estatus = fila[8] || '';
+
+      if (estatus.includes('CANCELADO')) continue;
+
+      if (resultado[obra]) {
+        if (concepto.includes('presupuesto total autorizado')) {
+          resultado[obra].presupuestoTotal += monto;
+        } else if (metodo.includes('Ingreso Presupuesto')) {
+          resultado[obra].liberado += monto;
+        }
+      }
+    }
+    return resultado;
+  } catch (error) {
+    console.error('❌ Error calculando presupuestos:', error.message);
+    return {};
   }
 }
 
@@ -519,10 +436,11 @@ app.post('/webhook', async (req, res) => {
     if (msg.type === 'text') {
       const textBody = msg.text.body.trim();
 
-      if (/^(cancelar|cancelar ultimo|borrar ultimo)$/i.test(textBody)) {
+      // CANCELAR ÚLTIMO
+      if (/^(cancelar|borrar ultimo)$/i.test(textBody)) {
         const cancelado = await cancelarUltimoRegistro();
         if (cancelado) {
-          await enviarTexto(from, `⚪ *Último registro cancelado correctamente:*\n\n🆔 *ID:* ${cancelado.idMovimiento}\n📝 *Concepto:* ${cancelado.concepto}\n💵 *Monto:* $${cancelado.monto}`);
+          await enviarTexto(from, `❌ *Último registro cancelado correctamente:*\n\n🆔 *ID:* ${cancelado.idMovimiento}\n📝 *Concepto:* ${cancelado.concepto}\n💵 *Monto original:* $${cancelado.monto}\n\n*El monto ha sido ajustado a $0.00 en Sheets.*`);
         } else {
           await enviarTexto(from, '⚠️ No se encontró ningún registro previo para cancelar.');
         }
@@ -530,83 +448,166 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      if (/^(facturas|pendientes|factura|pendiente|ver pendientes|ver facturas)$/i.test(textBody)) {
-        const pendientes = await obtenerListaMovimientosPendientes();
+      // CONSULTAR FACTURAS PENDIENTES
+      if (/^(facturar|facturas|pendientes|ver pendientes)$/i.test(textBody)) {
+        const pendientes = await obtenerMovimientosPendientes();
         if (pendientes.length === 0) {
-          await enviarTexto(from, '🎉 ¡Excelente! No tienes ningún gasto pendiente de factura.');
+          await enviarTexto(from, '🎉 ¡Excelente! No hay gastos pendientes de factura.');
         } else {
           const opciones = pendientes.map(p => ({
-            id: `SEL_${p.id}`,
+            id: `RESOLVER_${p.id}`,
             title: p.concepto,
             description: `${p.obra} | $${p.monto} (${p.id})`
           }));
-          await enviarLista(from, '📋 *Gastos pendientes de factura:*', 'Ver Pendientes', 'Selecciona uno:', opciones);
+          await enviarLista(from, '📋 *Gastos Pendientes de Factura:*', 'Ver Pendientes', 'Selecciona para resolver:', opciones);
         }
         res.sendStatus(200);
         return;
       }
 
-      if (/^(saldo|reporte|resumen|semana|corte)$/i.test(textBody)) {
-        await enviarBotones(from, '💰 *¿De qué Sucursal deseas consultar el Saldo de la Semana?*', [
-          { id: 'SALDO_Pelicano', title: 'Pelicano' },
-          { id: 'SALDO_Caldera', title: 'Caldera' },
-          { id: 'SALDO_Nativitas', title: 'Nativitas' }
+      // REPORTE DE SALDOS Y EFECTIVO
+      if (/^(saldo|corte|reporte|resumen)$/i.test(textBody)) {
+        await enviarBotones(from, '📊 *¿De qué Sucursal deseas consultar el Reporte?*', [
+          { id: 'REP_Pelicano', title: 'Pelicano' },
+          { id: 'REP_Caldera', title: 'Caldera' },
+          { id: 'REP_Nativitas', title: 'Nativitas' }
         ]);
-        await enviarBotones(from, '👇 *Otras Sucursales:*', [
-          { id: 'SALDO_Salud', title: 'Salud' }
+        await enviarBotones(from, '👇 *Otras Opciones:*', [
+          { id: 'REP_Salud', title: 'Salud' },
+          { id: 'REP_GLOBAL', title: 'Caja General Efectivo' }
         ]);
         res.sendStatus(200);
         return;
       }
 
-      // PRESUPUESTO LIBERADO DE FARMACIA
-      const matchPresupuesto = textBody.match(/^(presupuesto|ingreso|ingreso farmacia|pago farmacia)\s+(\d+(\.\d+)?)/i);
+      // CONSULTA CONTRATISTAS
+      if (/^(contratistas|destajos|contratos)$/i.test(textBody)) {
+        const rep = await calcularReporteContratistas();
+        let msgTexto = '👷‍♂️ *Estado Financiero de Contratistas:*\n\n';
+        Object.keys(rep).forEach(c => {
+          const t = rep[c];
+          const pendiente = t.totalContrato - t.pagado;
+          msgTexto += `📌 *${c.toUpperCase()}*\n` +
+            `  • Contrato Total: $${t.totalContrato.toFixed(2)}\n` +
+            `  • Pagado a la Fecha: $${t.pagado.toFixed(2)}\n` +
+            `  • Saldo Pendiente: $${pendiente.toFixed(2)}\n\n`;
+        });
+        await enviarTexto(from, msgTexto);
+        res.sendStatus(200);
+        return;
+      }
+
+      // CONSULTA PRESUPUESTOS DE FARMACIA
+      if (/^(presupuestos|ppto|presupuesto)$/i.test(textBody)) {
+        const rep = await calcularReportePresupuestos();
+        let msgTexto = '🏦 *Avance de Presupuestos Autorizados (Farmacias):*\n\n';
+        Object.keys(rep).forEach(o => {
+          const t = rep[o];
+          const porCobrar = t.presupuestoTotal - t.liberado;
+          msgTexto += `🏗️ *${o}*\n` +
+            `  • Presupuesto Autorizado: $${t.presupuestoTotal.toFixed(2)}\n` +
+            `  • Liberado a la Fecha: $${t.liberado.toFixed(2)}\n` +
+            `  • Pendiente por Liberar: $${porCobrar.toFixed(2)}\n\n`;
+        });
+        await enviarTexto(from, msgTexto);
+        res.sendStatus(200);
+        return;
+      }
+
+      // REGISTRO DE CONTRATO A CONTRATISTA
+      const matchContrato = textBody.match(/^contrato\s+(.+)\s+(\d+(\.\d+)?)/i);
+      if (matchContrato) {
+        const nombreContratista = matchContrato[1].trim();
+        const montoContrato = parseFloat(matchContrato[2]);
+
+        await guardarEnSheets({
+          idMovimiento: 'CTR-' + Date.now().toString().slice(-6),
+          obra: 'General',
+          metodo: 'Asignación Contrato',
+          subMetodo: '',
+          categoria: '20) INDIRECTOS',
+          monto: montoContrato,
+          concepto: `Contrato ${nombreContratista} Total Autorizado`,
+          usuario: nombreUsuario,
+          estatusFactura: 'No Requiere 🔴',
+          linkFactura: 'N/A'
+        });
+
+        await enviarTexto(from, `✅ *Contrato Registrado:* ${nombreContratista.toUpperCase()}\n💵 *Monto Total:* $${montoContrato.toFixed(2)}`);
+        res.sendStatus(200);
+        return;
+      }
+
+      // REGISTRO DE PRESUPUESTO TOTAL AUTORIZADO POR SUCURSAL
+      const matchPptoTotal = textBody.match(/^(ppto total|presupuesto total)\s+(.+)\s+(\d+(\.\d+)?)/i);
+      if (matchPptoTotal) {
+        const sucursalTexto = matchPptoTotal[2].trim();
+        const montoPpto = parseFloat(matchPptoTotal[3]);
+
+        await guardarEnSheets({
+          idMovimiento: 'PPT-' + Date.now().toString().slice(-6),
+          obra: `Suc. ${sucursalTexto.charAt(0).toUpperCase() + sucursalTexto.slice(1)}`,
+          metodo: 'Asignación Presupuesto',
+          subMetodo: '',
+          categoria: 'Cobro Cliente',
+          monto: montoPpto,
+          concepto: 'Presupuesto Total Autorizado Farmacia',
+          usuario: nombreUsuario,
+          estatusFactura: 'No Requiere 🔴',
+          linkFactura: 'N/A'
+        });
+
+        await enviarTexto(from, `✅ *Presupuesto Total Autorizado Registrado*\n🏗️ *Sucursal:* ${sucursalTexto}\n💵 *Monto:* $${montoPpto.toFixed(2)}`);
+        res.sendStatus(200);
+        return;
+      }
+
+      // INGRESO LIBERADO POR FARMACIA
+      const matchPresupuesto = textBody.match(/^(presupuesto|ingreso|pago farmacia)\s+(\d+(\.\d+)?)/i);
       if (matchPresupuesto) {
         const montoIngreso = parseFloat(matchPresupuesto[2]);
-        const idMovimiento = 'ING-' + Date.now().toString().slice(-6);
 
         sesiones[from] = {
           tipoAccion: 'PRESUPUESTO',
-          idMovimiento,
+          idMovimiento: 'ING-' + Date.now().toString().slice(-6),
           monto: montoIngreso,
-          concepto: 'Presupuesto Liberado / Pago Farmacia',
+          concepto: 'Ingreso Liberado Farmacia',
           usuario: nombreUsuario
         };
 
-        await enviarBotones(from, `🏦 *Presupuesto Farmacia:* $${montoIngreso.toFixed(2)}\n👤 *Registra:* ${nombreUsuario}\n\n🏗️ *¿A qué sucursal ingresa este pago?*`, [
+        await enviarBotones(from, `🏦 *Ingreso Farmacia:* $${montoIngreso.toFixed(2)}\n\n🏗️ *¿A qué sucursal ingresa este pago?*`, [
           { id: 'ACTOBRA_Pelicano', title: 'Pelicano' },
           { id: 'ACTOBRA_Caldera', title: 'Caldera' },
           { id: 'ACTOBRA_Nativitas', title: 'Nativitas' }
         ]);
-        await enviarBotones(from, '👇 *Otras Sucursales:*', [
-          { id: 'ACTOBRA_Salud', title: 'Salud' }
+        await enviarBotones(from, '👇 *Otras Opciones:*', [
+          { id: 'ACTOBRA_Salud', title: 'Salud' },
+          { id: 'ACTOBRA_Otro', title: 'Otro' }
         ]);
         res.sendStatus(200);
         return;
       }
 
-      // ENTREGA DE CAJA CHICA A PAPÁS
+      // DOTACIÓN DE CAJA CHICA / EFECTIVO CENTRAL
       const matchCaja = textBody.match(/^(caja|efectivo|dotacion|fondo)\s+(\d+(\.\d+)?)/i);
       if (matchCaja) {
         const montoCaja = parseFloat(matchCaja[2]);
-        const idMovimiento = 'DOT-' + Date.now().toString().slice(-6);
 
-        sesiones[from] = {
-          tipoAccion: 'CAJA_CHICA',
-          idMovimiento,
+        await guardarEnSheets({
+          idMovimiento: 'DOT-' + Date.now().toString().slice(-6),
+          obra: 'Efectivo General',
+          metodo: 'Dotación Caja Chica',
+          subMetodo: '',
+          categoria: 'Fondo de Caja',
           monto: montoCaja,
-          concepto: 'Dotación de Efectivo (Caja Chica)',
-          usuario: nombreUsuario
-        };
+          concepto: 'Ingreso a Caja Chica Central (Efectivo)',
+          usuario: nombreUsuario,
+          estatusFactura: 'No Requiere 🔴',
+          linkFactura: 'N/A'
+        });
 
-        await enviarBotones(from, `💵 *Entrega de Efectivo:* $${montoCaja.toFixed(2)}\n👤 *Registra:* ${nombreUsuario}\n\n🏗️ *¿Para la Caja Chica de qué sucursal?*`, [
-          { id: 'ACTOBRA_Pelicano', title: 'Pelicano' },
-          { id: 'ACTOBRA_Caldera', title: 'Caldera' },
-          { id: 'ACTOBRA_Nativitas', title: 'Nativitas' }
-        ]);
-        await enviarBotones(from, '👇 *Otras Sucursales:*', [
-          { id: 'ACTOBRA_Salud', title: 'Salud' }
-        ]);
+        const reporteCaja = await calcularReporteSaldos(null);
+        await enviarTexto(from, `💵 *Efectivo Ingresado a Caja Chica:* $${montoCaja.toFixed(2)}\n👤 *Registró:* ${nombreUsuario}\n\n💰 *Efectivo Disponible en Mano:* $${reporteCaja.cajaDisponible.toFixed(2)} MXN`);
         res.sendStatus(200);
         return;
       }
@@ -614,7 +615,6 @@ app.post('/webhook', async (req, res) => {
       // REGISTRO REGULAR DE GASTOS
       const partes = textBody.split(/\s+/);
       const posibleMonto = parseFloat(partes[partes.length - 1]);
-
       let concepto = '';
       let monto = 0;
 
@@ -626,73 +626,62 @@ app.post('/webhook', async (req, res) => {
         monto = 0;
       }
 
-      const idMovimiento = 'MOV-' + Date.now().toString().slice(-6);
-      const categoria = obtenerCategoria(concepto);
-
       sesiones[from] = {
         tipoAccion: 'GASTO',
-        idMovimiento,
+        idMovimiento: 'MOV-' + Date.now().toString().slice(-6),
         concepto,
         monto,
-        categoria,
+        categoria: '12) VARIOS',
         obra: 'General',
         metodo: 'Efectivo',
         subMetodo: '',
         estatusFactura: 'No Requiere 🔴',
-        linkFactura: 'N/A',
         usuario: nombreUsuario
       };
 
-      await enviarBotones(from, `📝 *Gasto:* ${concepto} ($${monto.toFixed(2)})\n👤 *Registra:* ${nombreUsuario}\n\n🏗️ *Selecciona la Sucursal:*`, [
+      await enviarBotones(from, `📝 *Gasto:* ${concepto} ($${monto.toFixed(2)})\n\n🏗️ *Selecciona la Sucursal:*`, [
         { id: 'OBRA_Pelicano', title: 'Pelicano' },
         { id: 'OBRA_Caldera', title: 'Caldera' },
         { id: 'OBRA_Nativitas', title: 'Nativitas' }
       ]);
-
-      await enviarBotones(from, '👇 *Otras Sucursales:*', [
-        { id: 'OBRA_Salud', title: 'Salud' }
+      await enviarBotones(from, '👇 *Otras Opciones:*', [
+        { id: 'OBRA_Salud', title: 'Salud' },
+        { id: 'OBRA_Otro', title: 'Otro' }
       ]);
 
     } else if (msg.type === 'interactive') {
       const respuestaId = msg.interactive.button_reply?.id || msg.interactive.list_reply?.id;
 
-      if (respuestaId?.startsWith('SALDO_')) {
-        const obraMap = {
-          'SALDO_Pelicano': 'Suc. Pelicano',
-          'SALDO_Caldera': 'Suc. Caldera',
-          'SALDO_Nativitas': 'Suc. Nativitas',
-          'SALDO_Salud': 'Suc. Salud'
-        };
-        const obraSeleccionada = obraMap[respuestaId] || 'Suc. Salud';
-        const saldos = await calcularSaldosSemanalesPorObra(obraSeleccionada);
-        await enviarTexto(from, `📊 *Corte Semanal - ${obraSeleccionada}*\n\n` +
-          `🏦 *Presupuesto Farmacia:* $${saldos.presupuestoGlobal.toFixed(2)} MXN\n` +
-          `💵 *Efectivo Entregado (Caja):* $${saldos.dotacionesCaja.toFixed(2)} MXN\n` +
-          `💸 *Total Gastado Semana:* $${saldos.egresosTotales.toFixed(2)} MXN\n` +
-          `💰 *Efectivo Disponible en Mano:* $${saldos.cajaChica.toFixed(2)} MXN`);
+      if (respuestaId?.startsWith('RESOLVER_')) {
+        const idMov = respuestaId.replace('RESOLVER_', '');
+        const ok = await marcarComoFacturado(idMov);
+        if (ok) {
+          await enviarTexto(from, `🟢 *Gasto (${idMov}) actualizado correctamente a Facturado 🟢*`);
+        } else {
+          await enviarTexto(from, '⚠️ No se pudo actualizar el gasto.');
+        }
         res.sendStatus(200);
         return;
       }
 
-      if (respuestaId?.startsWith('SEL_')) {
-        const idSelec = respuestaId.replace('SEL_', '');
-        const resSheets = await sheets.spreadsheets.values.get({
-          spreadsheetId: SPREADSHEET_ID,
-          range: 'Hoja 1!A:G'
-        });
-        const filas = resSheets.data.values || [];
-        const filaEncontrada = filas.find(f => f[0] === idSelec);
+      if (respuestaId?.startsWith('REP_')) {
+        const obraMap = {
+          'REP_Pelicano': 'Suc. Pelicano',
+          'REP_Caldera': 'Suc. Caldera',
+          'REP_Nativitas': 'Suc. Nativitas',
+          'REP_Salud': 'Suc. Salud',
+          'REP_GLOBAL': null
+        };
+        const obraSel = obraMap[respuestaId];
+        const rep = await calcularReporteSaldos(obraSel);
 
-        if (filaEncontrada) {
-          ultimosRegistros[from] = {
-            id: idSelec,
-            obra: filaEncontrada[2],
-            concepto: filaEncontrada[6]
-          };
-          await enviarTexto(from, `🎯 *Gasto seleccionado:* ${filaEncontrada[6]} (${filaEncontrada[0]})\n\n📎 Por favor, *envía la foto, PDF o XML de la factura ahora*.`);
-        } else {
-          await enviarTexto(from, '⚠️ No se encontró la información de ese gasto.');
-        }
+        let txt = obraSel ? `📊 *Corte de Caja - ${obraSel}*\n\n` : `📊 *Corte de Caja Chica General*\n\n`;
+        txt += `💵 *Total Efectivo Ingresado:* $${rep.dotacionesCaja.toFixed(2)} MXN\n` +
+          `💸 *Egresos en Efectivo:* $${rep.egresosEfectivo.toFixed(2)} MXN\n` +
+          `💰 *Efectivo Disponible en Mano:* $${rep.cajaDisponible.toFixed(2)} MXN\n` +
+          `📄 *Total Facturado en Efectivo:* $${rep.facturadoEfectivo.toFixed(2)} MXN`;
+
+        await enviarTexto(from, txt);
         res.sendStatus(200);
         return;
       }
@@ -708,18 +697,17 @@ app.post('/webhook', async (req, res) => {
           'ACTOBRA_Pelicano': 'Suc. Pelicano',
           'ACTOBRA_Caldera': 'Suc. Caldera',
           'ACTOBRA_Nativitas': 'Suc. Nativitas',
-          'ACTOBRA_Salud': 'Suc. Salud'
+          'ACTOBRA_Salud': 'Suc. Salud',
+          'ACTOBRA_Otro': 'Suc. Otro'
         };
-        const obraElegida = obraMap[respuestaId] || 'Suc. Salud';
-
-        const metodoRegistrar = sesion.tipoAccion === 'PRESUPUESTO' ? 'Ingreso Presupuesto' : 'Dotación Caja Chica';
+        const obraElegida = obraMap[respuestaId] || 'Suc. Otro';
 
         await guardarEnSheets({
           idMovimiento: sesion.idMovimiento,
           obra: obraElegida,
-          metodo: metodoRegistrar,
+          metodo: 'Ingreso Presupuesto',
           subMetodo: '',
-          categoria: sesion.tipoAccion === 'PRESUPUESTO' ? 'Cobro Cliente' : 'Fondo de Caja',
+          categoria: 'Cobro Cliente',
           monto: sesion.monto,
           concepto: sesion.concepto,
           usuario: sesion.usuario,
@@ -727,16 +715,7 @@ app.post('/webhook', async (req, res) => {
           linkFactura: 'N/A'
         });
 
-        const saldosActualizados = await calcularSaldosSemanalesPorObra(obraElegida);
-        
-        let msgRespuesta = '';
-        if (sesion.tipoAccion === 'PRESUPUESTO') {
-          msgRespuesta = `🏦 *Presupuesto de Farmacia Registrado*\n\n👤 *Registró:* ${sesion.usuario}\n🏗️ *Sucursal:* ${obraElegida}\n💵 *Monto:* $${sesion.monto.toFixed(2)}\n📊 *Total Acumulado Semana:* $${saldosActualizados.presupuestoGlobal.toFixed(2)} MXN`;
-        } else {
-          msgRespuesta = `💵 *Entrega de Efectivo (Caja Chica) Registrada*\n\n👤 *Registró:* ${sesion.usuario}\n🏗️ *Sucursal:* ${obraElegida}\n💵 *Monto Entregado:* $${sesion.monto.toFixed(2)}\n💰 *Nuevo Efectivo Disponible en Mano:* $${saldosActualizados.cajaChica.toFixed(2)} MXN`;
-        }
-
-        await enviarTexto(from, msgRespuesta);
+        await enviarTexto(from, `🏦 *Ingreso Registrado Correctamente*\n🏗️ *Sucursal:* ${obraElegida}\n💵 *Monto:* $${sesion.monto.toFixed(2)}`);
         delete sesiones[from];
         res.sendStatus(200);
         return;
@@ -747,19 +726,46 @@ app.post('/webhook', async (req, res) => {
           'OBRA_Pelicano': 'Suc. Pelicano',
           'OBRA_Caldera': 'Suc. Caldera',
           'OBRA_Nativitas': 'Suc. Nativitas',
-          'OBRA_Salud': 'Suc. Salud'
+          'OBRA_Salud': 'Suc. Salud',
+          'OBRA_Otro': 'Suc. Otro'
         };
-        sesion.obra = obraMap[respuestaId] || 'Suc. Salud';
+        sesion.obra = obraMap[respuestaId] || 'Suc. Otro';
 
-        await enviarBotones(from, `🏗️ *Obra:* ${sesion.obra}\n\n💳 *¿Cómo pagaste?*`, [
-          { id: 'PAY_Efectivo', title: 'Efectivo' },
-          { id: 'PAY_Transf', title: 'Transferencia' },
-          { id: 'PAY_Tarjeta', title: 'Tarjeta' }
-        ]);
+        await enviarBotones(from, `📌 *Selecciona la Categoría Principal:*`, CATEGORIAS_PRINCIPALES);
+
+      } else if (respuestaId?.startsWith('CAT_')) {
+        if (respuestaId === 'CAT_MAS') {
+          await enviarLista(from, '📋 *Categorías Secundarias:*', 'Ver Categorías', 'Selecciona una:', CATEGORIAS_SECUNDARIAS);
+          res.sendStatus(200);
+          return;
+        }
+
+        const catSel = CATEGORIAS_PRINCIPALES.concat(CATEGORIAS_SECUNDARIAS).find(c => c.id === respuestaId);
+        sesion.categoria = catSel ? catSel.title : '12) VARIOS';
+
+        if (sesion.categoria === 'HONORARIOS') {
+          await enviarBotones(from, '👤 *¿Honorarios de quién?*', [
+            { id: 'HON_Rigo', title: 'Rigo' },
+            { id: 'HON_Paty', title: 'Paty' },
+            { id: 'HON_Casa', title: 'Casa' }
+          ]);
+        } else {
+          await desplegarFormasPago(from);
+        }
+
+      } else if (respuestaId?.startsWith('HON_')) {
+        const honMap = {
+          'HON_Rigo': 'Honorarios (Rigo)',
+          'HON_Paty': 'Honorarios (Paty)',
+          'HON_Casa': 'Honorarios (Casa)'
+        };
+        sesion.categoria = honMap[respuestaId] || 'HONORARIOS';
+        await desplegarFormasPago(from);
+
       } else if (respuestaId?.startsWith('PAY_')) {
         if (respuestaId === 'PAY_Efectivo') {
           sesion.metodo = 'Efectivo';
-          await pedirFactura(from, sesion);
+          await pedirFactura(from);
         } else if (respuestaId === 'PAY_Transf') {
           sesion.metodo = 'Transferencia';
           await enviarBotones(from, '🏦 *Selecciona la cuenta:*', [
@@ -767,7 +773,7 @@ app.post('/webhook', async (req, res) => {
             { id: 'SUB_BBVARigo', title: 'BBVA Rigo' },
             { id: 'SUB_BBVABeto', title: 'BBVA Beto' }
           ]);
-        } else if (respuestaId?.startsWith('PAY_Tarjeta')) {
+        } else if (respuestaId === 'PAY_Tarjeta') {
           sesion.metodo = 'Tarjeta';
           await enviarBotones(from, '💳 *Selecciona la tarjeta:*', [
             { id: 'SUB_NU', title: 'NU' },
@@ -775,6 +781,7 @@ app.post('/webhook', async (req, res) => {
             { id: 'SUB_MercadoPago', title: 'MercadoPago' }
           ]);
         }
+
       } else if (respuestaId?.startsWith('SUB_')) {
         const subMap = {
           'SUB_BanamexBeto': 'Banamex Beto',
@@ -785,7 +792,8 @@ app.post('/webhook', async (req, res) => {
           'SUB_MercadoPago': 'MercadoPago'
         };
         sesion.subMetodo = subMap[respuestaId] || '';
-        await pedirFactura(from, sesion);
+        await pedirFactura(from);
+
       } else if (respuestaId?.startsWith('FAC_')) {
         if (respuestaId === 'FAC_Si') {
           sesion.estatusFactura = 'Facturado 🟢';
@@ -794,38 +802,22 @@ app.post('/webhook', async (req, res) => {
         } else {
           sesion.estatusFactura = 'No Requiere 🔴';
         }
-        await finalizarRegistro(from, sesion);
-      }
-    } else if (msg.type === 'document' || msg.type === 'image') {
-      let registroPendiente = ultimosRegistros[from];
 
-      if (!registroPendiente) {
-        registroPendiente = await obtenerUltimoMovimientoDeSheets();
-      }
+        await guardarEnSheets(sesion);
 
-      if (registroPendiente) {
-        await enviarTexto(from, '⏳ Subiendo factura a Google Drive...');
+        const metodoTexto = sesion.subMetodo ? `${sesion.metodo} (${sesion.subMetodo})` : sesion.metodo;
+        const resumen = `✅ *Gasto Registrado con Éxito*\n\n` +
+          `🆔 *ID:* ${sesion.idMovimiento}\n` +
+          `👤 *Registró:* ${sesion.usuario}\n` +
+          `📌 *Categoría:* ${sesion.categoria}\n` +
+          `💵 *Monto:* $${sesion.monto.toFixed(2)}\n` +
+          `📝 *Concepto:* ${sesion.concepto}\n` +
+          `🏗️ *Obra:* ${sesion.obra}\n` +
+          `💳 *Pago:* ${metodoTexto}\n` +
+          `📄 *Factura:* ${sesion.estatusFactura}`;
 
-        const mediaId = msg.type === 'document' ? msg.document.id : msg.image.id;
-        const mimeType = msg.type === 'document' ? (msg.document.mime_type || 'application/pdf') : (msg.image.mime_type || 'image/jpeg');
-        const ext = msg.type === 'document' ? (msg.document.filename?.split('.').pop() || 'pdf') : 'jpg';
-
-        const fechaObj = new Date();
-        const mesAnio = `${fechaObj.getFullYear()}-${String(fechaObj.getMonth() + 1).padStart(2, '0')}`;
-        const nombreLimpio = `${mesAnio}_${registroPendiente.id}_${registroPendiente.obra.replace(/\s+/g, '_')}_${registroPendiente.concepto.replace(/\s+/g, '_')}.${ext}`;
-
-        const driveLink = await guardarArchivoEnDrive(mediaId, nombreLimpio, mimeType);
-
-        if (driveLink) {
-          await actualizarLinkYEstatusEnSheets(registroPendiente.id, driveLink);
-          await enviarTexto(from, `✅ *Factura adjuntada por ${nombreUsuario} y estatus actualizado a Facturado 🟢*\n\n📄 *Enlace:* ${driveLink}`);
-        } else {
-          await enviarTexto(from, '⚠️ Ocurrió un error al subir el archivo a Drive.');
-        }
-
-        delete ultimosRegistros[from];
-      } else {
-        await enviarTexto(from, '⚠️ No se encontró ningún gasto pendiente para asociar este archivo.');
+        await enviarTexto(from, resumen);
+        delete sesiones[from];
       }
     }
 
@@ -835,42 +827,20 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
-async function pedirFactura(from, sesion) {
-  await enviarBotones(from, '📄 *¿Estatus de la Factura de este gasto?*', [
+async function desplegarFormasPago(from) {
+  await enviarBotones(from, '💳 *¿Cómo pagaste este gasto?*', [
+    { id: 'PAY_Efectivo', title: 'Efectivo' },
+    { id: 'PAY_Transf', title: 'Transferencia' },
+    { id: 'PAY_Tarjeta', title: 'Tarjeta' }
+  ]);
+}
+
+async function pedirFactura(from) {
+  await enviarBotones(from, '📄 *¿Estatus de la Factura?*', [
     { id: 'FAC_Si', title: 'Facturado 🟢' },
     { id: 'FAC_Pendiente', title: 'Pendiente 🟡' },
     { id: 'FAC_No', title: 'No Requiere 🔴' }
   ]);
-}
-
-async function finalizarRegistro(from, sesion) {
-  await guardarEnSheets(sesion);
-  const metodoTexto = datosMetodo(sesion);
-  
-  let resumen = `✅ *Gasto Registrado con Éxito*\n\n` +
-    `🆔 *ID:* ${sesion.idMovimiento}\n` +
-    `👤 *Registró:* ${sesion.usuario}\n` +
-    `💵 *Monto:* $${sesion.monto.toFixed(2)}\n` +
-    `📝 *Concepto:* ${sesion.concepto}\n` +
-    `🏗️ *Obra:* ${sesion.obra}\n` +
-    `💳 *Pago:* ${metodoTexto}\n` +
-    `📄 *Factura:* ${sesion.estatusFactura}`;
-
-  if (sesion.estatusFactura === 'Facturado 🟢') {
-    resumen += `\n\n📎 *Por favor, envía el archivo (PDF, XML o Foto) de la factura a este chat.*`;
-    ultimosRegistros[from] = {
-      id: sesion.idMovimiento,
-      obra: sesion.obra,
-      concepto: sesion.concepto
-    };
-  }
-
-  await enviarTexto(from, resumen);
-  delete sesiones[from];
-}
-
-function datosMetodo(s) {
-  return s.subMetodo ? `${s.metodo} (${s.subMetodo})` : s.metodo;
 }
 
 app.listen(PORT, () => console.log(`Servidor en puerto ${PORT}`));
