@@ -22,7 +22,7 @@ const DIRECTORIO_USUARIOS = {
   '3313008395': 'Cris'
 };
 
-// Categorías Principales (6)
+// Categorías Principales (6 + Opción de ver más)
 const CATEGORIAS_PRINCIPALES = [
   { id: 'CAT_MAT_ALB', title: 'MATERIAL ALBAÑILERIA GRUESA' },
   { id: 'CAT_MAT_EST', title: 'MATERIAL ESTRUCTURA METALICA' },
@@ -30,7 +30,7 @@ const CATEGORIAS_PRINCIPALES = [
   { id: 'CAT_DIESEL', title: 'DIESEL PLANTA' },
   { id: 'CAT_INDIRECTOS', title: 'INDIRECTOS' },
   { id: 'CAT_HONORARIOS', title: 'HONORARIOS' },
-  { id: 'CAT_MAS', title: '➕ Ver más categorías' }
+  { id: 'CAT_MAS', title: '➕ Ver más categorías', description: 'Desplegar las 22 categorías restantes' }
 ];
 
 // Categorías Secundarias (22)
@@ -731,7 +731,8 @@ app.post('/webhook', async (req, res) => {
         };
         sesion.obra = obraMap[respuestaId] || 'Suc. Otro';
 
-        await enviarBotones(from, `📌 *Selecciona la Categoría Principal:*`, CATEGORIAS_PRINCIPALES);
+        // Enviamos la lista interactiva de categorías (solución al límite de 3 botones)
+        await enviarLista(from, `🏗️ *Obra:* ${sesion.obra}\n\n📌 *Selecciona la Categoría Principal:*`, 'Ver Categorías', 'Categorías Principales:', CATEGORIAS_PRINCIPALES);
 
       } else if (respuestaId?.startsWith('CAT_')) {
         if (respuestaId === 'CAT_MAS') {
