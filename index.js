@@ -7,9 +7,8 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
-const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
-const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
-const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
+const SPREADSHEET_ID = process.env.SPREADSHEET_ID; // Excel Principal de Gastos
+const SPREADSHEET_PRECIOS_ID = process.env.SPREADSHEET_PRECIOS_ID || '1Cscdoi4k3BkHLWPSB9nSxrGyZsshRXMKEtx2jbBcIQ0'; // Nuevo Excel de Precios
 
 const sesiones = {};
 
@@ -22,35 +21,38 @@ const DIRECTORIO_USUARIOS = {
   '3313008395': 'Cris'
 };
 
-// Submenús secundarios divididos en bloques < 10 para no romper el límite de Meta WhatsApp API
-const BLOQUE_1_OBRAS = [
+// Categorías agrupadas por Etapas de Obra
+const ETAPA_1_ESTRUCTURA = [
   { id: 'CAT_1', title: '01) PREELIMINARES' },
   { id: 'CAT_2', title: '02) ALBAÑILERIA MDO' },
-  { id: 'CAT_4', title: '04) PISOS Y RECUBR. MDO' },
-  { id: 'CAT_5', title: '05) PISOS Y RECUBR. MAT' },
+  { id: 'CAT_4', title: '04) PISOS RECUBR. MDO' },
+  { id: 'CAT_5', title: '05) PISOS RECUBR. MAT' },
   { id: 'CAT_6', title: '06) EST. CONCRETO MDO' },
   { id: 'CAT_7', title: '07) EST. CONCRETO MAT' },
   { id: 'CAT_8', title: '08) MDO EST. METALICA' },
   { id: 'CAT_10', title: '10) CUBIERTAS LAMINA' }
 ];
 
-const BLOQUE_2_ACABADOS = [
+const ETAPA_2_ACABADOS = [
   { id: 'CAT_11', title: '11) MDO HERRERIA' },
   { id: 'CAT_13', title: '13) PLAFOND Y TABLAROCA' },
   { id: 'CAT_14', title: '14) ALUMINIO Y VIDRIOS' },
-  { id: 'CAT_15', title: '15) CARPINTERIA' },
   { id: 'CAT_16', title: '16) PINTURA' },
   { id: 'CAT_17', title: '17) CUBIERTAS' },
   { id: 'CAT_18', title: '18) ANUNCIO MAT' },
-  { id: 'CAT_19', title: '19) LIMPIEZA Y ACARREOS' }
+  { id: 'CAT_21', title: '21) INST HIDRAULICA' },
+  { id: 'CAT_22', title: '22) DRENAJES' }
 ];
 
-const BLOQUE_3_ADMIN = [
-  { id: 'CAT_20', title: '20) VARIOS' },
-  { id: 'CAT_21', title: '21) INST HIDRAULICA' },
-  { id: 'CAT_22', title: '22) DRENAJES' },
+const ETAPA_3_CAMPO = [
+  { id: 'CAT_15', title: '15) CARPINTERIA' },
+  { id: 'CAT_19', title: '19) LIMPIEZA Y ACARREOS' },
   { id: 'CAT_23', title: '23) TERRACERIA / MOV.' },
-  { id: 'CAT_24', title: '24) VIATICOS' },
+  { id: 'CAT_24', title: '24) VIATICOS' }
+];
+
+const ETAPA_4_ADMIN = [
+  { id: 'CAT_20', title: '20) VARIOS' },
   { id: 'CAT_26', title: '26) IMSS / ISN' },
   { id: 'CAT_27', title: '27) CONTABILIDAD' },
   { id: 'CAT_28', title: '28) RESIDENCIA DE OBRA' }
@@ -196,6 +198,75 @@ async function guardarEnSheets(datos) {
     console.log(`✅ Registrado en Sheets: ${datos.idMovimiento}`);
   } catch (error) {
     console.error('❌ Error guardando en Sheets:', error.message);
+  }
+}
+
+async function guardarPrecioHistorico(datos) {
+  if (!sheets || !SPREADSHEET_PRECIOS_ID) return;
+  try {
+    const fechaHora = new Date().toLocaleString('es-MX', { timeZone: 'America/Mexico_City' });
+    
+    // Obtener última fila para el correlativo de Columna A
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_PRECIOS_ID,
+      range: 'PRECIOS!A:A'
+    });
+    const filas = res.data.values || [];
+    const numFila = Math.max(1, filas.length - 1); // Fila 1 es título, Fila 2 encabezados
+
+    const valores = [[
+      numFila,
+      fechaHora,
+      datos.obra,
+      datos.material,
+      datos.unidad,
+      datos.precio,
+      datos.proveedor,
+      datos.usuario
+    ]];
+
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SPREADSHEET_PRECIOS_ID,
+      range: 'PRECIOS!A:H',
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: valores }
+    });
+    console.log(`✅ Precio histórico registrado: ${datos.material}`);
+  } catch (error) {
+    console.error('❌ Error guardando precio histórico:', error.message);
+  }
+}
+
+async function buscarHistoricoPrecios(materialBuscado) {
+  if (!sheets || !SPREADSHEET_PRECIOS_ID) return [];
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_PRECIOS_ID,
+      range: 'PRECIOS!A:H'
+    });
+    const filas = res.data.values || [];
+    const resultados = [];
+
+    for (let i = 2; i < filas.length; i++) { // Inicia desde Fila 3
+      const fila = filas[i];
+      const fecha = fila[1] || '';
+      const obra = fila[2] || '';
+      const mat = (fila[3] || '').toLowerCase();
+      const unidad = fila[4] || '';
+      let precioStr = (fila[5] || '0').toString().replace('$', '').replace(/,/g, '').trim();
+      const precio = parseFloat(precioStr) || 0;
+      const proveedor = fila[6] || 'No especificado';
+
+      if (mat.includes(materialBuscado.toLowerCase())) {
+        resultados.push({ fecha, obra, material: fila[3], unidad, precio, proveedor });
+      }
+    }
+
+    resultados.sort((a, b) => a.precio - b.precio);
+    return resultados;
+  } catch (error) {
+    console.error('❌ Error buscando precios:', error.message);
+    return [];
   }
 }
 
@@ -446,6 +517,94 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
+      // RESPUESTA SI ESTÁ ESPERANDO UNIDAD O PROVEEDOR MANUAL
+      const sesionActual = sesiones[from];
+      if (sesionActual && sesionActual.esperandoUnidadManual) {
+        sesionActual.unidad = textBody.toLowerCase();
+        delete sesionActual.esperandoUnidadManual;
+        
+        await enviarBotones(from, `🏷️ *Material:* ${sesionActual.material.toUpperCase()}\n💵 *Precio:* $${sesionActual.precio.toFixed(2)} / ${sesionActual.unidad}\n\n🏗️ *¿En qué Sucursal se cotizó/compró?*`, [
+          { id: 'PRECIOBRA_Pelicano', title: 'Pelicano' },
+          { id: 'PRECIOBRA_Caldera', title: 'Caldera' },
+          { id: 'PRECIOBRA_Nativitas', title: 'Nativitas' }
+        ]);
+        await enviarBotones(from, '👇 *Otras Opciones:*', [
+          { id: 'PRECIOBRA_Salud', title: 'Salud' },
+          { id: 'PRECIOBRA_Otro', title: 'Otro' }
+        ]);
+        res.sendStatus(200);
+        return;
+      }
+
+      if (sesionActual && sesionActual.esperandoProveedor) {
+        sesionActual.proveedor = textBody;
+        delete sesionActual.esperandoProveedor;
+
+        await guardarPrecioHistorico({
+          obra: sesionActual.obra,
+          material: sesionActual.material,
+          unidad: sesionActual.unidad,
+          precio: sesionActual.precio,
+          proveedor: sesionActual.proveedor,
+          usuario: sesionActual.usuario
+        });
+
+        await enviarTexto(from, `✅ *Precio Histórico Guardado con Éxito*\n\n📍 *Obra/Sucursal:* ${sesionActual.obra}\n📝 *Material:* ${sesionActual.material.toUpperCase()}\n📐 *Unidad:* ${sesionActual.unidad}\n💵 *Precio:* $${sesionActual.precio.toFixed(2)}\n🏢 *Proveedor:* ${sesionActual.proveedor}\n👤 *Registró:* ${sesionActual.usuario}`);
+        delete sesiones[from];
+        res.sendStatus(200);
+        return;
+      }
+
+      // COMANDO PARA CAPTURAR PRECIO: "precio [material] [monto]"
+      const matchRegistroPrecio = textBody.match(/^precio\s+(.+)\s+(\d+(\.\d+)?)/i);
+      if (matchRegistroPrecio) {
+        const material = matchRegistroPrecio[1].trim();
+        const precio = parseFloat(matchRegistroPrecio[2]);
+
+        sesiones[from] = {
+          tipoAccion: 'REGISTRO_PRECIO_HISTORICO',
+          material,
+          precio,
+          usuario: nombreUsuario
+        };
+
+        await enviarBotones(from, `🏷️ *Material:* ${material.toUpperCase()}\n💵 *Precio:* $${precio.toFixed(2)}\n\n📐 *Selecciona la Unidad de Medida:*`, [
+          { id: 'UNIDAD_Bulto', title: 'Bulto / Saco' },
+          { id: 'UNIDAD_Tramo', title: 'Tramo / Pza' },
+          { id: 'UNIDAD_M2', title: 'm² / m³ / Ton' }
+        ]);
+        await enviarBotones(from, '👇 *Otras Unidades:*', [
+          { id: 'UNIDAD_Cubeta', title: 'Cubeta / Litro' },
+          { id: 'UNIDAD_OTRO', title: '✏️ Otro (Escribir)' }
+        ]);
+        res.sendStatus(200);
+        return;
+      }
+
+      // COMANDO PARA CONSULTAR PRECIOS HISTÓRICOS: "comparar [material]" o "buscar [material]"
+      const matchBusquedaPrecio = textBody.match(/^(comparar|buscar|precios)\s+(.+)/i);
+      if (matchBusquedaPrecio) {
+        const materialBuscado = matchBusquedaPrecio[2].trim();
+        const resultados = await buscarHistoricoPrecios(materialBuscado);
+
+        if (resultados.length === 0) {
+          await enviarTexto(from, `⚠️ No se encontraron precios registrados para "${materialBuscado}".\n\n*Puedes registrar uno con el comando:*\n\`precio ${materialBuscado} 185\``);
+        } else {
+          let msgTxt = `📊 *HISTÓRICO DE PRECIOS: "${materialBuscado.toUpperCase()}"*\n\n`;
+          resultados.forEach((r, idx) => {
+            const emoji = idx === 0 ? '🟢' : idx === 1 ? '🟡' : '🔴';
+            msgTxt += `${emoji} *$${r.precio.toFixed(2)}* / ${r.unidad}\n` +
+              `   📍 ${r.obra}\n` +
+              `   🏢 Proveedor: ${r.proveedor}\n` +
+              `   📝 Material: ${r.material}\n` +
+              `   📅 Fecha: ${r.fecha.split(',')[0]}\n\n`;
+          });
+          await enviarTexto(from, msgTxt);
+        }
+        res.sendStatus(200);
+        return;
+      }
+
       // CONSULTAR FACTURAS PENDIENTES
       if (/^(facturar|facturas|pendientes|ver pendientes)$/i.test(textBody)) {
         const pendientes = await obtenerMovimientosPendientes();
@@ -666,6 +825,59 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
+      // RESPUESTA SELECCIÓN UNIDAD PARA REGISTRO PRECIO
+      if (respuestaId?.startsWith('UNIDAD_')) {
+        const sesion = sesiones[from];
+        if (!sesion) { res.sendStatus(200); return; }
+
+        if (respuestaId === 'UNIDAD_OTRO') {
+          sesion.esperandoUnidadManual = true;
+          await enviarTexto(from, '✏️ *Por favor, escribe manualmente la Unidad de Medida:* (ej: kg, millar, rollo, paquete)');
+          res.sendStatus(200);
+          return;
+        }
+
+        const unidadMap = {
+          'UNIDAD_Bulto': 'bulto/saco',
+          'UNIDAD_Tramo': 'tramo/pza',
+          'UNIDAD_M2': 'm²/m³/ton',
+          'UNIDAD_Cubeta': 'cubeta/litro'
+        };
+        sesion.unidad = unidadMap[respuestaId] || 'pza';
+
+        await enviarBotones(from, `🏷️ *Material:* ${sesion.material.toUpperCase()}\n💵 *Precio:* $${sesion.precio.toFixed(2)} / ${sesion.unidad}\n\n🏗️ *¿En qué Sucursal se cotizó/compró?*`, [
+          { id: 'PRECIOBRA_Pelicano', title: 'Pelicano' },
+          { id: 'PRECIOBRA_Caldera', title: 'Caldera' },
+          { id: 'PRECIOBRA_Nativitas', title: 'Nativitas' }
+        ]);
+        await enviarBotones(from, '👇 *Otras Opciones:*', [
+          { id: 'PRECIOBRA_Salud', title: 'Salud' },
+          { id: 'PRECIOBRA_Otro', title: 'Otro' }
+        ]);
+        res.sendStatus(200);
+        return;
+      }
+
+      // RESPUESTA SUCURSAL PARA REGISTRO PRECIO
+      if (respuestaId?.startsWith('PRECIOBRA_')) {
+        const obraMap = {
+          'PRECIOBRA_Pelicano': 'Suc. Pelicano',
+          'PRECIOBRA_Caldera': 'Suc. Caldera',
+          'PRECIOBRA_Nativitas': 'Suc. Nativitas',
+          'PRECIOBRA_Salud': 'Suc. Salud',
+          'PRECIOBRA_Otro': 'Suc. Otro'
+        };
+        const sesion = sesiones[from];
+
+        if (sesion) {
+          sesion.obra = obraMap[respuestaId] || 'Suc. Otro';
+          sesion.esperandoProveedor = true;
+          await enviarTexto(from, '🏢 *¿En qué Proveedor o Ferretería se cotizó/compró?*\n*(Escribe el nombre del proveedor o ferretería)*');
+        }
+        res.sendStatus(200);
+        return;
+      }
+
       if (respuestaId?.startsWith('REP_')) {
         const obraMap = {
           'REP_Pelicano': 'Suc. Pelicano',
@@ -742,7 +954,7 @@ app.post('/webhook', async (req, res) => {
           obra: obraElegida,
           metodo: 'Asignación Contrato',
           subMetodo: '',
-          categoria: '29) INDIRECTOS',
+          categoria: '28) RESIDENCIA DE OBRA',
           monto: sesion.monto,
           concepto: `Contrato ${sesion.contratista} Total Autorizado`,
           usuario: sesion.usuario,
@@ -824,31 +1036,53 @@ app.post('/webhook', async (req, res) => {
         };
         sesion.obra = obraMap[respuestaId] || 'Suc. Otro';
 
-        // 1. Primer mensaje con las primeras 3 Principales
         await enviarBotones(from, `🏗️ *Obra:* ${sesion.obra}\n\n📌 *Selecciona la Categoría Principal:*`, [
           { id: 'CAT_3', title: '03) MAT ALB. GRUESA' },
           { id: 'CAT_9', title: '09) MAT EST. METAL' },
           { id: 'CAT_12', title: '12) MAT HERRERIA' }
         ]);
 
-        // 2. Segundo mensaje con las otras 3 Principales
         await enviarBotones(from, `👇 *Más Principales:*`, [
           { id: 'CAT_25', title: '25) DIESEL PLANTA' },
           { id: 'CAT_29', title: '29) INDIRECTOS' },
           { id: 'CAT_30', title: '30) HONORARIOS' }
         ]);
 
-        // 3. Tercer mensaje: Únicamente el botón de Ver Más
         await enviarBotones(from, `👇 *Otras Partidas:*`, [
           { id: 'CAT_MAS', title: '➕ Ver más categorías' }
         ]);
 
       } else if (respuestaId?.startsWith('CAT_')) {
         if (respuestaId === 'CAT_MAS') {
-          // Desplegamos los 3 bloques pequeños para garantizar que Meta responda
-          await enviarLista(from, '📋 *Partidas de Obra (1/3):*', 'Ver Partidas 1-10', 'Obras y Estructuras:', BLOQUE_1_OBRAS);
-          await enviarLista(from, '📋 *Partidas de Obra (2/3):*', 'Ver Partidas 11-19', 'Acabados e Inst.:', BLOQUE_2_ACABADOS);
-          await enviarLista(from, '📋 *Partidas de Obra (3/3):*', 'Ver Partidas 20-28', 'Admin y Varios:', BLOQUE_3_ADMIN);
+          await enviarBotones(from, '📋 *Selecciona la Etapa de Obra:*', [
+            { id: 'ETAPA_1', title: '🏗️ 1. Estructura/Muros' },
+            { id: 'ETAPA_2', title: '🎨 2. Acabados e Inst.' },
+            { id: 'ETAPA_3', title: '🚚 3. Campo y Viáticos' }
+          ]);
+          await enviarBotones(from, '👇 *Etapa Administrativa:*', [
+            { id: 'ETAPA_4', title: '📋 4. Admin y Servicios' }
+          ]);
+          res.sendStatus(200);
+          return;
+        }
+
+        if (respuestaId === 'ETAPA_1') {
+          await enviarLista(from, '🏗️ *Estructura y Muros:*', 'Ver Partidas', 'Selecciona la partida:', ETAPA_1_ESTRUCTURA);
+          res.sendStatus(200);
+          return;
+        }
+        if (respuestaId === 'ETAPA_2') {
+          await enviarLista(from, '🎨 *Acabados e Instalaciones:*', 'Ver Partidas', 'Selecciona la partida:', ETAPA_2_ACABADOS);
+          res.sendStatus(200);
+          return;
+        }
+        if (respuestaId === 'ETAPA_3') {
+          await enviarLista(from, '🚚 *Campo y Viáticos:*', 'Ver Partidas', 'Selecciona la partida:', ETAPA_3_CAMPO);
+          res.sendStatus(200);
+          return;
+        }
+        if (respuestaId === 'ETAPA_4') {
+          await enviarLista(from, '📋 *Admin y Servicios:*', 'Ver Partidas', 'Selecciona la partida:', ETAPA_4_ADMIN);
           res.sendStatus(200);
           return;
         }
@@ -865,7 +1099,7 @@ app.post('/webhook', async (req, res) => {
         if (mapaDirecto[respuestaId]) {
           sesion.categoria = mapaDirecto[respuestaId];
         } else {
-          const todasSecundarias = BLOQUE_1_OBRAS.concat(BLOQUE_2_ACABADOS).concat(BLOQUE_3_ADMIN);
+          const todasSecundarias = ETAPA_1_ESTRUCTURA.concat(ETAPA_2_ACABADOS).concat(ETAPA_3_CAMPO).concat(ETAPA_4_ADMIN);
           const catSel = todasSecundarias.find(c => c.id === respuestaId);
           sesion.categoria = catSel ? catSel.title : '20) VARIOS';
         }
@@ -881,21 +1115,15 @@ app.post('/webhook', async (req, res) => {
         }
 
       } else if (respuestaId?.startsWith('HON_')) {
-        const honMap = {
-          'HON_Rigo': '30) HONORARIOS',
-          'HON_Paty': '30) HONORARIOS',
-          'HON_Casa': '30) HONORARIOS'
-        };
         const beneficiarioMap = {
           'HON_Rigo': 'Rigo',
           'HON_Paty': 'Paty',
           'HON_Casa': 'Casa'
         };
 
-        sesion.categoria = honMap[respuestaId] || '30) HONORARIOS';
-        // Agregamos la nota del beneficiario en el concepto para tener el registro exacto de quién fue
+        sesion.categoria = '30) HONORARIOS';
         sesion.concepto = `${sesion.concepto} (Honorarios a ${beneficiarioMap[respuestaId]})`;
-        
+
         await desplegarFormasPago(from);
 
       } else if (respuestaId?.startsWith('PAY_')) {
