@@ -22,16 +22,19 @@ const DIRECTORIO_USUARIOS = {
   '3313008395': 'Cris'
 };
 
-// Lista completa de categorías secundarias (sin distinción de colores, ordenadas por número)
-const CATEGORIAS_SECUNDARIAS = [
+// Submenús secundarios divididos en bloques < 10 para no romper el límite de Meta WhatsApp API
+const BLOQUE_1_OBRAS = [
   { id: 'CAT_1', title: '01) PREELIMINARES' },
-  { id: 'CAT_2', title: '02) ALBAÑILERIA GRUESA MDO' },
+  { id: 'CAT_2', title: '02) ALBAÑILERIA MDO' },
   { id: 'CAT_4', title: '04) PISOS Y RECUBR. MDO' },
   { id: 'CAT_5', title: '05) PISOS Y RECUBR. MAT' },
-  { id: 'CAT_6', title: '06) ESTRUCTURA CONC. MDO' },
-  { id: 'CAT_7', title: '07) ESTRUCTURA CONC. MAT' },
-  { id: 'CAT_8', title: '08) MDO ESTRUCTURA METAL' },
-  { id: 'CAT_10', title: '10) CUBIERTAS DE LAMINA' },
+  { id: 'CAT_6', title: '06) EST. CONCRETO MDO' },
+  { id: 'CAT_7', title: '07) EST. CONCRETO MAT' },
+  { id: 'CAT_8', title: '08) MDO EST. METALICA' },
+  { id: 'CAT_10', title: '10) CUBIERTAS LAMINA' }
+];
+
+const BLOQUE_2_ACABADOS = [
   { id: 'CAT_11', title: '11) MDO HERRERIA' },
   { id: 'CAT_13', title: '13) PLAFOND Y TABLAROCA' },
   { id: 'CAT_14', title: '14) ALUMINIO Y VIDRIOS' },
@@ -39,10 +42,14 @@ const CATEGORIAS_SECUNDARIAS = [
   { id: 'CAT_16', title: '16) PINTURA' },
   { id: 'CAT_17', title: '17) CUBIERTAS' },
   { id: 'CAT_18', title: '18) ANUNCIO MAT' },
-  { id: 'CAT_19', title: '19) LIMPIEZA Y ACARREOS' },
+  { id: 'CAT_19', title: '19) LIMPIEZA Y ACARREOS' }
+];
+
+const BLOQUE_3_ADMIN = [
+  { id: 'CAT_20', title: '20) VARIOS' },
   { id: 'CAT_21', title: '21) INST HIDRAULICA' },
   { id: 'CAT_22', title: '22) DRENAJES' },
-  { id: 'CAT_23', title: '23) TERRRACERIA Y MOV.' },
+  { id: 'CAT_23', title: '23) TERRACERIA / MOV.' },
   { id: 'CAT_24', title: '24) VIATICOS' },
   { id: 'CAT_26', title: '26) IMSS / ISN' },
   { id: 'CAT_27', title: '27) CONTABILIDAD' },
@@ -817,29 +824,31 @@ app.post('/webhook', async (req, res) => {
         };
         sesion.obra = obraMap[respuestaId] || 'Suc. Otro';
 
-        // 1. Primer mensaje de Categorías Principales
+        // 1. Primer mensaje con las primeras 3 Principales
         await enviarBotones(from, `🏗️ *Obra:* ${sesion.obra}\n\n📌 *Selecciona la Categoría Principal:*`, [
           { id: 'CAT_3', title: '03) MAT ALB. GRUESA' },
           { id: 'CAT_9', title: '09) MAT EST. METAL' },
           { id: 'CAT_12', title: '12) MAT HERRERIA' }
         ]);
 
-        // 2. Segundo mensaje de Categorías Principales
+        // 2. Segundo mensaje con las otras 3 Principales
         await enviarBotones(from, `👇 *Más Principales:*`, [
           { id: 'CAT_25', title: '25) DIESEL PLANTA' },
           { id: 'CAT_29', title: '29) INDIRECTOS' },
           { id: 'CAT_30', title: '30) HONORARIOS' }
         ]);
 
-        // 3. Tercer mensaje: Ver más y Varios
-        await enviarBotones(from, `👇 *Otras Opciones:*`, [
-          { id: 'CAT_MAS', title: '➕ Ver más categorías' },
-          { id: 'CAT_20', title: '20) VARIOS' }
+        // 3. Tercer mensaje: Únicamente el botón de Ver Más
+        await enviarBotones(from, `👇 *Otras Partidas:*`, [
+          { id: 'CAT_MAS', title: '➕ Ver más categorías' }
         ]);
 
       } else if (respuestaId?.startsWith('CAT_')) {
         if (respuestaId === 'CAT_MAS') {
-          await enviarLista(from, '📋 *Todas las Categorías de Obra:*', 'Ver Categorías', 'Selecciona la partida:', CATEGORIAS_SECUNDARIAS);
+          // Desplegamos los 3 bloques pequeños para garantizar que Meta responda
+          await enviarLista(from, '📋 *Partidas de Obra (1/3):*', 'Ver Partidas 1-10', 'Obras y Estructuras:', BLOQUE_1_OBRAS);
+          await enviarLista(from, '📋 *Partidas de Obra (2/3):*', 'Ver Partidas 11-19', 'Acabados e Inst.:', BLOQUE_2_ACABADOS);
+          await enviarLista(from, '📋 *Partidas de Obra (3/3):*', 'Ver Partidas 20-28', 'Admin y Varios:', BLOQUE_3_ADMIN);
           res.sendStatus(200);
           return;
         }
@@ -850,14 +859,14 @@ app.post('/webhook', async (req, res) => {
           'CAT_12': '12) MATERIAL HERRERIA',
           'CAT_25': '25) DIESEL PLANTA',
           'CAT_29': '29) INDIRECTOS',
-          'CAT_30': '30) HONORARIOS',
-          'CAT_20': '20) VARIOS'
+          'CAT_30': '30) HONORARIOS'
         };
 
         if (mapaDirecto[respuestaId]) {
           sesion.categoria = mapaDirecto[respuestaId];
         } else {
-          const catSel = CATEGORIAS_SECUNDARIAS.find(c => c.id === respuestaId);
+          const todasSecundarias = BLOQUE_1_OBRAS.concat(BLOQUE_2_ACABADOS).concat(BLOQUE_3_ADMIN);
+          const catSel = todasSecundarias.find(c => c.id === respuestaId);
           sesion.categoria = catSel ? catSel.title : '20) VARIOS';
         }
 
@@ -873,11 +882,20 @@ app.post('/webhook', async (req, res) => {
 
       } else if (respuestaId?.startsWith('HON_')) {
         const honMap = {
-          'HON_Rigo': '30) HONORARIOS (Rigo)',
-          'HON_Paty': '30) HONORARIOS (Paty)',
-          'HON_Casa': '30) HONORARIOS (Casa)'
+          'HON_Rigo': '30) HONORARIOS',
+          'HON_Paty': '30) HONORARIOS',
+          'HON_Casa': '30) HONORARIOS'
         };
+        const beneficiarioMap = {
+          'HON_Rigo': 'Rigo',
+          'HON_Paty': 'Paty',
+          'HON_Casa': 'Casa'
+        };
+
         sesion.categoria = honMap[respuestaId] || '30) HONORARIOS';
+        // Agregamos la nota del beneficiario en el concepto para tener el registro exacto de quién fue
+        sesion.concepto = `${sesion.concepto} (Honorarios a ${beneficiarioMap[respuestaId]})`;
+        
         await desplegarFormasPago(from);
 
       } else if (respuestaId?.startsWith('PAY_')) {
