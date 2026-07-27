@@ -22,43 +22,31 @@ const DIRECTORIO_USUARIOS = {
   '3313008395': 'Cris'
 };
 
-// 1. Categorías Principales
-const CATEGORIAS_PRINCIPALES = [
-  { id: 'CAT_MAT_ALB', title: 'MATERIAL ALBAÑILERIA GRUESA', description: 'Cemento, varilla, tabique' },
-  { id: 'CAT_MAT_EST', title: 'MATERIAL ESTRUCTURA METALICA', description: 'Perfiles, vigas, acero' },
-  { id: 'CAT_MAT_HERR', title: 'MATERIAL HERRERIA', description: 'Pernos, soleras, tubos' },
-  { id: 'CAT_DIESEL', title: 'DIESEL PLANTA', description: 'Combustible maquinaria/planta' },
-  { id: 'CAT_INDIRECTOS', title: 'INDIRECTOS', description: 'Gastos generales de obra' },
-  { id: 'CAT_HONORARIOS', title: 'HONORARIOS', description: 'Pagos a Rigo, Paty o Casa' },
-  { id: 'CAT_BLOQUE_1', title: '📁 Más Materiales/Obra', description: 'Ver preliminares, acabados, instalaciones' },
-  { id: 'CAT_BLOQUE_2', title: '📁 Más Servicios/Admin', description: 'Ver viáticos, IMSS, contabilidad, fletes' }
-];
-
-// 2. Bloque 1: Materiales y Trabajos de Campo
-const CATEGORIAS_MATERIALES = [
-  { id: 'CAT_PREELIMINARES', title: '01) PREELIMINARES' },
-  { id: 'CAT_ALB_MDO', title: '02) ALBAÑILERIA MDO' },
-  { id: 'CAT_PISOS_MDO', title: '03) PISOS Y RECUBR. MDO' },
-  { id: 'CAT_PISOS_MAT', title: '03) PISOS Y RECUBR. MAT' },
-  { id: 'CAT_EST_CONC_MAT', title: '04) ESTRUCTURA CONCRETO' },
-  { id: 'CAT_PLAFOND', title: '07) PLAFOND Y TABLAROCA' },
-  { id: 'CAT_ALUMINIO', title: '08) ALUMINIO Y VIDRIOS' },
-  { id: 'CAT_HIDRAULICA', title: '13) INST HIDRAULICA' },
-  { id: 'CAT_DRENAJES', title: '14) DRENAJES' },
-  { id: 'CAT_CUBIERTAS', title: '10) CUBIERTAS / ANUNCIO' }
-];
-
-// 3. Bloque 2: Servicios, Administración y Varios
-const CATEGORIAS_SERVICIOS = [
-  { id: 'CAT_PINTURA', title: '09) PINTURA' },
-  { id: 'CAT_CARPINTERIA', title: '08) CARPINTERIA' },
-  { id: 'CAT_LIMPIEZA', title: '11) LIMPIEZA Y ACARREOS' },
-  { id: 'CAT_TERRACERIA', title: '15) TERRACERIA / MOV.' },
-  { id: 'CAT_VIATICOS', title: '16) VIATICOS / GASOLINA' },
-  { id: 'CAT_IMSS', title: '17) IMSS / ISN' },
-  { id: 'CAT_CONTA', title: '18) CONTABILIDAD' },
-  { id: 'CAT_RESIDENCIA', title: '19) RESIDENCIA DE OBRA' },
-  { id: 'CAT_VARIOS', title: '12) VARIOS' }
+// Lista completa de categorías secundarias (sin distinción de colores, ordenadas por número)
+const CATEGORIAS_SECUNDARIAS = [
+  { id: 'CAT_1', title: '01) PREELIMINARES' },
+  { id: 'CAT_2', title: '02) ALBAÑILERIA GRUESA MDO' },
+  { id: 'CAT_4', title: '04) PISOS Y RECUBR. MDO' },
+  { id: 'CAT_5', title: '05) PISOS Y RECUBR. MAT' },
+  { id: 'CAT_6', title: '06) ESTRUCTURA CONC. MDO' },
+  { id: 'CAT_7', title: '07) ESTRUCTURA CONC. MAT' },
+  { id: 'CAT_8', title: '08) MDO ESTRUCTURA METAL' },
+  { id: 'CAT_10', title: '10) CUBIERTAS DE LAMINA' },
+  { id: 'CAT_11', title: '11) MDO HERRERIA' },
+  { id: 'CAT_13', title: '13) PLAFOND Y TABLAROCA' },
+  { id: 'CAT_14', title: '14) ALUMINIO Y VIDRIOS' },
+  { id: 'CAT_15', title: '15) CARPINTERIA' },
+  { id: 'CAT_16', title: '16) PINTURA' },
+  { id: 'CAT_17', title: '17) CUBIERTAS' },
+  { id: 'CAT_18', title: '18) ANUNCIO MAT' },
+  { id: 'CAT_19', title: '19) LIMPIEZA Y ACARREOS' },
+  { id: 'CAT_21', title: '21) INST HIDRAULICA' },
+  { id: 'CAT_22', title: '22) DRENAJES' },
+  { id: 'CAT_23', title: '23) TERRRACERIA Y MOV.' },
+  { id: 'CAT_24', title: '24) VIATICOS' },
+  { id: 'CAT_26', title: '26) IMSS / ISN' },
+  { id: 'CAT_27', title: '27) CONTABILIDAD' },
+  { id: 'CAT_28', title: '28) RESIDENCIA DE OBRA' }
 ];
 
 const CONTRATISTAS_VALIDOS = ['tablaroca', 'aluminio y vidrio', 'aluminio', 'cortinas', 'pintura', 'cubiertas'];
@@ -363,7 +351,6 @@ async function calcularReporteContratistas(obraBuscada) {
 
       if (estatus.includes('CANCELADO')) continue;
 
-      // Filtrar por obra si se seleccionó una en específico
       if (obraBuscada && obra.toLowerCase() !== obraBuscada.toLowerCase()) continue;
 
       CONTRATISTAS_VALIDOS.forEach(c => {
@@ -516,7 +503,7 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // REGISTRO DE PRESUPUESTO AUTORIZADO (SOLO MONTO, PREGUNTA OBRA)
+      // REGISTRO DE PRESUPUESTO AUTORIZADO
       const matchPptoTotalAuto = textBody.match(/^(presupuesto autorizado|presupuesto total)\s+(\d+(\.\d+)?)/i);
       if (matchPptoTotalAuto) {
         const montoPpto = parseFloat(matchPptoTotalAuto[2]);
@@ -542,7 +529,7 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // REGISTRO DE CONTRATO A CONTRATISTA (SOLO MONTO, PREGUNTA OBRA)
+      // REGISTRO DE CONTRATO A CONTRATISTA
       const matchContrato = textBody.match(/^contrato\s+(.+)\s+(\d+(\.\d+)?)/i);
       if (matchContrato) {
         const nombreContratista = matchContrato[1].trim();
@@ -570,7 +557,7 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // INGRESO LIBERADO POR FARMACIA (PARTIDA DADA)
+      // INGRESO LIBERADO POR FARMACIA
       const matchPresupuesto = textBody.match(/^(ingreso|pago farmacia)\s+(\d+(\.\d+)?)/i);
       if (matchPresupuesto) {
         const montoIngreso = parseFloat(matchPresupuesto[2]);
@@ -639,7 +626,7 @@ app.post('/webhook', async (req, res) => {
         idMovimiento: 'MOV-' + Date.now().toString().slice(-6),
         concepto,
         monto,
-        categoria: '12) VARIOS',
+        categoria: '20) VARIOS',
         obra: 'General',
         metodo: 'Efectivo',
         subMetodo: '',
@@ -694,7 +681,6 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // REPORTE DE CONTRATISTAS FILTRADO POR SUCURSAL
       if (respuestaId?.startsWith('REPCONTRATISTAS_')) {
         const obraMap = {
           'REPCONTRATISTAS_Pelicano': 'Suc. Pelicano',
@@ -734,7 +720,6 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // ASIGNACIÓN DE SUCURSAL PARA CONTRATO DE CONTRATISTA
       if (respuestaId?.startsWith('CTROBRA_')) {
         const obraMap = {
           'CTROBRA_Pelicano': 'Suc. Pelicano',
@@ -750,7 +735,7 @@ app.post('/webhook', async (req, res) => {
           obra: obraElegida,
           metodo: 'Asignación Contrato',
           subMetodo: '',
-          categoria: '20) INDIRECTOS',
+          categoria: '29) INDIRECTOS',
           monto: sesion.monto,
           concepto: `Contrato ${sesion.contratista} Total Autorizado`,
           usuario: sesion.usuario,
@@ -764,7 +749,6 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // ASIGNACIÓN DE SUCURSAL PARA PRESUPUESTO AUTORIZADO
       if (respuestaId?.startsWith('PPTOBRA_')) {
         const obraMap = {
           'PPTOBRA_Pelicano': 'Suc. Pelicano',
@@ -833,26 +817,51 @@ app.post('/webhook', async (req, res) => {
         };
         sesion.obra = obraMap[respuestaId] || 'Suc. Otro';
 
-        await enviarLista(from, `🏗️ *Obra:* ${sesion.obra}\n\n📌 *Selecciona la Categoría Principal:*`, 'Ver Categorías', 'Categorías Principales:', CATEGORIAS_PRINCIPALES);
+        // 1. Primer mensaje de Categorías Principales
+        await enviarBotones(from, `🏗️ *Obra:* ${sesion.obra}\n\n📌 *Selecciona la Categoría Principal:*`, [
+          { id: 'CAT_3', title: '03) MAT ALB. GRUESA' },
+          { id: 'CAT_9', title: '09) MAT EST. METAL' },
+          { id: 'CAT_12', title: '12) MAT HERRERIA' }
+        ]);
+
+        // 2. Segundo mensaje de Categorías Principales
+        await enviarBotones(from, `👇 *Más Principales:*`, [
+          { id: 'CAT_25', title: '25) DIESEL PLANTA' },
+          { id: 'CAT_29', title: '29) INDIRECTOS' },
+          { id: 'CAT_30', title: '30) HONORARIOS' }
+        ]);
+
+        // 3. Tercer mensaje: Ver más y Varios
+        await enviarBotones(from, `👇 *Otras Opciones:*`, [
+          { id: 'CAT_MAS', title: '➕ Ver más categorías' },
+          { id: 'CAT_20', title: '20) VARIOS' }
+        ]);
 
       } else if (respuestaId?.startsWith('CAT_')) {
-        if (respuestaId === 'CAT_BLOQUE_1') {
-          await enviarLista(from, '📋 *Materiales y Obras:*', 'Ver Opciones', 'Selecciona una:', CATEGORIAS_MATERIALES);
+        if (respuestaId === 'CAT_MAS') {
+          await enviarLista(from, '📋 *Todas las Categorías de Obra:*', 'Ver Categorías', 'Selecciona la partida:', CATEGORIAS_SECUNDARIAS);
           res.sendStatus(200);
           return;
         }
 
-        if (respuestaId === 'CAT_BLOQUE_2') {
-          await enviarLista(from, '📋 *Servicios y Administración:*', 'Ver Opciones', 'Selecciona una:', CATEGORIAS_SERVICIOS);
-          res.sendStatus(200);
-          return;
+        const mapaDirecto = {
+          'CAT_3': '03) MATERIAL ALBAÑILERIA GRUESA',
+          'CAT_9': '09) MATERIAL ESTRUCTURA METALICA',
+          'CAT_12': '12) MATERIAL HERRERIA',
+          'CAT_25': '25) DIESEL PLANTA',
+          'CAT_29': '29) INDIRECTOS',
+          'CAT_30': '30) HONORARIOS',
+          'CAT_20': '20) VARIOS'
+        };
+
+        if (mapaDirecto[respuestaId]) {
+          sesion.categoria = mapaDirecto[respuestaId];
+        } else {
+          const catSel = CATEGORIAS_SECUNDARIAS.find(c => c.id === respuestaId);
+          sesion.categoria = catSel ? catSel.title : '20) VARIOS';
         }
 
-        const todasCategorias = CATEGORIAS_PRINCIPALES.concat(CATEGORIAS_MATERIALES).concat(CATEGORIAS_SERVICIOS);
-        const catSel = todasCategorias.find(c => c.id === respuestaId);
-        sesion.categoria = catSel ? catSel.title : '12) VARIOS';
-
-        if (sesion.categoria === 'HONORARIOS') {
+        if (sesion.categoria.includes('HONORARIOS')) {
           await enviarBotones(from, '👤 *¿Honorarios de quién?*', [
             { id: 'HON_Rigo', title: 'Rigo' },
             { id: 'HON_Paty', title: 'Paty' },
@@ -864,11 +873,11 @@ app.post('/webhook', async (req, res) => {
 
       } else if (respuestaId?.startsWith('HON_')) {
         const honMap = {
-          'HON_Rigo': 'Honorarios (Rigo)',
-          'HON_Paty': 'Honorarios (Paty)',
-          'HON_Casa': 'Honorarios (Casa)'
+          'HON_Rigo': '30) HONORARIOS (Rigo)',
+          'HON_Paty': '30) HONORARIOS (Paty)',
+          'HON_Casa': '30) HONORARIOS (Casa)'
         };
-        sesion.categoria = honMap[respuestaId] || 'HONORARIOS';
+        sesion.categoria = honMap[respuestaId] || '30) HONORARIOS';
         await desplegarFormasPago(from);
 
       } else if (respuestaId?.startsWith('PAY_')) {
