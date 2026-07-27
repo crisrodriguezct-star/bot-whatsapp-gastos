@@ -8,7 +8,9 @@ app.use(express.json());
 const PORT = process.env.PORT || 3000;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID; // Excel Principal de Gastos
-const SPREADSHEET_PRECIOS_ID = process.env.SPREADSHEET_PRECIOS_ID || '1Cscdoi4k3BkHLWPSB9nSxrGyZsshRXMKEtx2jbBcIQ0'; // Nuevo Excel de Precios
+const SPREADSHEET_PRECIOS_ID = process.env.SPREADSHEET_PRECIOS_ID || '1Cscdoi4k3BkHLWPSB9nSxrGyZsshRXMKEtx2jbBcIQ0'; // Excel de Precios
+const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
+const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 
 const sesiones = {};
 
@@ -206,13 +208,12 @@ async function guardarPrecioHistorico(datos) {
   try {
     const fechaHora = new Date().toLocaleString('es-MX', { timeZone: 'America/Mexico_City' });
     
-    // Obtener última fila para el correlativo de Columna A
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_PRECIOS_ID,
       range: 'PRECIOS!A:A'
     });
     const filas = res.data.values || [];
-    const numFila = Math.max(1, filas.length - 1); // Fila 1 es título, Fila 2 encabezados
+    const numFila = Math.max(1, filas.length - 1);
 
     const valores = [[
       numFila,
@@ -247,7 +248,7 @@ async function buscarHistoricoPrecios(materialBuscado) {
     const filas = res.data.values || [];
     const resultados = [];
 
-    for (let i = 2; i < filas.length; i++) { // Inicia desde Fila 3
+    for (let i = 2; i < filas.length; i++) {
       const fila = filas[i];
       const fecha = fila[1] || '';
       const obra = fila[2] || '';
