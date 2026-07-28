@@ -826,6 +826,21 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
+      // MANEJADOR DE SELECCIÓN DE ETAPAS DE OBRA
+      if (respuestaId?.startsWith('ETAPA_')) {
+        if (respuestaId === 'ETAPA_1') {
+          await enviarLista(from, '🏗️ *Estructura y Muros:*', 'Ver Partidas', 'Selecciona la partida:', ETAPA_1_ESTRUCTURA);
+        } else if (respuestaId === 'ETAPA_2') {
+          await enviarLista(from, '🎨 *Acabados e Instalaciones:*', 'Ver Partidas', 'Selecciona la partida:', ETAPA_2_ACABADOS);
+        } else if (respuestaId === 'ETAPA_3') {
+          await enviarLista(from, '🚚 *Campo y Viáticos:*', 'Ver Partidas', 'Selecciona la partida:', ETAPA_3_CAMPO);
+        } else if (respuestaId === 'ETAPA_4') {
+          await enviarLista(from, '📋 *Admin y Servicios:*', 'Ver Partidas', 'Selecciona la partida:', ETAPA_4_ADMIN);
+        }
+        res.sendStatus(200);
+        return;
+      }
+
       // RESPUESTA SELECCIÓN UNIDAD PARA REGISTRO PRECIO
       if (respuestaId?.startsWith('UNIDAD_')) {
         const sesion = sesiones[from];
@@ -1063,27 +1078,6 @@ app.post('/webhook', async (req, res) => {
           await enviarBotones(from, '👇 *Etapa Administrativa:*', [
             { id: 'ETAPA_4', title: '📋 4. Admin y Servicios' }
           ]);
-          res.sendStatus(200);
-          return;
-        }
-
-        if (respuestaId === 'ETAPA_1') {
-          await enviarLista(from, '🏗️ *Estructura y Muros:*', 'Ver Partidas', 'Selecciona la partida:', ETAPA_1_ESTRUCTURA);
-          res.sendStatus(200);
-          return;
-        }
-        if (respuestaId === 'ETAPA_2') {
-          await enviarLista(from, '🎨 *Acabados e Instalaciones:*', 'Ver Partidas', 'Selecciona la partida:', ETAPA_2_ACABADOS);
-          res.sendStatus(200);
-          return;
-        }
-        if (respuestaId === 'ETAPA_3') {
-          await enviarLista(from, '🚚 *Campo y Viáticos:*', 'Ver Partidas', 'Selecciona la partida:', ETAPA_3_CAMPO);
-          res.sendStatus(200);
-          return;
-        }
-        if (respuestaId === 'ETAPA_4') {
-          await enviarLista(from, '📋 *Admin y Servicios:*', 'Ver Partidas', 'Selecciona la partida:', ETAPA_4_ADMIN);
           res.sendStatus(200);
           return;
         }
