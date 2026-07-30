@@ -179,7 +179,7 @@ async function enviarLista(to, textoBody, tituloBoton, tituloSeccion, opciones) 
   });
 }
 
-// FUNCIONES GOOGLE DRIVE
+// GOOGLE DRIVE
 async function obtenerOcrearSubcarpetaObra(nombreObra) {
   if (!drive || !DRIVE_FOLDER_EXTRAS_ID) return DRIVE_FOLDER_EXTRAS_ID;
   try {
@@ -259,7 +259,7 @@ async function subirFotoADrive(buffer, nombreArchivo, folderId) {
   }
 }
 
-// FUNCIONES SHEETS
+// GOOGLE SHEETS
 async function guardarEnSheets(datos) {
   if (!sheets || !SPREADSHEET_ID) return;
   try {
@@ -361,7 +361,7 @@ async function guardarVisitaFamiliar(datos) {
   if (!sheets || !SPREADSHEET_PERSONAL_ID) return;
   try {
     const fechaSalida = new Date();
-    const fechaSugerida = new Date(fechaSalida.getTime() + (45 * 24 * 60 * 60 * 1000)); // +45 Días
+    const fechaSugerida = new Date(fechaSalida.getTime() + (45 * 24 * 60 * 60 * 1000));
 
     const fechaSalidaStr = fechaSalida.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City' });
     const fechaSugeridaStr = fechaSugerida.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City' });
@@ -680,6 +680,19 @@ async function calcularReportePresupuestos() {
   }
 }
 
+async function desplegarMenuPrincipal(from) {
+  const opciones = [
+    { id: 'MENU_PERSONAL', title: '👷‍♂️ Personal Propio', description: 'Altas de trabajadores y Visitas Familiares' },
+    { id: 'MENU_CONTRATISTAS', title: '🤝 Contratistas / Destajos', description: 'Asignación de contratos y consulta de saldos' },
+    { id: 'MENU_EXTRAS', title: '🔨 Trabajos Extras', description: 'Registro de extras con evidencia fotográfica' },
+    { id: 'MENU_PRESU', title: '🏦 Presupuestos e Ingresos', description: 'Presupuesto autorizado y cobro a clientes' },
+    { id: 'MENU_PRECIOS', title: '🏷️ Precios de Materiales', description: 'Registrar precio y comparar histórico' },
+    { id: 'MENU_REPORTES', title: '📊 Saldos y Reportes', description: 'Caja chica, avance y facturas pendientes' }
+  ];
+
+  await enviarLista(from, '🏗️ *MENÚ ADMINISTRATIVO DE OBRA*\n\nSelecciona la gestión que deseas realizar:', 'Abrir Menú', 'Gestión de Obra', opciones);
+}
+
 app.get('/webhook', (req, res) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
@@ -695,7 +708,7 @@ app.post('/webhook', async (req, res) => {
     const from = msg.from;
     const nombreUsuario = obtenerNombreUsuario(from);
 
-    // MANEJO DE IMÁGENES (PARA TRABAJOS EXTRAS)
+    // IMÁGENES
     if (msg.type === 'image') {
       const sesionActual = sesiones[from];
       if (sesionActual && sesionActual.esperandoFotosExtra) {
@@ -725,31 +738,9 @@ app.post('/webhook', async (req, res) => {
     if (msg.type === 'text') {
       const textBody = msg.text.body.trim();
 
-      // COMANDO MENU / AYUDA
-      if (/^(menu|ayuda|comandos)$/i.test(textBody)) {
-        const menuTxt = `🤖 *MENÚ DE COMANDOS - ASISTENTE OBRA*\n\n` +
-          `💰 *1. GASTOS Y CAJA:*` +
-          `\n  • \`[concepto] [monto]\` (ej: cemento 120)` +
-          `\n  • \`caja [monto]\` (Ingreso caja chica)` +
-          `\n  • \`corte\` / \`saldo\` (Reporte caja)` +
-          `\n  • \`cancelar\` (Borra último registro)` +
-          `\n  • \`facturas\` (Ver pendientes)\n\n` +
-          `🏦 *2. PRESUPUESTOS Y COBROS:*` +
-          `\n  • \`presupuesto autorizado [monto]\`` +
-          `\n  • \`ingreso [monto]\` (Liberación farmacia)` +
-          `\n  • \`avance\` (Cobrado vs Autorizado)\n\n` +
-          `👷‍♂️ *3. CONTRATISTAS Y TRABAJADORES:*` +
-          `\n  • \`contrato [nombre] [monto]\`` +
-          `\n  • \`contratistas\` (Reporte saldos)` +
-          `\n  • \`alta [nombre]\` (Registrar trabajador)` +
-          `\n  • \`visita [nombre] [monto]\` (Pasajes/Viáticos)\n\n` +
-          `🔨 *4. TRABAJOS EXTRAS:*` +
-          `\n  • \`extra\` o \`trabajos extras\` (Con evidencia foto)\n\n` +
-          `🏷️ *5. PRECIOS MATERIALES:*` +
-          `\n  • \`precio [material] [monto]\`` +
-          `\n  • \`comparar [material]\` (Reporte barato/caro)`;
-
-        await enviarTexto(from, menuTxt);
+      // DESPLEGAR MENÚ PRINCIPAL
+      if (/^(menu|hola|inicio|ayuda|comandos)$/i.test(textBody)) {
+        await desplegarMenuPrincipal(from);
         res.sendStatus(200);
         return;
       }
@@ -766,10 +757,26 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // FLUJOS CON TEXTO LIBRE PENDIENTE DE SESIÓN
       const sesionActual = sesiones[from];
 
-      // TRABAJADOR: SUELDO
+      // ENTRADAS DE TEXTO LIBRE
+      if (sesionActual && sesionActual.esperandoNombreTrabajadorAlta) {
+        sesionActual.nombre = textBody.toUpperCase();
+        delete sesionActual.esperandoNombreTrabajadorAlta;
+
+        await enviarBotones(from, `👷‍♂️ *Trabajador:* ${sesionActual.nombre}\n\n🏗️ *¿A qué Obra/Sucursal pertenece?*`, [
+          { id: 'EMPOBRA_Pelicano', title: 'Pelicano' },
+          { id: 'EMPOBRA_Caldera', title: 'Caldera' },
+          { id: 'EMPOBRA_Nativitas', title: 'Nativitas' }
+        ]);
+        await enviarBotones(from, '👇 *Otras Opciones:*', [
+          { id: 'EMPOBRA_Salud', title: 'Salud' },
+          { id: 'EMPOBRA_Otro', title: 'Otro' }
+        ]);
+        res.sendStatus(200);
+        return;
+      }
+
       if (sesionActual && sesionActual.esperandoSueldoTrabajador) {
         sesionActual.sueldo = parseFloat(textBody) || 0;
         delete sesionActual.esperandoSueldoTrabajador;
@@ -781,7 +788,83 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // TRABAJO EXTRA: DESCRIPCIÓN Y MONTO
+      if (sesionActual && sesionActual.esperandoNombreVisita) {
+        sesionActual.nombre = textBody.toUpperCase();
+        delete sesionActual.esperandoNombreVisita;
+        sesionActual.esperandoMontoVisita = true;
+
+        await enviarTexto(from, `👤 *Trabajador:* ${sesionActual.nombre}\n\n💵 *Escribe el Monto del Apoyo de Pasaje/Viáticos:*`);
+        res.sendStatus(200);
+        return;
+      }
+
+      if (sesionActual && sesionActual.esperandoMontoVisita) {
+        sesionActual.monto = parseFloat(textBody) || 0;
+        delete sesionActual.esperandoMontoVisita;
+
+        await enviarBotones(from, `🚌 *Visita Familiar (${sesionActual.nombre}):* $${sesionActual.monto.toFixed(2)}\n\n🏗️ *¿A qué Obra/Sucursal se aplican estos viáticos?*`, [
+          { id: 'VISITAOBRA_Pelicano', title: 'Pelicano' },
+          { id: 'VISITAOBRA_Caldera', title: 'Caldera' },
+          { id: 'VISITAOBRA_Nativitas', title: 'Nativitas' }
+        ]);
+        await enviarBotones(from, '👇 *Otras Opciones:*', [
+          { id: 'VISITAOBRA_Salud', title: 'Salud' },
+          { id: 'VISITAOBRA_Otro', title: 'Otro' }
+        ]);
+        res.sendStatus(200);
+        return;
+      }
+
+      if (sesionActual && sesionActual.esperandoMaterialPrecio) {
+        sesionActual.material = textBody;
+        delete sesionActual.esperandoMaterialPrecio;
+        sesionActual.esperandoMontoPrecio = true;
+
+        await enviarTexto(from, `🏷️ *Material:* ${sesionActual.material.toUpperCase()}\n\n💵 *Escribe el Precio o Cotización:*`);
+        res.sendStatus(200);
+        return;
+      }
+
+      if (sesionActual && sesionActual.esperandoMontoPrecio) {
+        sesionActual.precio = parseFloat(textBody) || 0;
+        delete sesionActual.esperandoMontoPrecio;
+
+        await enviarBotones(from, `🏷️ *Material:* ${sesionActual.material.toUpperCase()}\n💵 *Precio:* $${sesionActual.precio.toFixed(2)}\n\n📐 *Selecciona la Unidad de Medida:*`, [
+          { id: 'UNIDAD_Bulto', title: 'Bulto / Saco' },
+          { id: 'UNIDAD_Tramo', title: 'Tramo / Pza' },
+          { id: 'UNIDAD_M2', title: 'm² / m³ / Ton' }
+        ]);
+        await enviarBotones(from, '👇 *Otras Unidades:*', [
+          { id: 'UNIDAD_Cubeta', title: 'Cubeta / Litro' },
+          { id: 'UNIDAD_OTRO', title: '✏️ Otro (Escribir)' }
+        ]);
+        res.sendStatus(200);
+        return;
+      }
+
+      if (sesionActual && sesionActual.esperandoBusquedaPrecio) {
+        delete sesionActual.esperandoBusquedaPrecio;
+        const resultados = await buscarHistoricoPrecios(textBody.trim());
+
+        if (resultados.length === 0) {
+          await enviarTexto(from, `⚠️ No se encontraron precios registrados para "${textBody}".`);
+        } else {
+          let msgTxt = `📊 *HISTÓRICO DE PRECIOS: "${textBody.toUpperCase()}"*\n\n`;
+          resultados.forEach((r, idx) => {
+            const emoji = idx === 0 ? '🟢' : idx === 1 ? '🟡' : '🔴';
+            msgTxt += `${emoji} *$${r.precio.toFixed(2)}* / ${r.unidad}\n` +
+              `   📍 ${r.obra}\n` +
+              `   🏢 Proveedor: ${r.proveedor}\n` +
+              `   📝 Material: ${r.material}\n` +
+              `   📅 Fecha: ${r.fecha.split(',')[0]}\n\n`;
+          });
+          await enviarTexto(from, msgTxt);
+        }
+        delete sesiones[from];
+        res.sendStatus(200);
+        return;
+      }
+
       if (sesionActual && sesionActual.esperandoDescripcionExtra) {
         sesionActual.descripcion = textBody;
         delete sesionActual.esperandoDescripcionExtra;
@@ -802,7 +885,6 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // PRECIOS HISTÓRICOS: UNIDAD MANUAL Y PROVEEDOR
       if (sesionActual && sesionActual.esperandoUnidadManual) {
         sesionActual.unidad = textBody.toLowerCase();
         delete sesionActual.esperandoUnidadManual;
@@ -839,298 +921,7 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // COMANDO TRABAJOS EXTRAS
-      if (/^(extra|extras|trabajo extra|trabajos extras)$/i.test(textBody)) {
-        sesiones[from] = {
-          tipoAccion: 'TRABAJO_EXTRA',
-          idExtra: 'EXT-' + Date.now().toString().slice(-6),
-          linksFotos: [],
-          usuario: nombreUsuario
-        };
-
-        await enviarBotones(from, '🔨 *Registro de Trabajo Extra*\n\n🏗️ *¿De qué Sucursal/Obra es el trabajo extra?*', [
-          { id: 'EXTRAOBRA_Pelicano', title: 'Pelicano' },
-          { id: 'EXTRAOBRA_Caldera', title: 'Caldera' },
-          { id: 'EXTRAOBRA_Nativitas', title: 'Nativitas' }
-        ]);
-        await enviarBotones(from, '👇 *Otras Opciones:*', [
-          { id: 'EXTRAOBRA_Salud', title: 'Salud' },
-          { id: 'EXTRAOBRA_Otro', title: 'Otro' }
-        ]);
-        res.sendStatus(200);
-        return;
-      }
-
-      // COMANDO ALTA TRABAJADOR: "alta [nombre]"
-      const matchAltaTrabajador = textBody.match(/^alta\s+(.+)/i);
-      if (matchAltaTrabajador) {
-        const nombreTrabajador = matchAltaTrabajador[1].trim();
-
-        sesiones[from] = {
-          tipoAccion: 'ALTA_TRABAJADOR',
-          idTrabajador: 'EMP-' + Date.now().toString().slice(-6),
-          nombre: nombreTrabajador.toUpperCase(),
-          usuario: nombreUsuario
-        };
-
-        await enviarBotones(from, `👷‍♂️ *Alta de Trabajador:* ${nombreTrabajador.toUpperCase()}\n\n🏗️ *¿A qué obra pertenece?*`, [
-          { id: 'EMPOBRA_Pelicano', title: 'Pelicano' },
-          { id: 'EMPOBRA_Caldera', title: 'Caldera' },
-          { id: 'EMPOBRA_Nativitas', title: 'Nativitas' }
-        ]);
-        await enviarBotones(from, '👇 *Otras Opciones:*', [
-          { id: 'EMPOBRA_Salud', title: 'Salud' },
-          { id: 'EMPOBRA_Otro', title: 'Otro' }
-        ]);
-        res.sendStatus(200);
-        return;
-      }
-
-      // COMANDO VISITA FAMILIAR / PASAJES: "visita [nombre] [monto]"
-      const matchVisita = textBody.match(/^visita\s+(.+)\s+(\d+(\.\d+)?)/i);
-      if (matchVisita) {
-        const nombreTrabajador = matchVisita[1].trim();
-        const montoApoyo = parseFloat(matchVisita[2]);
-
-        sesiones[from] = {
-          tipoAccion: 'VISITA_FAMILIAR',
-          nombre: nombreTrabajador.toUpperCase(),
-          monto: montoApoyo,
-          usuario: nombreUsuario
-        };
-
-        await enviarBotones(from, `🚌 *Apoyo Pasajes Visita Familiar:* $${montoApoyo.toFixed(2)}\n👤 *Trabajador:* ${nombreTrabajador.toUpperCase()}\n\n🏗️ *¿A qué obra se aplica este gasto de viáticos?*`, [
-          { id: 'VISITAOBRA_Pelicano', title: 'Pelicano' },
-          { id: 'VISITAOBRA_Caldera', title: 'Caldera' },
-          { id: 'VISITAOBRA_Nativitas', title: 'Nativitas' }
-        ]);
-        await enviarBotones(from, '👇 *Otras Opciones:*', [
-          { id: 'VISITAOBRA_Salud', title: 'Salud' },
-          { id: 'VISITAOBRA_Otro', title: 'Otro' }
-        ]);
-        res.sendStatus(200);
-        return;
-      }
-
-      // COMANDO PARA CAPTURAR PRECIO: "precio [material] [monto]"
-      const matchRegistroPrecio = textBody.match(/^precio\s+(.+)\s+(\d+(\.\d+)?)/i);
-      if (matchRegistroPrecio) {
-        const material = matchRegistroPrecio[1].trim();
-        const precio = parseFloat(matchRegistroPrecio[2]);
-
-        sesiones[from] = {
-          tipoAccion: 'REGISTRO_PRECIO_HISTORICO',
-          material,
-          precio,
-          usuario: nombreUsuario
-        };
-
-        await enviarBotones(from, `🏷️ *Material:* ${material.toUpperCase()}\n💵 *Precio:* $${precio.toFixed(2)}\n\n📐 *Selecciona la Unidad de Medida:*`, [
-          { id: 'UNIDAD_Bulto', title: 'Bulto / Saco' },
-          { id: 'UNIDAD_Tramo', title: 'Tramo / Pza' },
-          { id: 'UNIDAD_M2', title: 'm² / m³ / Ton' }
-        ]);
-        await enviarBotones(from, '👇 *Otras Unidades:*', [
-          { id: 'UNIDAD_Cubeta', title: 'Cubeta / Litro' },
-          { id: 'UNIDAD_OTRO', title: '✏️ Otro (Escribir)' }
-        ]);
-        res.sendStatus(200);
-        return;
-      }
-
-      // COMANDO PARA CONSULTAR PRECIOS HISTÓRICOS: "comparar [material]" o "buscar [material]"
-      const matchBusquedaPrecio = textBody.match(/^(comparar|buscar|precios)\s+(.+)/i);
-      if (matchBusquedaPrecio) {
-        const materialBuscado = matchBusquedaPrecio[2].trim();
-        const resultados = await buscarHistoricoPrecios(materialBuscado);
-
-        if (resultados.length === 0) {
-          await enviarTexto(from, `⚠️ No se encontraron precios registrados para "${materialBuscado}".\n\n*Puedes registrar uno con el comando:*\n\`precio ${materialBuscado} 185\``);
-        } else {
-          let msgTxt = `📊 *HISTÓRICO DE PRECIOS: "${materialBuscado.toUpperCase()}"*\n\n`;
-          resultados.forEach((r, idx) => {
-            const emoji = idx === 0 ? '🟢' : idx === 1 ? '🟡' : '🔴';
-            msgTxt += `${emoji} *$${r.precio.toFixed(2)}* / ${r.unidad}\n` +
-              `   📍 ${r.obra}\n` +
-              `   🏢 Proveedor: ${r.proveedor}\n` +
-              `   📝 Material: ${r.material}\n` +
-              `   📅 Fecha: ${r.fecha.split(',')[0]}\n\n`;
-          });
-          await enviarTexto(from, msgTxt);
-        }
-        res.sendStatus(200);
-        return;
-      }
-
-      // CONSULTAR FACTURAS PENDIENTES
-      if (/^(facturar|facturas|pendientes|ver pendientes)$/i.test(textBody)) {
-        const pendientes = await obtenerMovimientosPendientes();
-        if (pendientes.length === 0) {
-          await enviarTexto(from, '🎉 ¡Excelente! No hay gastos pendientes de factura.');
-        } else {
-          const opciones = pendientes.map(p => ({
-            id: `RESOLVER_${p.id}`,
-            title: p.concepto,
-            description: `${p.obra} | $${p.monto} (${p.id})`
-          }));
-          await enviarLista(from, '📋 *Gastos Pendientes de Factura:*', 'Ver Pendientes', 'Selecciona para resolver:', opciones);
-        }
-        res.sendStatus(200);
-        return;
-      }
-
-      // REPORTE DE SALDOS Y CORTE DE CAJA CHICA
-      if (/^(saldo|corte|reporte|resumen)$/i.test(textBody)) {
-        await enviarBotones(from, '📊 *¿De qué Sucursal deseas consultar el Reporte?*', [
-          { id: 'REP_Pelicano', title: 'Pelicano' },
-          { id: 'REP_Caldera', title: 'Caldera' },
-          { id: 'REP_Nativitas', title: 'Nativitas' }
-        ]);
-        await enviarBotones(from, '👇 *Otras Opciones:*', [
-          { id: 'REP_Salud', title: 'Salud' },
-          { id: 'REP_GLOBAL', title: 'Caja General Efectivo' }
-        ]);
-        res.sendStatus(200);
-        return;
-      }
-
-      // CONSULTA DE CONTRATISTAS POR OBRA
-      if (/^(contratistas|destajos|contratos)$/i.test(textBody)) {
-        await enviarBotones(from, '👷‍♂️ *¿De qué Sucursal deseas ver los Contratistas?*', [
-          { id: 'REPCONTRATISTAS_Pelicano', title: 'Pelicano' },
-          { id: 'REPCONTRATISTAS_Caldera', title: 'Caldera' },
-          { id: 'REPCONTRATISTAS_Nativitas', title: 'Nativitas' }
-        ]);
-        await enviarBotones(from, '👇 *Otras Opciones:*', [
-          { id: 'REPCONTRATISTAS_Salud', title: 'Salud' },
-          { id: 'REPCONTRATISTAS_GLOBAL', title: 'Todas las Obras' }
-        ]);
-        res.sendStatus(200);
-        return;
-      }
-
-      // CONSULTA AVANCE DE PRESUPUESTOS (COBRADO VS AUTORIZADO)
-      if (/^(avance|cobrado|avance presupuestos)$/i.test(textBody)) {
-        const rep = await calcularReportePresupuestos();
-        let msgTexto = '🏦 *Avance de Presupuestos Autorizados (Farmacias):*\n\n';
-        Object.keys(rep).forEach(o => {
-          const t = rep[o];
-          const porCobrar = t.presupuestoTotal - t.liberado;
-          msgTexto += `🏗️ *${o}*\n` +
-            `  • Presupuesto Autorizado: $${t.presupuestoTotal.toFixed(2)}\n` +
-            `  • Liberado a la Fecha: $${t.liberado.toFixed(2)}\n` +
-            `  • Pendiente por Liberar: $${porCobrar.toFixed(2)}\n\n`;
-        });
-        await enviarTexto(from, msgTexto);
-        res.sendStatus(200);
-        return;
-      }
-
-      // REGISTRO DE PRESUPUESTO AUTORIZADO
-      const matchPptoTotalAuto = textBody.match(/^(presupuesto autorizado|presupuesto total)\s+(\d+(\.\d+)?)/i);
-      if (matchPptoTotalAuto) {
-        const montoPpto = parseFloat(matchPptoTotalAuto[2]);
-
-        sesiones[from] = {
-          tipoAccion: 'PPTO_TOTAL',
-          idMovimiento: 'PPT-' + Date.now().toString().slice(-6),
-          monto: montoPpto,
-          concepto: 'Presupuesto Total Autorizado Farmacia',
-          usuario: nombreUsuario
-        };
-
-        await enviarBotones(from, `🏢 *Presupuesto Total Autorizado:* $${montoPpto.toFixed(2)}\n\n🏗️ *¿A qué sucursal pertenece este presupuesto?*`, [
-          { id: 'PPTOBRA_Pelicano', title: 'Pelicano' },
-          { id: 'PPTOBRA_Caldera', title: 'Caldera' },
-          { id: 'PPTOBRA_Nativitas', title: 'Nativitas' }
-        ]);
-        await enviarBotones(from, '👇 *Otras Opciones:*', [
-          { id: 'PPTOBRA_Salud', title: 'Salud' },
-          { id: 'PPTOBRA_Otro', title: 'Otro' }
-        ]);
-        res.sendStatus(200);
-        return;
-      }
-
-      // REGISTRO DE CONTRATO A CONTRATISTA
-      const matchContrato = textBody.match(/^contrato\s+(.+)\s+(\d+(\.\d+)?)/i);
-      if (matchContrato) {
-        const nombreContratista = matchContrato[1].trim();
-        const montoContrato = parseFloat(matchContrato[2]);
-
-        sesiones[from] = {
-          tipoAccion: 'CONTRATO_CONTRATISTA',
-          idMovimiento: 'CTR-' + Date.now().toString().slice(-6),
-          monto: montoContrato,
-          contratista: nombreContratista.toUpperCase(),
-          concepto: `Contrato ${nombreContratista.toUpperCase()} Total Autorizado`,
-          usuario: nombreUsuario
-        };
-
-        await enviarBotones(from, `👷‍♂️ *Contrato ${nombreContratista.toUpperCase()}:* $${montoContrato.toFixed(2)}\n\n🏗️ *¿A qué sucursal pertenece este contrato?*`, [
-          { id: 'CTROBRA_Pelicano', title: 'Pelicano' },
-          { id: 'CTROBRA_Caldera', title: 'Caldera' },
-          { id: 'CTROBRA_Nativitas', title: 'Nativitas' }
-        ]);
-        await enviarBotones(from, '👇 *Otras Opciones:*', [
-          { id: 'CTROBRA_Salud', title: 'Salud' },
-          { id: 'CTROBRA_Otro', title: 'Otro' }
-        ]);
-        res.sendStatus(200);
-        return;
-      }
-
-      // INGRESO LIBERADO POR FARMACIA
-      const matchPresupuesto = textBody.match(/^(ingreso|pago farmacia)\s+(\d+(\.\d+)?)/i);
-      if (matchPresupuesto) {
-        const montoIngreso = parseFloat(matchPresupuesto[2]);
-
-        sesiones[from] = {
-          tipoAccion: 'PRESUPUESTO',
-          idMovimiento: 'ING-' + Date.now().toString().slice(-6),
-          monto: montoIngreso,
-          concepto: 'Ingreso Liberado Farmacia',
-          usuario: nombreUsuario
-        };
-
-        await enviarBotones(from, `🏦 *Ingreso Liberado Farmacia:* $${montoIngreso.toFixed(2)}\n\n🏗️ *¿A qué sucursal ingresa este pago?*`, [
-          { id: 'ACTOBRA_Pelicano', title: 'Pelicano' },
-          { id: 'ACTOBRA_Caldera', title: 'Caldera' },
-          { id: 'ACTOBRA_Nativitas', title: 'Nativitas' }
-        ]);
-        await enviarBotones(from, '👇 *Otras Opciones:*', [
-          { id: 'ACTOBRA_Salud', title: 'Salud' },
-          { id: 'ACTOBRA_Otro', title: 'Otro' }
-        ]);
-        res.sendStatus(200);
-        return;
-      }
-
-      // DOTACIÓN DE CAJA CHICA / EFECTIVO CENTRAL
-      const matchCaja = textBody.match(/^(caja|efectivo|dotacion|fondo)\s+(\d+(\.\d+)?)/i);
-      if (matchCaja) {
-        const montoCaja = parseFloat(matchCaja[2]);
-
-        await guardarEnSheets({
-          idMovimiento: 'DOT-' + Date.now().toString().slice(-6),
-          obra: 'Efectivo General',
-          metodo: 'Dotación Caja Chica',
-          subMetodo: '',
-          categoria: 'Fondo de Caja',
-          monto: montoCaja,
-          concepto: 'Ingreso a Caja Chica Central (Efectivo)',
-          usuario: nombreUsuario,
-          estatusFactura: 'No Requiere 🔴',
-          linkFactura: 'N/A'
-        });
-
-        const reporteCaja = await calcularReporteSaldos(null);
-        await enviarTexto(from, `💵 *Efectivo Ingresado a Caja Chica:* $${montoCaja.toFixed(2)}\n👤 *Registró:* ${nombreUsuario}\n\n💰 *Efectivo Disponible en Mano:* $${reporteCaja.cajaDisponible.toFixed(2)} MXN`);
-        res.sendStatus(200);
-        return;
-      }
-
-      // REGISTRO REGULAR DE GASTOS
+      // REGISTRO DIRECTO DE GASTO RÁPIDO: "concepto monto"
       const partes = textBody.split(/\s+/);
       const posibleMonto = parseFloat(partes[partes.length - 1]);
       let concepto = '';
@@ -1170,6 +961,120 @@ app.post('/webhook', async (req, res) => {
     } else if (msg.type === 'interactive') {
       const respuestaId = msg.interactive.button_reply?.id || msg.interactive.list_reply?.id;
 
+      // INTERACCIONES DEL MENÚ PRINCIPAL
+      if (respuestaId === 'MENU_PERSONAL') {
+        await enviarBotones(from, '👷‍♂️ *Gestión de Personal Propio:*', [
+          { id: 'OPC_ALTA_EMP', title: '➕ Alta Trabajador' },
+          { id: 'OPC_VISITA_EMP', title: '🚌 Visita Familiar' }
+        ]);
+        res.sendStatus(200);
+        return;
+      }
+
+      if (respuestaId === 'MENU_CONTRATISTAS') {
+        await enviarBotones(from, '🤝 *Gestión de Contratistas:*', [
+          { id: 'REPCONTRATISTAS_GLOBAL', title: '📊 Ver Saldos' }
+        ]);
+        res.sendStatus(200);
+        return;
+      }
+
+      if (respuestaId === 'MENU_EXTRAS') {
+        sesiones[from] = {
+          tipoAccion: 'TRABAJO_EXTRA',
+          idExtra: 'EXT-' + Date.now().toString().slice(-6),
+          linksFotos: [],
+          usuario: nombreUsuario
+        };
+        await enviarBotones(from, '🔨 *Registro de Trabajo Extra*\n\n🏗️ *¿De qué Sucursal/Obra es el trabajo extra?*', [
+          { id: 'EXTRAOBRA_Pelicano', title: 'Pelicano' },
+          { id: 'EXTRAOBRA_Caldera', title: 'Caldera' },
+          { id: 'EXTRAOBRA_Nativitas', title: 'Nativitas' }
+        ]);
+        await enviarBotones(from, '👇 *Otras Opciones:*', [
+          { id: 'EXTRAOBRA_Salud', title: 'Salud' },
+          { id: 'EXTRAOBRA_Otro', title: 'Otro' }
+        ]);
+        res.sendStatus(200);
+        return;
+      }
+
+      if (respuestaId === 'MENU_PRECIOS') {
+        await enviarBotones(from, '🏷️ *Historico de Precios:*', [
+          { id: 'OPC_REG_PRECIO', title: '📝 Registrar Precio' },
+          { id: 'OPC_BUS_PRECIO', title: '🔍 Comparar / Buscar' }
+        ]);
+        res.sendStatus(200);
+        return;
+      }
+
+      if (respuestaId === 'MENU_REPORTES') {
+        await enviarBotones(from, '📊 *Saldos y Reportes:*', [
+          { id: 'REP_GLOBAL', title: '💰 Caja Chica' },
+          { id: 'OPC_VER_FAC', title: '📄 Facturas Pendientes' }
+        ]);
+        res.sendStatus(200);
+        return;
+      }
+
+      // SUBOPCIONES DE MENÚ
+      if (respuestaId === 'OPC_ALTA_EMP') {
+        sesiones[from] = {
+          tipoAccion: 'ALTA_TRABAJADOR',
+          idTrabajador: 'EMP-' + Date.now().toString().slice(-6),
+          esperandoNombreTrabajadorAlta: true,
+          usuario: nombreUsuario
+        };
+        await enviarTexto(from, '✏️ *Escribe el Nombre Completo del nuevo trabajador:*');
+        res.sendStatus(200);
+        return;
+      }
+
+      if (respuestaId === 'OPC_VISITA_EMP') {
+        sesiones[from] = {
+          tipoAccion: 'VISITA_FAMILIAR',
+          esperandoNombreVisita: true,
+          usuario: nombreUsuario
+        };
+        await enviarTexto(from, '✏️ *Escribe el Nombre del trabajador que realiza la visita:*');
+        res.sendStatus(200);
+        return;
+      }
+
+      if (respuestaId === 'OPC_REG_PRECIO') {
+        sesiones[from] = {
+          tipoAccion: 'REGISTRO_PRECIO_HISTORICO',
+          esperandoMaterialPrecio: true,
+          usuario: nombreUsuario
+        };
+        await enviarTexto(from, '✏️ *Escribe el nombre del Material a registrar:* (ej: cemento tolteca, varilla 3/8)');
+        res.sendStatus(200);
+        return;
+      }
+
+      if (respuestaId === 'OPC_BUS_PRECIO') {
+        sesiones[from] = { esperandoBusquedaPrecio: true };
+        await enviarTexto(from, '🔍 *Escribe el material que deseas buscar/comparar:* (ej: cemento, impermeabilizante)');
+        res.sendStatus(200);
+        return;
+      }
+
+      if (respuestaId === 'OPC_VER_FAC') {
+        const pendientes = await obtenerMovimientosPendientes();
+        if (pendientes.length === 0) {
+          await enviarTexto(from, '🎉 ¡Excelente! No hay gastos pendientes de factura.');
+        } else {
+          const opciones = pendientes.map(p => ({
+            id: `RESOLVER_${p.id}`,
+            title: p.concepto,
+            description: `${p.obra} | $${p.monto} (${p.id})`
+          }));
+          await enviarLista(from, '📋 *Gastos Pendientes de Factura:*', 'Ver Pendientes', 'Selecciona para resolver:', opciones);
+        }
+        res.sendStatus(200);
+        return;
+      }
+
       if (respuestaId?.startsWith('RESOLVER_')) {
         const idMov = respuestaId.replace('RESOLVER_', '');
         const ok = await marcarComoFacturado(idMov);
@@ -1182,7 +1087,6 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // RESPUESTA TRABAJOS EXTRAS: FOTO OTRA O FINALIZAR
       if (respuestaId === 'EXTRAFOTO_OTRA') {
         await enviarTexto(from, '📸 *Envía la siguiente foto de evidencia:*');
         res.sendStatus(200);
@@ -1200,7 +1104,6 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // RESPUESTA OBRA EN TRABAJOS EXTRAS
       if (respuestaId?.startsWith('EXTRAOBRA_')) {
         const obraMap = {
           'EXTRAOBRA_Pelicano': 'Suc. Pelicano',
@@ -1219,7 +1122,6 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // RESPUESTA OBRA EN ALTA TRABAJADOR
       if (respuestaId?.startsWith('EMPOBRA_')) {
         const obraMap = {
           'EMPOBRA_Pelicano': 'Suc. Pelicano',
@@ -1251,7 +1153,6 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // RESPUESTA OBRA EN VISITA FAMILIAR / PASAJES
       if (respuestaId?.startsWith('VISITAOBRA_')) {
         const obraMap = {
           'VISITAOBRA_Pelicano': 'Suc. Pelicano',
@@ -1264,7 +1165,6 @@ app.post('/webhook', async (req, res) => {
         if (sesion) {
           sesion.obra = obraMap[respuestaId] || 'Suc. Otro';
 
-          // Además de guardarlo en CONTROL_PERSONAL, registrar el gasto de viáticos en el Excel Principal
           await guardarEnSheets({
             idMovimiento: 'VIS-' + Date.now().toString().slice(-6),
             obra: sesion.obra,
@@ -1289,7 +1189,6 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // MANEJADOR DE SELECCIÓN DE ETAPAS DE OBRA
       if (respuestaId?.startsWith('ETAPA_')) {
         if (respuestaId === 'ETAPA_1') {
           await enviarLista(from, '🏗️ *Estructura y Muros:*', 'Ver Partidas', 'Selecciona la partida:', ETAPA_1_ESTRUCTURA);
@@ -1304,7 +1203,6 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // RESPUESTA SELECCIÓN UNIDAD PARA REGISTRO PRECIO
       if (respuestaId?.startsWith('UNIDAD_')) {
         const sesion = sesiones[from];
         if (!sesion) { res.sendStatus(200); return; }
@@ -1337,7 +1235,6 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // RESPUESTA SUCURSAL PARA REGISTRO PRECIO
       if (respuestaId?.startsWith('PRECIOBRA_')) {
         const obraMap = {
           'PRECIOBRA_Pelicano': 'Suc. Pelicano',
@@ -1414,93 +1311,6 @@ app.post('/webhook', async (req, res) => {
 
       const sesion = sesiones[from];
       if (!sesion) {
-        res.sendStatus(200);
-        return;
-      }
-
-      if (respuestaId?.startsWith('CTROBRA_')) {
-        const obraMap = {
-          'CTROBRA_Pelicano': 'Suc. Pelicano',
-          'CTROBRA_Caldera': 'Suc. Caldera',
-          'CTROBRA_Nativitas': 'Suc. Nativitas',
-          'CTROBRA_Salud': 'Suc. Salud',
-          'CTROBRA_Otro': 'Suc. Otro'
-        };
-        const obraElegida = obraMap[respuestaId] || 'Suc. Otro';
-
-        await guardarEnSheets({
-          idMovimiento: sesion.idMovimiento,
-          obra: obraElegida,
-          metodo: 'Asignación Contrato',
-          subMetodo: '',
-          categoria: '28) RESIDENCIA DE OBRA',
-          monto: sesion.monto,
-          concepto: `Contrato ${sesion.contratista} Total Autorizado`,
-          usuario: sesion.usuario,
-          estatusFactura: 'No Requiere 🔴',
-          linkFactura: 'N/A'
-        });
-
-        await enviarTexto(from, `✅ *Contrato Registrado con Éxito*\n👷‍♂️ *Contratista:* ${sesion.contratista}\n🏗️ *Sucursal:* ${obraElegida}\n💵 *Monto Total:* $${sesion.monto.toFixed(2)}`);
-        delete sesiones[from];
-        res.sendStatus(200);
-        return;
-      }
-
-      if (respuestaId?.startsWith('PPTOBRA_')) {
-        const obraMap = {
-          'PPTOBRA_Pelicano': 'Suc. Pelicano',
-          'PPTOBRA_Caldera': 'Suc. Caldera',
-          'PPTOBRA_Nativitas': 'Suc. Nativitas',
-          'PPTOBRA_Salud': 'Suc. Salud',
-          'PPTOBRA_Otro': 'Suc. Otro'
-        };
-        const obraElegida = obraMap[respuestaId] || 'Suc. Otro';
-
-        await guardarEnSheets({
-          idMovimiento: sesion.idMovimiento,
-          obra: obraElegida,
-          metodo: 'Asignación Presupuesto',
-          subMetodo: '',
-          categoria: 'Cobro Cliente',
-          monto: sesion.monto,
-          concepto: 'Presupuesto Total Autorizado Farmacia',
-          usuario: sesion.usuario,
-          estatusFactura: 'No Requiere 🔴',
-          linkFactura: 'N/A'
-        });
-
-        await enviarTexto(from, `✅ *Presupuesto Total Autorizado Registrado*\n🏗️ *Sucursal:* ${obraElegida}\n💵 *Monto:* $${sesion.monto.toFixed(2)}`);
-        delete sesiones[from];
-        res.sendStatus(200);
-        return;
-      }
-
-      if (respuestaId?.startsWith('ACTOBRA_')) {
-        const obraMap = {
-          'ACTOBRA_Pelicano': 'Suc. Pelicano',
-          'ACTOBRA_Caldera': 'Suc. Caldera',
-          'ACTOBRA_Nativitas': 'Suc. Nativitas',
-          'ACTOBRA_Salud': 'Suc. Salud',
-          'ACTOBRA_Otro': 'Suc. Otro'
-        };
-        const obraElegida = obraMap[respuestaId] || 'Suc. Otro';
-
-        await guardarEnSheets({
-          idMovimiento: sesion.idMovimiento,
-          obra: obraElegida,
-          metodo: 'Ingreso Presupuesto',
-          subMetodo: '',
-          categoria: 'Cobro Cliente',
-          monto: sesion.monto,
-          concepto: sesion.concepto,
-          usuario: sesion.usuario,
-          estatusFactura: 'No Requiere 🔴',
-          linkFactura: 'N/A'
-        });
-
-        await enviarTexto(from, `🏦 *Ingreso Liberado Registrado Correctamente*\n🏗️ *Sucursal:* ${obraElegida}\n💵 *Monto:* $${sesion.monto.toFixed(2)}`);
-        delete sesiones[from];
         res.sendStatus(200);
         return;
       }
