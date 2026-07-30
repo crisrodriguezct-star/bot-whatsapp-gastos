@@ -7,8 +7,14 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
-const SPREADSHEET_ID = process.env.SPREADSHEET_ID; // Excel Principal de Gastos
-const SPREADSHEET_PRECIOS_ID = process.env.SPREADSHEET_PRECIOS_ID || '1Cscdoi4k3BkHLWPSB9nSxrGyZsshRXMKEtx2jbBcIQ0'; // Excel de Precios
+
+// IDs de Google Sheets y Drive
+const SPREADSHEET_ID = process.env.SPREADSHEET_ID; // Principal de Gastos
+const SPREADSHEET_PRECIOS_ID = process.env.SPREADSHEET_PRECIOS_ID || '1Cscdoi4k3BkHLWPSB9nSxrGyZsshRXMKEtx2jbBcIQ0';
+const SPREADSHEET_EXTRAS_ID = process.env.SPREADSHEET_EXTRAS_ID || '1uO9QMilrhjooFgsqF7Nu7GA4WYEV94QZRNjwQj2Jz5o';
+const SPREADSHEET_PERSONAL_ID = process.env.SPREADSHEET_PERSONAL_ID || '1LU5V21D9wPILoq6HHEBqxJc9mE7EwDMJEnwpvQHnpFQ';
+const DRIVE_FOLDER_EXTRAS_ID = process.env.DRIVE_FOLDER_EXTRAS_ID || '1ZTIGfyRjFa0Yn1MMUMjOzWiPi810vVvw';
+
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 
@@ -68,7 +74,7 @@ function obtenerNombreUsuario(numeroFrom) {
   return DIRECTORIO_USUARIOS[diezDigitos] || `Usuario (${diezDigitos})`;
 }
 
-let sheets;
+let sheets, drive;
 
 try {
   const oauth2Client = new google.auth.OAuth2(
@@ -82,7 +88,8 @@ try {
   });
 
   sheets = google.sheets({ version: 'v4', auth: oauth2Client });
-  console.log('✅ Google OAuth2 configurado correctamente.');
+  drive = google.drive({ version: 'v3', auth: oauth2Client });
+  console.log('✅ Google OAuth2 (Sheets + Drive) configurado correctamente.');
 } catch (error) {
   console.error('❌ Error OAuth2 Google:', error.message);
 }
@@ -172,6 +179,87 @@ async function enviarLista(to, textoBody, tituloBoton, tituloSeccion, opciones) 
   });
 }
 
+// FUNCIONES GOOGLE DRIVE
+async function obtenerOcrearSubcarpetaObra(nombreObra) {
+  if (!drive || !DRIVE_FOLDER_EXTRAS_ID) return DRIVE_FOLDER_EXTRAS_ID;
+  try {
+    const q = `'${DRIVE_FOLDER_EXTRAS_ID}' in parents and name = '${nombreObra}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+    const res = await drive.files.list({ q, fields: 'files(id, name)' });
+    if (res.data.files && res.data.files.length > 0) {
+      return res.data.files[0].id;
+    }
+    const folderMetadata = {
+      name: nombreObra,
+      mimeType: 'application/vnd.google-apps.folder',
+      parents: [DRIVE_FOLDER_EXTRAS_ID]
+    };
+    const folder = await drive.files.create({ resource: folderMetadata, fields: 'id' });
+    return folder.data.id;
+  } catch (error) {
+    console.error('❌ Error en Drive Subcarpeta:', error.message);
+    return DRIVE_FOLDER_EXTRAS_ID;
+  }
+}
+
+function descargarImagenWhatsApp(imageId) {
+  return new Promise((resolve, reject) => {
+    const optionsUrl = {
+      hostname: 'graph.facebook.com',
+      port: 443,
+      path: `/v18.0/${imageId}`,
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN.trim()}` }
+    };
+
+    https.get(optionsUrl, (res) => {
+      let body = '';
+      res.on('data', chunk => body += chunk);
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(body);
+          const downloadUrl = json.url;
+
+          https.get(downloadUrl, { headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN.trim()}` } }, (stream) => {
+            const chunks = [];
+            stream.on('data', chunk => chunks.push(chunk));
+            stream.on('end', () => resolve(Buffer.concat(chunks)));
+          }).on('error', reject);
+        } catch (e) { reject(e); }
+      });
+    }).on('error', reject);
+  });
+}
+
+async function subirFotoADrive(buffer, nombreArchivo, folderId) {
+  if (!drive) return 'N/A';
+  try {
+    const Readable = require('stream').Readable;
+    const stream = new Readable();
+    stream.push(buffer);
+    stream.push(null);
+
+    const fileMetadata = { name: nombreArchivo, parents: [folderId] };
+    const media = { mimeType: 'image/jpeg', body: stream };
+
+    const file = await drive.files.create({
+      resource: fileMetadata,
+      media: media,
+      fields: 'id, webViewLink'
+    });
+
+    await drive.permissions.create({
+      fileId: file.data.id,
+      requestBody: { role: 'reader', type: 'anyone' }
+    });
+
+    return file.data.webViewLink;
+  } catch (error) {
+    console.error('❌ Error subiendo a Drive:', error.message);
+    return 'Error Subida';
+  }
+}
+
+// FUNCIONES SHEETS
 async function guardarEnSheets(datos) {
   if (!sheets || !SPREADSHEET_ID) return;
   try {
@@ -197,9 +285,113 @@ async function guardarEnSheets(datos) {
       valueInputOption: 'USER_ENTERED',
       requestBody: { values: valores }
     });
-    console.log(`✅ Registrado en Sheets: ${datos.idMovimiento}`);
+    console.log(`✅ Registrado en Sheets Principal: ${datos.idMovimiento}`);
   } catch (error) {
     console.error('❌ Error guardando en Sheets:', error.message);
+  }
+}
+
+async function guardarTrabajoExtra(datos) {
+  if (!sheets || !SPREADSHEET_EXTRAS_ID) return;
+  try {
+    const fechaHora = new Date().toLocaleString('es-MX', { timeZone: 'America/Mexico_City' });
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_EXTRAS_ID,
+      range: 'Extras!A:A'
+    });
+    const filas = res.data.values || [];
+    const numFila = Math.max(1, filas.length - 1);
+
+    const valores = [[
+      numFila,
+      datos.idExtra,
+      fechaHora,
+      datos.obra,
+      datos.descripcion,
+      datos.monto,
+      datos.linksFotos.join('\n'),
+      datos.usuario,
+      'Pendiente 🟡'
+    ]];
+
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SPREADSHEET_EXTRAS_ID,
+      range: 'Extras!A:I',
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: valores }
+    });
+    console.log(`✅ Trabajo Extra registrado: ${datos.idExtra}`);
+  } catch (error) {
+    console.error('❌ Error guardando trabajo extra:', error.message);
+  }
+}
+
+async function guardarTrabajador(datos) {
+  if (!sheets || !SPREADSHEET_PERSONAL_ID) return;
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_PERSONAL_ID,
+      range: 'PLANTILLA_PERSONAL!A:A'
+    });
+    const filas = res.data.values || [];
+    const numFila = Math.max(1, filas.length - 1);
+
+    const valores = [[
+      numFila,
+      datos.idTrabajador,
+      datos.nombre,
+      datos.obra,
+      datos.tipo,
+      datos.sueldo
+    ]];
+
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SPREADSHEET_PERSONAL_ID,
+      range: 'PLANTILLA_PERSONAL!A:F',
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: valores }
+    });
+    console.log(`✅ Trabajador registrado: ${datos.nombre}`);
+  } catch (error) {
+    console.error('❌ Error guardando trabajador:', error.message);
+  }
+}
+
+async function guardarVisitaFamiliar(datos) {
+  if (!sheets || !SPREADSHEET_PERSONAL_ID) return;
+  try {
+    const fechaSalida = new Date();
+    const fechaSugerida = new Date(fechaSalida.getTime() + (45 * 24 * 60 * 60 * 1000)); // +45 Días
+
+    const fechaSalidaStr = fechaSalida.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City' });
+    const fechaSugeridaStr = fechaSugerida.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City' });
+
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_PERSONAL_ID,
+      range: 'VISITAS_FAMILIARES!A:A'
+    });
+    const filas = res.data.values || [];
+    const numFila = Math.max(1, filas.length - 1);
+
+    const valores = [[
+      numFila,
+      fechaSalidaStr,
+      datos.nombre,
+      datos.obra,
+      datos.monto,
+      fechaSugeridaStr,
+      datos.usuario
+    ]];
+
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SPREADSHEET_PERSONAL_ID,
+      range: 'VISITAS_FAMILIARES!A:G',
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: valores }
+    });
+    console.log(`✅ Visita Familiar registrada: ${datos.nombre}`);
+  } catch (error) {
+    console.error('❌ Error guardando visita familiar:', error.message);
   }
 }
 
@@ -503,8 +695,64 @@ app.post('/webhook', async (req, res) => {
     const from = msg.from;
     const nombreUsuario = obtenerNombreUsuario(from);
 
+    // MANEJO DE IMÁGENES (PARA TRABAJOS EXTRAS)
+    if (msg.type === 'image') {
+      const sesionActual = sesiones[from];
+      if (sesionActual && sesionActual.esperandoFotosExtra) {
+        const imageId = msg.image.id;
+        const subfolderId = await obtenerOcrearSubcarpetaObra(sesionActual.obra);
+        const numFoto = sesionActual.linksFotos.length + 1;
+        const nombreArchivo = `${sesionActual.idExtra}_${sesionActual.obra.replace(/\s+/g, '_')}_Foto${numFoto}.jpg`;
+
+        try {
+          const buffer = await descargarImagenWhatsApp(imageId);
+          const driveLink = await subirFotoADrive(buffer, nombreArchivo, subfolderId);
+          sesionActual.linksFotos.push(driveLink);
+
+          await enviarBotones(from, `📸 *Foto ${numFoto} guardada correctamente en Drive.*\n\n¿Deseas agregar otra evidencia o finalizar?`, [
+            { id: 'EXTRAFOTO_OTRA', title: '📸 Agregar Foto' },
+            { id: 'EXTRAFOTO_FIN', title: '✅ Finalizar' }
+          ]);
+        } catch (e) {
+          console.error('❌ Error procesando foto WhatsApp:', e.message);
+          await enviarTexto(from, '⚠️ Error guardando la foto. Intenta enviarla nuevamente.');
+        }
+        res.sendStatus(200);
+        return;
+      }
+    }
+
     if (msg.type === 'text') {
       const textBody = msg.text.body.trim();
+
+      // COMANDO MENU / AYUDA
+      if (/^(menu|ayuda|comandos)$/i.test(textBody)) {
+        const menuTxt = `🤖 *MENÚ DE COMANDOS - ASISTENTE OBRA*\n\n` +
+          `💰 *1. GASTOS Y CAJA:*` +
+          `\n  • \`[concepto] [monto]\` (ej: cemento 120)` +
+          `\n  • \`caja [monto]\` (Ingreso caja chica)` +
+          `\n  • \`corte\` / \`saldo\` (Reporte caja)` +
+          `\n  • \`cancelar\` (Borra último registro)` +
+          `\n  • \`facturas\` (Ver pendientes)\n\n` +
+          `🏦 *2. PRESUPUESTOS Y COBROS:*` +
+          `\n  • \`presupuesto autorizado [monto]\`` +
+          `\n  • \`ingreso [monto]\` (Liberación farmacia)` +
+          `\n  • \`avance\` (Cobrado vs Autorizado)\n\n` +
+          `👷‍♂️ *3. CONTRATISTAS Y TRABAJADORES:*` +
+          `\n  • \`contrato [nombre] [monto]\`` +
+          `\n  • \`contratistas\` (Reporte saldos)` +
+          `\n  • \`alta [nombre]\` (Registrar trabajador)` +
+          `\n  • \`visita [nombre] [monto]\` (Pasajes/Viáticos)\n\n` +
+          `🔨 *4. TRABAJOS EXTRAS:*` +
+          `\n  • \`extra\` o \`trabajos extras\` (Con evidencia foto)\n\n` +
+          `🏷️ *5. PRECIOS MATERIALES:*` +
+          `\n  • \`precio [material] [monto]\`` +
+          `\n  • \`comparar [material]\` (Reporte barato/caro)`;
+
+        await enviarTexto(from, menuTxt);
+        res.sendStatus(200);
+        return;
+      }
 
       // CANCELAR ÚLTIMO
       if (/^(cancelar|borrar ultimo)$/i.test(textBody)) {
@@ -518,8 +766,43 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // RESPUESTA SI ESTÁ ESPERANDO UNIDAD O PROVEEDOR MANUAL
+      // FLUJOS CON TEXTO LIBRE PENDIENTE DE SESIÓN
       const sesionActual = sesiones[from];
+
+      // TRABAJADOR: SUELDO
+      if (sesionActual && sesionActual.esperandoSueldoTrabajador) {
+        sesionActual.sueldo = parseFloat(textBody) || 0;
+        delete sesionActual.esperandoSueldoTrabajador;
+
+        await guardarTrabajador(sesionActual);
+        await enviarTexto(from, `✅ *Trabajador Registrado con Éxito*\n\n🆔 *ID:* ${sesionActual.idTrabajador}\n👤 *Nombre:* ${sesionActual.nombre}\n🏗️ *Obra:* ${sesionActual.obra}\n📌 *Tipo:* ${sesionActual.tipo}\n💵 *Sueldo Semanal:* $${sesionActual.sueldo.toFixed(2)}`);
+        delete sesiones[from];
+        res.sendStatus(200);
+        return;
+      }
+
+      // TRABAJO EXTRA: DESCRIPCIÓN Y MONTO
+      if (sesionActual && sesionActual.esperandoDescripcionExtra) {
+        sesionActual.descripcion = textBody;
+        delete sesionActual.esperandoDescripcionExtra;
+        sesionActual.esperandoMontoExtra = true;
+
+        await enviarTexto(from, '💵 *Escribe el Monto Estimado o Valor a cobrar por este trabajo extra:*');
+        res.sendStatus(200);
+        return;
+      }
+
+      if (sesionActual && sesionActual.esperandoMontoExtra) {
+        sesionActual.monto = parseFloat(textBody) || 0;
+        delete sesionActual.esperandoMontoExtra;
+        sesionActual.esperandoFotosExtra = true;
+
+        await enviarTexto(from, `📸 *Monto registrado:* $${sesionActual.monto.toFixed(2)}\n\n*Por favor, envía la primera FOTO de evidencia por WhatsApp:*`);
+        res.sendStatus(200);
+        return;
+      }
+
+      // PRECIOS HISTÓRICOS: UNIDAD MANUAL Y PROVEEDOR
       if (sesionActual && sesionActual.esperandoUnidadManual) {
         sesionActual.unidad = textBody.toLowerCase();
         delete sesionActual.esperandoUnidadManual;
@@ -552,6 +835,79 @@ app.post('/webhook', async (req, res) => {
 
         await enviarTexto(from, `✅ *Precio Histórico Guardado con Éxito*\n\n📍 *Obra/Sucursal:* ${sesionActual.obra}\n📝 *Material:* ${sesionActual.material.toUpperCase()}\n📐 *Unidad:* ${sesionActual.unidad}\n💵 *Precio:* $${sesionActual.precio.toFixed(2)}\n🏢 *Proveedor:* ${sesionActual.proveedor}\n👤 *Registró:* ${sesionActual.usuario}`);
         delete sesiones[from];
+        res.sendStatus(200);
+        return;
+      }
+
+      // COMANDO TRABAJOS EXTRAS
+      if (/^(extra|extras|trabajo extra|trabajos extras)$/i.test(textBody)) {
+        sesiones[from] = {
+          tipoAccion: 'TRABAJO_EXTRA',
+          idExtra: 'EXT-' + Date.now().toString().slice(-6),
+          linksFotos: [],
+          usuario: nombreUsuario
+        };
+
+        await enviarBotones(from, '🔨 *Registro de Trabajo Extra*\n\n🏗️ *¿De qué Sucursal/Obra es el trabajo extra?*', [
+          { id: 'EXTRAOBRA_Pelicano', title: 'Pelicano' },
+          { id: 'EXTRAOBRA_Caldera', title: 'Caldera' },
+          { id: 'EXTRAOBRA_Nativitas', title: 'Nativitas' }
+        ]);
+        await enviarBotones(from, '👇 *Otras Opciones:*', [
+          { id: 'EXTRAOBRA_Salud', title: 'Salud' },
+          { id: 'EXTRAOBRA_Otro', title: 'Otro' }
+        ]);
+        res.sendStatus(200);
+        return;
+      }
+
+      // COMANDO ALTA TRABAJADOR: "alta [nombre]"
+      const matchAltaTrabajador = textBody.match(/^alta\s+(.+)/i);
+      if (matchAltaTrabajador) {
+        const nombreTrabajador = matchAltaTrabajador[1].trim();
+
+        sesiones[from] = {
+          tipoAccion: 'ALTA_TRABAJADOR',
+          idTrabajador: 'EMP-' + Date.now().toString().slice(-6),
+          nombre: nombreTrabajador.toUpperCase(),
+          usuario: nombreUsuario
+        };
+
+        await enviarBotones(from, `👷‍♂️ *Alta de Trabajador:* ${nombreTrabajador.toUpperCase()}\n\n🏗️ *¿A qué obra pertenece?*`, [
+          { id: 'EMPOBRA_Pelicano', title: 'Pelicano' },
+          { id: 'EMPOBRA_Caldera', title: 'Caldera' },
+          { id: 'EMPOBRA_Nativitas', title: 'Nativitas' }
+        ]);
+        await enviarBotones(from, '👇 *Otras Opciones:*', [
+          { id: 'EMPOBRA_Salud', title: 'Salud' },
+          { id: 'EMPOBRA_Otro', title: 'Otro' }
+        ]);
+        res.sendStatus(200);
+        return;
+      }
+
+      // COMANDO VISITA FAMILIAR / PASAJES: "visita [nombre] [monto]"
+      const matchVisita = textBody.match(/^visita\s+(.+)\s+(\d+(\.\d+)?)/i);
+      if (matchVisita) {
+        const nombreTrabajador = matchVisita[1].trim();
+        const montoApoyo = parseFloat(matchVisita[2]);
+
+        sesiones[from] = {
+          tipoAccion: 'VISITA_FAMILIAR',
+          nombre: nombreTrabajador.toUpperCase(),
+          monto: montoApoyo,
+          usuario: nombreUsuario
+        };
+
+        await enviarBotones(from, `🚌 *Apoyo Pasajes Visita Familiar:* $${montoApoyo.toFixed(2)}\n👤 *Trabajador:* ${nombreTrabajador.toUpperCase()}\n\n🏗️ *¿A qué obra se aplica este gasto de viáticos?*`, [
+          { id: 'VISITAOBRA_Pelicano', title: 'Pelicano' },
+          { id: 'VISITAOBRA_Caldera', title: 'Caldera' },
+          { id: 'VISITAOBRA_Nativitas', title: 'Nativitas' }
+        ]);
+        await enviarBotones(from, '👇 *Otras Opciones:*', [
+          { id: 'VISITAOBRA_Salud', title: 'Salud' },
+          { id: 'VISITAOBRA_Otro', title: 'Otro' }
+        ]);
         res.sendStatus(200);
         return;
       }
@@ -821,6 +1177,113 @@ app.post('/webhook', async (req, res) => {
           await enviarTexto(from, `🟢 *Gasto (${idMov}) actualizado correctamente a Facturado 🟢*`);
         } else {
           await enviarTexto(from, '⚠️ No se pudo actualizar el gasto.');
+        }
+        res.sendStatus(200);
+        return;
+      }
+
+      // RESPUESTA TRABAJOS EXTRAS: FOTO OTRA O FINALIZAR
+      if (respuestaId === 'EXTRAFOTO_OTRA') {
+        await enviarTexto(from, '📸 *Envía la siguiente foto de evidencia:*');
+        res.sendStatus(200);
+        return;
+      }
+
+      if (respuestaId === 'EXTRAFOTO_FIN') {
+        const sesion = sesiones[from];
+        if (sesion) {
+          await guardarTrabajoExtra(sesion);
+          await enviarTexto(from, `✅ *Trabajo Extra Guardado con Éxito*\n\n🆔 *ID:* ${sesion.idExtra}\n🏗️ *Obra:* ${sesion.obra}\n📝 *Descripción:* ${sesion.descripcion}\n💵 *Monto Estimado:* $${sesion.monto.toFixed(2)}\n📷 *Fotos en Drive:* ${sesion.linksFotos.length} archivo(s)\n👤 *Registró:* ${sesion.usuario}`);
+          delete sesiones[from];
+        }
+        res.sendStatus(200);
+        return;
+      }
+
+      // RESPUESTA OBRA EN TRABAJOS EXTRAS
+      if (respuestaId?.startsWith('EXTRAOBRA_')) {
+        const obraMap = {
+          'EXTRAOBRA_Pelicano': 'Suc. Pelicano',
+          'EXTRAOBRA_Caldera': 'Suc. Caldera',
+          'EXTRAOBRA_Nativitas': 'Suc. Nativitas',
+          'EXTRAOBRA_Salud': 'Suc. Salud',
+          'EXTRAOBRA_Otro': 'Suc. Otro'
+        };
+        const sesion = sesiones[from];
+        if (sesion) {
+          sesion.obra = obraMap[respuestaId] || 'Suc. Otro';
+          sesion.esperandoDescripcionExtra = true;
+          await enviarTexto(from, '✏️ *Escribe la descripción detallada del trabajo extra:* (Mediciones, conceptos de albañilería, demoliciones, etc.)');
+        }
+        res.sendStatus(200);
+        return;
+      }
+
+      // RESPUESTA OBRA EN ALTA TRABAJADOR
+      if (respuestaId?.startsWith('EMPOBRA_')) {
+        const obraMap = {
+          'EMPOBRA_Pelicano': 'Suc. Pelicano',
+          'EMPOBRA_Caldera': 'Suc. Caldera',
+          'EMPOBRA_Nativitas': 'Suc. Nativitas',
+          'EMPOBRA_Salud': 'Suc. Salud',
+          'EMPOBRA_Otro': 'Suc. Otro'
+        };
+        const sesion = sesiones[from];
+        if (sesion) {
+          sesion.obra = obraMap[respuestaId] || 'Suc. Otro';
+          await enviarBotones(from, '📌 *¿El trabajador es Local o Foráneo?*', [
+            { id: 'EMPTIPO_Local', title: 'Local' },
+            { id: 'EMPTIPO_Foraneo', title: 'Foráneo' }
+          ]);
+        }
+        res.sendStatus(200);
+        return;
+      }
+
+      if (respuestaId?.startsWith('EMPTIPO_')) {
+        const sesion = sesiones[from];
+        if (sesion) {
+          sesion.tipo = respuestaId === 'EMPTIPO_Local' ? 'Local' : 'Foráneo';
+          sesion.esperandoSueldoTrabajador = true;
+          await enviarTexto(from, '💵 *Escribe el Sueldo Semanal del trabajador:*');
+        }
+        res.sendStatus(200);
+        return;
+      }
+
+      // RESPUESTA OBRA EN VISITA FAMILIAR / PASAJES
+      if (respuestaId?.startsWith('VISITAOBRA_')) {
+        const obraMap = {
+          'VISITAOBRA_Pelicano': 'Suc. Pelicano',
+          'VISITAOBRA_Caldera': 'Suc. Caldera',
+          'VISITAOBRA_Nativitas': 'Suc. Nativitas',
+          'VISITAOBRA_Salud': 'Suc. Salud',
+          'VISITAOBRA_Otro': 'Suc. Otro'
+        };
+        const sesion = sesiones[from];
+        if (sesion) {
+          sesion.obra = obraMap[respuestaId] || 'Suc. Otro';
+
+          // Además de guardarlo en CONTROL_PERSONAL, registrar el gasto de viáticos en el Excel Principal
+          await guardarEnSheets({
+            idMovimiento: 'VIS-' + Date.now().toString().slice(-6),
+            obra: sesion.obra,
+            metodo: 'Efectivo',
+            subMetodo: '',
+            categoria: '24) VIATICOS',
+            monto: sesion.monto,
+            concepto: `Pasajes Visita Familiar (${sesion.nombre})`,
+            usuario: sesion.usuario,
+            estatusFactura: 'No Requiere 🔴',
+            linkFactura: 'N/A'
+          });
+
+          await guardarVisitaFamiliar(sesion);
+
+          const fechaProxima = new Date(Date.now() + (45 * 24 * 60 * 60 * 1000)).toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City' });
+
+          await enviarTexto(from, `✅ *Visita Familiar Registrada con Éxito*\n\n👤 *Trabajador:* ${sesion.nombre}\n🏗️ *Obra Afectada:* ${sesion.obra}\n💵 *Monto Apoyo:* $${sesion.monto.toFixed(2)}\n📅 *Próxima Visita Sugerida (+45 días):* ${fechaProxima}\n\n*El gasto de $${sesion.monto.toFixed(2)} fue registrado también en el Excel principal bajo la categoría 24) VIÁTICOS.*`);
+          delete sesiones[from];
         }
         res.sendStatus(200);
         return;
