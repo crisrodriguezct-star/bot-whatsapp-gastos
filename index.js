@@ -267,17 +267,17 @@ async function subirFotoADrive(buffer, nombreArchivo, folderId) {
   }
 }
 
-// HELPER: Buscar primera fila vacía basada en una columna específica (evita saltar por precargado en Columna A)
-async function obtenerSiguienteFilaDisponible(spreadsheetId, rangeColumna) {
+// BUSCADOR STRICTO DE PRIMERA FILA LIBRE POR COLUMNA D
+async function obtenerSiguienteFilaDisponible(spreadsheetId, hojaYColumna) {
   try {
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: rangeColumna
+      range: hojaYColumna
     });
     const filas = res.data.values || [];
-    return filas.length + 1; // Fila exacta libre
+    return filas.length + 1;
   } catch (e) {
-    return 3; // Fila 3 por defecto
+    return 3;
   }
 }
 
@@ -318,7 +318,7 @@ async function guardarTrabajoExtra(datos) {
   try {
     const fechaHora = new Date().toLocaleString('es-MX', { timeZone: 'America/Mexico_City' });
     const filaDestino = await obtenerSiguienteFilaDisponible(SPREADSHEET_EXTRAS_ID, 'Extras!B:B');
-    const numFila = filaDestino - 2; // Número consecutivo en Columna A
+    const numFila = filaDestino - 2;
 
     const valores = [[
       numFila,
@@ -347,7 +347,7 @@ async function guardarTrabajoExtra(datos) {
 async function guardarTrabajador(datos) {
   if (!sheets || !SPREADSHEET_PERSONAL_ID) return;
   try {
-    const filaDestino = await obtenerSiguienteFilaDisponible(SPREADSHEET_PERSONAL_ID, 'PLANTILLA_PERSONAL!B:B');
+    const filaDestino = await obtenerSiguienteFilaDisponible(SPREADSHEET_PERSONAL_ID, 'PLANTILLA_PERSONAL!C:C');
     const numFila = filaDestino - 2;
 
     const valores = [[
@@ -380,7 +380,7 @@ async function guardarVisitaFamiliar(datos) {
     const fechaSalidaStr = fechaSalida.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City' });
     const fechaSugeridaStr = fechaSugerida.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City' });
 
-    const filaDestino = await obtenerSiguienteFilaDisponible(SPREADSHEET_PERSONAL_ID, 'VISITAS_FAMILIARES!B:B');
+    const filaDestino = await obtenerSiguienteFilaDisponible(SPREADSHEET_PERSONAL_ID, 'VISITAS_FAMILIARES!C:C');
     const numFila = filaDestino - 2;
 
     const valores = [[
@@ -409,7 +409,7 @@ async function guardarPrecioHistorico(datos) {
   if (!sheets || !SPREADSHEET_PRECIOS_ID) return;
   try {
     const fechaHora = new Date().toLocaleString('es-MX', { timeZone: 'America/Mexico_City' });
-    const filaDestino = await obtenerSiguienteFilaDisponible(SPREADSHEET_PRECIOS_ID, 'PRECIOS!B:B');
+    const filaDestino = await obtenerSiguienteFilaDisponible(SPREADSHEET_PRECIOS_ID, 'PRECIOS!D:D');
     const numFila = filaDestino - 2;
 
     const valores = [[
@@ -686,6 +686,20 @@ async function calcularReportePresupuestos() {
 }
 
 async function desplegarMenuPrincipal(from) {
+  const guiaComandos = `📝 *SINTAXIS DE COMANDOS POR TEXTO:*` +
+    `\n• *Gasto Rápido:* \`[concepto] [monto]\` (ej: cemento 450)` +
+    `\n• *Alta Trabajador:* \`alta [nombre]\` (ej: alta Pedro Gomez)` +
+    `\n• *Visita Familiar:* \`visita [nombre] [monto]\` (ej: visita Pedro Gomez 800)` +
+    `\n• *Trabajos Extras:* \`extra\` o \`trabajos extras\`` +
+    `\n• *Ingreso Caja Chica:* \`caja [monto]\` (ej: caja 1000)` +
+    `\n• *Corte / Saldo:* \`saldo\` o \`corte\`` +
+    `\n• *Contratistas:* \`contratistas\`` +
+    `\n• *Precios Materiales:* \`precio [mat] [monto]\` (ej: precio varilla 195)` +
+    `\n• *Comparar Precios:* \`comparar [mat]\` (ej: comparar varilla)` +
+    `\n• *Cancelar Último:* \`cancelar\``;
+
+  await enviarTexto(from, guiaComandos);
+
   const opciones = [
     { id: 'MENU_PERSONAL', title: '👷‍♂️ Personal Propio', description: 'Altas de trabajadores y Visitas Familiares' },
     { id: 'MENU_CONTRATISTAS', title: '🤝 Contratistas / Destajos', description: 'Asignación de contratos y consulta de saldos' },
@@ -695,7 +709,7 @@ async function desplegarMenuPrincipal(from) {
     { id: 'MENU_REPORTES', title: '📊 Saldos y Reportes', description: 'Caja chica, avance y facturas pendientes' }
   ];
 
-  await enviarLista(from, '🏗️ *MENÚ ADMINISTRATIVO DE OBRA*\n\nSelecciona la gestión que deseas realizar:', 'Abrir Menú', 'Gestión de Obra', opciones);
+  await enviarLista(from, '🏗️ *MENÚ ADMINISTRATIVO DE OBRA*\n\nO selecciona mediante clics:', 'Abrir Menú', 'Gestión de Obra', opciones);
 }
 
 app.get('/webhook', (req, res) => {
@@ -713,7 +727,7 @@ app.post('/webhook', async (req, res) => {
     const from = msg.from;
     const nombreUsuario = obtenerNombreUsuario(from);
 
-    // MANEJO DE IMÁGENES
+    // IMÁGENES
     if (msg.type === 'image') {
       const sesionActual = sesiones[from];
       if (sesionActual && sesionActual.esperandoFotosExtra) {
@@ -744,7 +758,7 @@ app.post('/webhook', async (req, res) => {
     if (msg.type === 'text') {
       const textBody = msg.text.body.trim();
 
-      // 1) COMANDO MENU / AYUDA / COMANDOS
+      // 1) MENU / AYUDA / COMANDOS
       if (/^(menu|hola|inicio|ayuda|comandos)$/i.test(textBody)) {
         await desplegarMenuPrincipal(from);
         res.sendStatus(200);
@@ -763,7 +777,7 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // 3) REPORTES DIRECTOS POR TEXTO
+      // 3) REPORTES DIRECTOS
       if (/^(saldo|corte|reporte|resumen)$/i.test(textBody)) {
         await enviarBotones(from, '📊 *¿De qué Sucursal deseas consultar el Reporte?*', [
           { id: 'REP_Pelicano', title: 'Pelicano' },
@@ -824,9 +838,9 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // 4) COMANDOS DIRECTOS DE ACCIÓN POR TEXTO
+      // 4) COMANDOS DIRECTOS POR TEXTO
 
-      // ALTA TRABAJADOR DIRECTA: "alta Juan Perez"
+      // ALTA TRABAJADOR
       const matchAltaTrabajador = textBody.match(/^alta\s+(.+)/i);
       if (matchAltaTrabajador) {
         const nombreTrabajador = matchAltaTrabajador[1].trim();
@@ -851,7 +865,7 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // VISITA FAMILIAR DIRECTA: "visita Juan Perez 800"
+      // VISITA FAMILIAR
       const matchVisita = textBody.match(/^visita\s+(.+)\s+(\d+(\.\d+)?)/i);
       if (matchVisita) {
         const nombreTrabajador = matchVisita[1].trim();
@@ -877,7 +891,7 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // TRABAJOS EXTRAS DIRECTO: "extra" / "trabajos extras"
+      // TRABAJOS EXTRAS
       if (/^(extra|extras|trabajo extra|trabajos extras)$/i.test(textBody)) {
         sesiones[from] = {
           tipoAccion: 'TRABAJO_EXTRA',
@@ -899,7 +913,7 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // PRECIO DIRECTO: "precio cemento 185"
+      // REGISTRO DE PRECIO
       const matchRegistroPrecio = textBody.match(/^precio\s+(.+)\s+(\d+(\.\d+)?)/i);
       if (matchRegistroPrecio) {
         const material = matchRegistroPrecio[1].trim();
@@ -925,7 +939,7 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // BUSCAR PRECIO DIRECTO: "comparar cemento"
+      // BUSCAR PRECIO
       const matchBusquedaPrecio = textBody.match(/^(comparar|buscar|precios)\s+(.+)/i);
       if (matchBusquedaPrecio) {
         const materialBuscado = matchBusquedaPrecio[2].trim();
@@ -949,7 +963,7 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // DOTACION CAJA DIRECTO: "caja 1000"
+      // DOTACION CAJA
       const matchCaja = textBody.match(/^(caja|efectivo|dotacion|fondo)\s+(\d+(\.\d+)?)/i);
       if (matchCaja) {
         const montoCaja = parseFloat(matchCaja[2]);
@@ -973,7 +987,7 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // CONTRATO DIRECTO: "contrato tablaroca 15000"
+      // CONTRATO DIRECTO
       const matchContrato = textBody.match(/^contrato\s+(.+)\s+(\d+(\.\d+)?)/i);
       if (matchContrato) {
         const nombreContratista = matchContrato[1].trim();
@@ -1001,7 +1015,7 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // 5) ATENCIÓN DE SESIONES DE PASO ANTERIOR (TEXTO LIBRE DENTRO DE FLUJO)
+      // 5) SESIONES DE FLUJO ANTERIOR
       const sesionActual = sesiones[from];
 
       if (sesionActual && sesionActual.esperandoNombreTrabajadorAlta) {
@@ -1205,7 +1219,7 @@ app.post('/webhook', async (req, res) => {
     } else if (msg.type === 'interactive') {
       const respuestaId = msg.interactive.button_reply?.id || msg.interactive.list_reply?.id;
 
-      // MENÚ PRINCIPAL INTERACTIVO
+      // MENÚ INTERACTIVO
       if (respuestaId === 'MENU_PERSONAL') {
         await enviarBotones(from, '👷‍♂️ *Gestión de Personal Propio:*', [
           { id: 'OPC_ALTA_EMP', title: '➕ Alta Trabajador' },
