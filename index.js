@@ -267,6 +267,20 @@ async function subirFotoADrive(buffer, nombreArchivo, folderId) {
   }
 }
 
+// HELPER: Buscar primera fila vacía basada en una columna específica (evita saltar por precargado en Columna A)
+async function obtenerSiguienteFilaDisponible(spreadsheetId, rangeColumna) {
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: rangeColumna
+    });
+    const filas = res.data.values || [];
+    return filas.length + 1; // Fila exacta libre
+  } catch (e) {
+    return 3; // Fila 3 por defecto
+  }
+}
+
 // GOOGLE SHEETS
 async function guardarEnSheets(datos) {
   if (!sheets || !SPREADSHEET_ID) return;
@@ -303,12 +317,8 @@ async function guardarTrabajoExtra(datos) {
   if (!sheets || !SPREADSHEET_EXTRAS_ID) return;
   try {
     const fechaHora = new Date().toLocaleString('es-MX', { timeZone: 'America/Mexico_City' });
-    const res = await sheets.spreadsheets.values.get({
-      spreadsheetId: SPREADSHEET_EXTRAS_ID,
-      range: 'Extras!A:A'
-    });
-    const filas = res.data.values || [];
-    const numFila = Math.max(1, filas.length - 1);
+    const filaDestino = await obtenerSiguienteFilaDisponible(SPREADSHEET_EXTRAS_ID, 'Extras!B:B');
+    const numFila = filaDestino - 2; // Número consecutivo en Columna A
 
     const valores = [[
       numFila,
@@ -322,13 +332,13 @@ async function guardarTrabajoExtra(datos) {
       'Pendiente 🟡'
     ]];
 
-    await sheets.spreadsheets.values.append({
+    await sheets.spreadsheets.values.update({
       spreadsheetId: SPREADSHEET_EXTRAS_ID,
-      range: 'Extras!A:I',
+      range: `Extras!A${filaDestino}:I${filaDestino}`,
       valueInputOption: 'USER_ENTERED',
       requestBody: { values: valores }
     });
-    console.log(`✅ Trabajo Extra registrado: ${datos.idExtra}`);
+    console.log(`✅ Trabajo Extra registrado en Fila ${filaDestino}: ${datos.idExtra}`);
   } catch (error) {
     console.error('❌ Error guardando trabajo extra:', error.message);
   }
@@ -337,12 +347,8 @@ async function guardarTrabajoExtra(datos) {
 async function guardarTrabajador(datos) {
   if (!sheets || !SPREADSHEET_PERSONAL_ID) return;
   try {
-    const res = await sheets.spreadsheets.values.get({
-      spreadsheetId: SPREADSHEET_PERSONAL_ID,
-      range: 'PLANTILLA_PERSONAL!A:A'
-    });
-    const filas = res.data.values || [];
-    const numFila = Math.max(1, filas.length - 1);
+    const filaDestino = await obtenerSiguienteFilaDisponible(SPREADSHEET_PERSONAL_ID, 'PLANTILLA_PERSONAL!B:B');
+    const numFila = filaDestino - 2;
 
     const valores = [[
       numFila,
@@ -353,13 +359,13 @@ async function guardarTrabajador(datos) {
       datos.sueldo
     ]];
 
-    await sheets.spreadsheets.values.append({
+    await sheets.spreadsheets.values.update({
       spreadsheetId: SPREADSHEET_PERSONAL_ID,
-      range: 'PLANTILLA_PERSONAL!A:F',
+      range: `PLANTILLA_PERSONAL!A${filaDestino}:F${filaDestino}`,
       valueInputOption: 'USER_ENTERED',
       requestBody: { values: valores }
     });
-    console.log(`✅ Trabajador registrado: ${datos.nombre}`);
+    console.log(`✅ Trabajador registrado en Fila ${filaDestino}: ${datos.nombre}`);
   } catch (error) {
     console.error('❌ Error guardando trabajador:', error.message);
   }
@@ -374,12 +380,8 @@ async function guardarVisitaFamiliar(datos) {
     const fechaSalidaStr = fechaSalida.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City' });
     const fechaSugeridaStr = fechaSugerida.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City' });
 
-    const res = await sheets.spreadsheets.values.get({
-      spreadsheetId: SPREADSHEET_PERSONAL_ID,
-      range: 'VISITAS_FAMILIARES!A:A'
-    });
-    const filas = res.data.values || [];
-    const numFila = Math.max(1, filas.length - 1);
+    const filaDestino = await obtenerSiguienteFilaDisponible(SPREADSHEET_PERSONAL_ID, 'VISITAS_FAMILIARES!B:B');
+    const numFila = filaDestino - 2;
 
     const valores = [[
       numFila,
@@ -391,13 +393,13 @@ async function guardarVisitaFamiliar(datos) {
       datos.usuario
     ]];
 
-    await sheets.spreadsheets.values.append({
+    await sheets.spreadsheets.values.update({
       spreadsheetId: SPREADSHEET_PERSONAL_ID,
-      range: 'VISITAS_FAMILIARES!A:G',
+      range: `VISITAS_FAMILIARES!A${filaDestino}:G${filaDestino}`,
       valueInputOption: 'USER_ENTERED',
       requestBody: { values: valores }
     });
-    console.log(`✅ Visita Familiar registrada: ${datos.nombre}`);
+    console.log(`✅ Visita Familiar registrada en Fila ${filaDestino}: ${datos.nombre}`);
   } catch (error) {
     console.error('❌ Error guardando visita familiar:', error.message);
   }
@@ -407,13 +409,8 @@ async function guardarPrecioHistorico(datos) {
   if (!sheets || !SPREADSHEET_PRECIOS_ID) return;
   try {
     const fechaHora = new Date().toLocaleString('es-MX', { timeZone: 'America/Mexico_City' });
-    
-    const res = await sheets.spreadsheets.values.get({
-      spreadsheetId: SPREADSHEET_PRECIOS_ID,
-      range: 'PRECIOS!A:A'
-    });
-    const filas = res.data.values || [];
-    const numFila = Math.max(1, filas.length - 1);
+    const filaDestino = await obtenerSiguienteFilaDisponible(SPREADSHEET_PRECIOS_ID, 'PRECIOS!B:B');
+    const numFila = filaDestino - 2;
 
     const valores = [[
       numFila,
@@ -426,13 +423,13 @@ async function guardarPrecioHistorico(datos) {
       datos.usuario
     ]];
 
-    await sheets.spreadsheets.values.append({
+    await sheets.spreadsheets.values.update({
       spreadsheetId: SPREADSHEET_PRECIOS_ID,
-      range: 'PRECIOS!A:H',
+      range: `PRECIOS!A${filaDestino}:H${filaDestino}`,
       valueInputOption: 'USER_ENTERED',
       requestBody: { values: valores }
     });
-    console.log(`✅ Precio histórico registrado: ${datos.material}`);
+    console.log(`✅ Precio histórico registrado en Fila ${filaDestino}: ${datos.material}`);
   } catch (error) {
     console.error('❌ Error guardando precio histórico:', error.message);
   }
@@ -1619,7 +1616,6 @@ app.post('/webhook', async (req, res) => {
           sesion.categoria = catSel ? catSel.title : '20) VARIOS';
         }
 
-        // SI SE SELECCIONA HONORARIOS EN EL GASTO NORMAL: PREGUNTAR DE QUIÉN
         if (sesion.categoria.includes('HONORARIOS')) {
           await enviarBotones(from, '👤 *¿Honorarios de quién?*', [
             { id: 'HON_Rigo', title: 'Rigo' },
