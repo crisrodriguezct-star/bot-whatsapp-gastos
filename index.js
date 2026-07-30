@@ -74,6 +74,14 @@ function obtenerNombreUsuario(numeroFrom) {
   return DIRECTORIO_USUARIOS[diezDigitos] || `Usuario (${diezDigitos})`;
 }
 
+function extraerPalabraClave(texto) {
+  if (!texto) return 'EXTRA';
+  const palabrasIgnoradas = ['de', 'del', 'la', 'los', 'las', 'un', 'una', 'en', 'para', 'por', 'con', 'sin', 'instalacion', 'colocacion', 'trabajo', 'reparacion', 'arreglo'];
+  const palabras = texto.toLowerCase().replace(/[^a-z0-9áéíóúñ\s]/gi, '').split(/\s+/);
+  const palabraFilt = palabras.find(p => p.length > 2 && !palabrasIgnoradas.includes(p));
+  return palabraFilt ? palabraFilt.toUpperCase() : 'TRABAJO';
+}
+
 let sheets, drive;
 
 try {
@@ -89,7 +97,7 @@ try {
 
   sheets = google.sheets({ version: 'v4', auth: oauth2Client });
   drive = google.drive({ version: 'v3', auth: oauth2Client });
-  console.log('✅ Google OAuth2 (Sheets + Drive) configurado correctamente.');
+  console.log('✅ Google OAuth2 configurado correctamente.');
 } catch (error) {
   console.error('❌ Error OAuth2 Google:', error.message);
 }
@@ -179,7 +187,7 @@ async function enviarLista(to, textoBody, tituloBoton, tituloSeccion, opciones) 
   });
 }
 
-// GOOGLE DRIVE
+// DRIVE
 async function obtenerOcrearSubcarpetaObra(nombreObra) {
   if (!drive || !DRIVE_FOLDER_EXTRAS_ID) return DRIVE_FOLDER_EXTRAS_ID;
   try {
@@ -708,21 +716,22 @@ app.post('/webhook', async (req, res) => {
     const from = msg.from;
     const nombreUsuario = obtenerNombreUsuario(from);
 
-    // IMÁGENES
+    // MANEJO DE IMÁGENES
     if (msg.type === 'image') {
       const sesionActual = sesiones[from];
       if (sesionActual && sesionActual.esperandoFotosExtra) {
         const imageId = msg.image.id;
         const subfolderId = await obtenerOcrearSubcarpetaObra(sesionActual.obra);
         const numFoto = sesionActual.linksFotos.length + 1;
-        const nombreArchivo = `${sesionActual.idExtra}_${sesionActual.obra.replace(/\s+/g, '_')}_Foto${numFoto}.jpg`;
+        const palabraClave = extraerPalabraClave(sesionActual.descripcion);
+        const nombreArchivo = `${sesionActual.idExtra}_${palabraClave}_Foto${numFoto}.jpg`;
 
         try {
           const buffer = await descargarImagenWhatsApp(imageId);
           const driveLink = await subirFotoADrive(buffer, nombreArchivo, subfolderId);
           sesionActual.linksFotos.push(driveLink);
 
-          await enviarBotones(from, `📸 *Foto ${numFoto} guardada correctamente en Drive.*\n\n¿Deseas agregar otra evidencia o finalizar?`, [
+          await enviarBotones(from, `📸 *Foto ${numFoto} ("${palabraClave}") guardada en Drive.*\n\n¿Deseas agregar otra evidencia o finalizar?`, [
             { id: 'EXTRAFOTO_OTRA', title: '📸 Agregar Foto' },
             { id: 'EXTRAFOTO_FIN', title: '✅ Finalizar' }
           ]);
@@ -738,14 +747,14 @@ app.post('/webhook', async (req, res) => {
     if (msg.type === 'text') {
       const textBody = msg.text.body.trim();
 
-      // DESPLEGAR MENÚ PRINCIPAL
+      // 1) COMANDO MENU / AYUDA / COMANDOS
       if (/^(menu|hola|inicio|ayuda|comandos)$/i.test(textBody)) {
         await desplegarMenuPrincipal(from);
         res.sendStatus(200);
         return;
       }
 
-      // CANCELAR ÚLTIMO
+      // 2) CANCELAR ÚLTIMO
       if (/^(cancelar|borrar ultimo)$/i.test(textBody)) {
         const cancelado = await cancelarUltimoRegistro();
         if (cancelado) {
@@ -757,9 +766,247 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
+      // 3) REPORTES DIRECTOS POR TEXTO
+      if (/^(saldo|corte|reporte|resumen)$/i.test(textBody)) {
+        await enviarBotones(from, '📊 *¿De qué Sucursal deseas consultar el Reporte?*', [
+          { id: 'REP_Pelicano', title: 'Pelicano' },
+          { id: 'REP_Caldera', title: 'Caldera' },
+          { id: 'REP_Nativitas', title: 'Nativitas' }
+        ]);
+        await enviarBotones(from, '👇 *Otras Opciones:*', [
+          { id: 'REP_Salud', title: 'Salud' },
+          { id: 'REP_GLOBAL', title: 'Caja General Efectivo' }
+        ]);
+        res.sendStatus(200);
+        return;
+      }
+
+      if (/^(facturar|facturas|pendientes|ver pendientes)$/i.test(textBody)) {
+        const pendientes = await obtenerMovimientosPendientes();
+        if (pendientes.length === 0) {
+          await enviarTexto(from, '🎉 ¡Excelente! No hay gastos pendientes de factura.');
+        } else {
+          const opciones = pendientes.map(p => ({
+            id: `RESOLVER_${p.id}`,
+            title: p.concepto,
+            description: `${p.obra} | $${p.monto} (${p.id})`
+          }));
+          await enviarLista(from, '📋 *Gastos Pendientes de Factura:*', 'Ver Pendientes', 'Selecciona para resolver:', opciones);
+        }
+        res.sendStatus(200);
+        return;
+      }
+
+      if (/^(contratistas|destajos|contratos)$/i.test(textBody)) {
+        await enviarBotones(from, '👷‍♂️ *¿De qué Sucursal deseas ver los Contratistas?*', [
+          { id: 'REPCONTRATISTAS_Pelicano', title: 'Pelicano' },
+          { id: 'REPCONTRATISTAS_Caldera', title: 'Caldera' },
+          { id: 'REPCONTRATISTAS_Nativitas', title: 'Nativitas' }
+        ]);
+        await enviarBotones(from, '👇 *Otras Opciones:*', [
+          { id: 'REPCONTRATISTAS_Salud', title: 'Salud' },
+          { id: 'REPCONTRATISTAS_GLOBAL', title: 'Todas las Obras' }
+        ]);
+        res.sendStatus(200);
+        return;
+      }
+
+      if (/^(avance|cobrado|avance presupuestos)$/i.test(textBody)) {
+        const rep = await calcularReportePresupuestos();
+        let msgTexto = '🏦 *Avance de Presupuestos Autorizados (Farmacias):*\n\n';
+        Object.keys(rep).forEach(o => {
+          const t = rep[o];
+          const porCobrar = t.presupuestoTotal - t.liberado;
+          msgTexto += `🏗️ *${o}*\n` +
+            `  • Presupuesto Autorizado: $${t.presupuestoTotal.toFixed(2)}\n` +
+            `  • Liberado a la Fecha: $${t.liberado.toFixed(2)}\n` +
+            `  • Pendiente por Liberar: $${porCobrar.toFixed(2)}\n\n`;
+        });
+        await enviarTexto(from, msgTexto);
+        res.sendStatus(200);
+        return;
+      }
+
+      // 4) COMANDOS DIRECTOS DE ACCIÓN POR TEXTO
+
+      // ALTA TRABAJADOR DIRECTA: "alta Juan Perez"
+      const matchAltaTrabajador = textBody.match(/^alta\s+(.+)/i);
+      if (matchAltaTrabajador) {
+        const nombreTrabajador = matchAltaTrabajador[1].trim();
+
+        sesiones[from] = {
+          tipoAccion: 'ALTA_TRABAJADOR',
+          idTrabajador: 'EMP-' + Date.now().toString().slice(-6),
+          nombre: nombreTrabajador.toUpperCase(),
+          usuario: nombreUsuario
+        };
+
+        await enviarBotones(from, `👷‍♂️ *Alta de Trabajador:* ${nombreTrabajador.toUpperCase()}\n\n🏗️ *¿A qué obra pertenece?*`, [
+          { id: 'EMPOBRA_Pelicano', title: 'Pelicano' },
+          { id: 'EMPOBRA_Caldera', title: 'Caldera' },
+          { id: 'EMPOBRA_Nativitas', title: 'Nativitas' }
+        ]);
+        await enviarBotones(from, '👇 *Otras Opciones:*', [
+          { id: 'EMPOBRA_Salud', title: 'Salud' },
+          { id: 'EMPOBRA_Otro', title: 'Otro' }
+        ]);
+        res.sendStatus(200);
+        return;
+      }
+
+      // VISITA FAMILIAR DIRECTA: "visita Juan Perez 800"
+      const matchVisita = textBody.match(/^visita\s+(.+)\s+(\d+(\.\d+)?)/i);
+      if (matchVisita) {
+        const nombreTrabajador = matchVisita[1].trim();
+        const montoApoyo = parseFloat(matchVisita[2]);
+
+        sesiones[from] = {
+          tipoAccion: 'VISITA_FAMILIAR',
+          nombre: nombreTrabajador.toUpperCase(),
+          monto: montoApoyo,
+          usuario: nombreUsuario
+        };
+
+        await enviarBotones(from, `🚌 *Apoyo Pasajes Visita Familiar:* $${montoApoyo.toFixed(2)}\n👤 *Trabajador:* ${nombreTrabajador.toUpperCase()}\n\n🏗️ *¿A qué obra se aplica este gasto de viáticos?*`, [
+          { id: 'VISITAOBRA_Pelicano', title: 'Pelicano' },
+          { id: 'VISITAOBRA_Caldera', title: 'Caldera' },
+          { id: 'VISITAOBRA_Nativitas', title: 'Nativitas' }
+        ]);
+        await enviarBotones(from, '👇 *Otras Opciones:*', [
+          { id: 'VISITAOBRA_Salud', title: 'Salud' },
+          { id: 'VISITAOBRA_Otro', title: 'Otro' }
+        ]);
+        res.sendStatus(200);
+        return;
+      }
+
+      // TRABAJOS EXTRAS DIRECTO: "extra" / "trabajos extras"
+      if (/^(extra|extras|trabajo extra|trabajos extras)$/i.test(textBody)) {
+        sesiones[from] = {
+          tipoAccion: 'TRABAJO_EXTRA',
+          idExtra: 'EXT-' + Date.now().toString().slice(-6),
+          linksFotos: [],
+          usuario: nombreUsuario
+        };
+
+        await enviarBotones(from, '🔨 *Registro de Trabajo Extra*\n\n🏗️ *¿De qué Sucursal/Obra es el trabajo extra?*', [
+          { id: 'EXTRAOBRA_Pelicano', title: 'Pelicano' },
+          { id: 'EXTRAOBRA_Caldera', title: 'Caldera' },
+          { id: 'EXTRAOBRA_Nativitas', title: 'Nativitas' }
+        ]);
+        await enviarBotones(from, '👇 *Otras Opciones:*', [
+          { id: 'EXTRAOBRA_Salud', title: 'Salud' },
+          { id: 'EXTRAOBRA_Otro', title: 'Otro' }
+        ]);
+        res.sendStatus(200);
+        return;
+      }
+
+      // PRECIO DIRECTO: "precio cemento 185"
+      const matchRegistroPrecio = textBody.match(/^precio\s+(.+)\s+(\d+(\.\d+)?)/i);
+      if (matchRegistroPrecio) {
+        const material = matchRegistroPrecio[1].trim();
+        const precio = parseFloat(matchRegistroPrecio[2]);
+
+        sesiones[from] = {
+          tipoAccion: 'REGISTRO_PRECIO_HISTORICO',
+          material,
+          precio,
+          usuario: nombreUsuario
+        };
+
+        await enviarBotones(from, `🏷️ *Material:* ${material.toUpperCase()}\n💵 *Precio:* $${precio.toFixed(2)}\n\n📐 *Selecciona la Unidad de Medida:*`, [
+          { id: 'UNIDAD_Bulto', title: 'Bulto / Saco' },
+          { id: 'UNIDAD_Tramo', title: 'Tramo / Pza' },
+          { id: 'UNIDAD_M2', title: 'm² / m³ / Ton' }
+        ]);
+        await enviarBotones(from, '👇 *Otras Unidades:*', [
+          { id: 'UNIDAD_Cubeta', title: 'Cubeta / Litro' },
+          { id: 'UNIDAD_OTRO', title: '✏️ Otro (Escribir)' }
+        ]);
+        res.sendStatus(200);
+        return;
+      }
+
+      // BUSCAR PRECIO DIRECTO: "comparar cemento"
+      const matchBusquedaPrecio = textBody.match(/^(comparar|buscar|precios)\s+(.+)/i);
+      if (matchBusquedaPrecio) {
+        const materialBuscado = matchBusquedaPrecio[2].trim();
+        const resultados = await buscarHistoricoPrecios(materialBuscado);
+
+        if (resultados.length === 0) {
+          await enviarTexto(from, `⚠️ No se encontraron precios registrados para "${materialBuscado}".`);
+        } else {
+          let msgTxt = `📊 *HISTÓRICO DE PRECIOS: "${materialBuscado.toUpperCase()}"*\n\n`;
+          resultados.forEach((r, idx) => {
+            const emoji = idx === 0 ? '🟢' : idx === 1 ? '🟡' : '🔴';
+            msgTxt += `${emoji} *$${r.precio.toFixed(2)}* / ${r.unidad}\n` +
+              `   📍 ${r.obra}\n` +
+              `   🏢 Proveedor: ${r.proveedor}\n` +
+              `   📝 Material: ${r.material}\n` +
+              `   📅 Fecha: ${r.fecha.split(',')[0]}\n\n`;
+          });
+          await enviarTexto(from, msgTxt);
+        }
+        res.sendStatus(200);
+        return;
+      }
+
+      // DOTACION CAJA DIRECTO: "caja 1000"
+      const matchCaja = textBody.match(/^(caja|efectivo|dotacion|fondo)\s+(\d+(\.\d+)?)/i);
+      if (matchCaja) {
+        const montoCaja = parseFloat(matchCaja[2]);
+
+        await guardarEnSheets({
+          idMovimiento: 'DOT-' + Date.now().toString().slice(-6),
+          obra: 'Efectivo General',
+          metodo: 'Dotación Caja Chica',
+          subMetodo: '',
+          categoria: 'Fondo de Caja',
+          monto: montoCaja,
+          concepto: 'Ingreso a Caja Chica Central (Efectivo)',
+          usuario: nombreUsuario,
+          estatusFactura: 'No Requiere 🔴',
+          linkFactura: 'N/A'
+        });
+
+        const reporteCaja = await calcularReporteSaldos(null);
+        await enviarTexto(from, `💵 *Efectivo Ingresado a Caja Chica:* $${montoCaja.toFixed(2)}\n👤 *Registró:* ${nombreUsuario}\n\n💰 *Efectivo Disponible en Mano:* $${reporteCaja.cajaDisponible.toFixed(2)} MXN`);
+        res.sendStatus(200);
+        return;
+      }
+
+      // CONTRATO DIRECTO: "contrato tablaroca 15000"
+      const matchContrato = textBody.match(/^contrato\s+(.+)\s+(\d+(\.\d+)?)/i);
+      if (matchContrato) {
+        const nombreContratista = matchContrato[1].trim();
+        const montoContrato = parseFloat(matchContrato[2]);
+
+        sesiones[from] = {
+          tipoAccion: 'CONTRATO_CONTRATISTA',
+          idMovimiento: 'CTR-' + Date.now().toString().slice(-6),
+          monto: montoContrato,
+          contratista: nombreContratista.toUpperCase(),
+          concepto: `Contrato ${nombreContratista.toUpperCase()} Total Autorizado`,
+          usuario: nombreUsuario
+        };
+
+        await enviarBotones(from, `👷‍♂️ *Contrato ${nombreContratista.toUpperCase()}:* $${montoContrato.toFixed(2)}\n\n🏗️ *¿A qué sucursal pertenece este contrato?*`, [
+          { id: 'CTROBRA_Pelicano', title: 'Pelicano' },
+          { id: 'CTROBRA_Caldera', title: 'Caldera' },
+          { id: 'CTROBRA_Nativitas', title: 'Nativitas' }
+        ]);
+        await enviarBotones(from, '👇 *Otras Opciones:*', [
+          { id: 'CTROBRA_Salud', title: 'Salud' },
+          { id: 'CTROBRA_Otro', title: 'Otro' }
+        ]);
+        res.sendStatus(200);
+        return;
+      }
+
+      // 5) ATENCIÓN DE SESIONES DE PASO ANTERIOR (TEXTO LIBRE DENTRO DE FLUJO)
       const sesionActual = sesiones[from];
 
-      // ENTRADAS DE TEXTO LIBRE
       if (sesionActual && sesionActual.esperandoNombreTrabajadorAlta) {
         sesionActual.nombre = textBody.toUpperCase();
         delete sesionActual.esperandoNombreTrabajadorAlta;
@@ -921,7 +1168,7 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // REGISTRO DIRECTO DE GASTO RÁPIDO: "concepto monto"
+      // 6) REGISTRO DEFAULT DE GASTO REGULAR: "concepto monto"
       const partes = textBody.split(/\s+/);
       const posibleMonto = parseFloat(partes[partes.length - 1]);
       let concepto = '';
@@ -961,7 +1208,7 @@ app.post('/webhook', async (req, res) => {
     } else if (msg.type === 'interactive') {
       const respuestaId = msg.interactive.button_reply?.id || msg.interactive.list_reply?.id;
 
-      // INTERACCIONES DEL MENÚ PRINCIPAL
+      // MENÚ PRINCIPAL INTERACTIVO
       if (respuestaId === 'MENU_PERSONAL') {
         await enviarBotones(from, '👷‍♂️ *Gestión de Personal Propio:*', [
           { id: 'OPC_ALTA_EMP', title: '➕ Alta Trabajador' },
@@ -1000,7 +1247,7 @@ app.post('/webhook', async (req, res) => {
       }
 
       if (respuestaId === 'MENU_PRECIOS') {
-        await enviarBotones(from, '🏷️ *Historico de Precios:*', [
+        await enviarBotones(from, '🏷️ *Histórico de Precios:*', [
           { id: 'OPC_REG_PRECIO', title: '📝 Registrar Precio' },
           { id: 'OPC_BUS_PRECIO', title: '🔍 Comparar / Buscar' }
         ]);
@@ -1017,7 +1264,7 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // SUBOPCIONES DE MENÚ
+      // SUBOPCIONES INTERACTIVAS
       if (respuestaId === 'OPC_ALTA_EMP') {
         sesiones[from] = {
           tipoAccion: 'ALTA_TRABAJADOR',
@@ -1116,7 +1363,7 @@ app.post('/webhook', async (req, res) => {
         if (sesion) {
           sesion.obra = obraMap[respuestaId] || 'Suc. Otro';
           sesion.esperandoDescripcionExtra = true;
-          await enviarTexto(from, '✏️ *Escribe la descripción detallada del trabajo extra:* (Mediciones, conceptos de albañilería, demoliciones, etc.)');
+          await enviarTexto(from, '✏️ *Escribe la descripción detallada del trabajo extra:* (ej: Instalación de viga de acero 6m)');
         }
         res.sendStatus(200);
         return;
@@ -1372,6 +1619,7 @@ app.post('/webhook', async (req, res) => {
           sesion.categoria = catSel ? catSel.title : '20) VARIOS';
         }
 
+        // SI SE SELECCIONA HONORARIOS EN EL GASTO NORMAL: PREGUNTAR DE QUIÉN
         if (sesion.categoria.includes('HONORARIOS')) {
           await enviarBotones(from, '👤 *¿Honorarios de quién?*', [
             { id: 'HON_Rigo', title: 'Rigo' },
