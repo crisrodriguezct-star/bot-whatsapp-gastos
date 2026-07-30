@@ -267,7 +267,7 @@ async function subirFotoADrive(buffer, nombreArchivo, folderId) {
   }
 }
 
-// BUSCADOR STRICTO DE PRIMERA FILA LIBRE POR COLUMNA D
+// BUSCADOR STRICTO DE PRIMERA FILA LIBRE
 async function obtenerSiguienteFilaDisponible(spreadsheetId, hojaYColumna) {
   try {
     const res = await sheets.spreadsheets.values.get({
@@ -686,20 +686,6 @@ async function calcularReportePresupuestos() {
 }
 
 async function desplegarMenuPrincipal(from) {
-  const guiaComandos = `📝 *SINTAXIS DE COMANDOS POR TEXTO:*` +
-    `\n• *Gasto Rápido:* \`[concepto] [monto]\` (ej: cemento 450)` +
-    `\n• *Alta Trabajador:* \`alta [nombre]\` (ej: alta Pedro Gomez)` +
-    `\n• *Visita Familiar:* \`visita [nombre] [monto]\` (ej: visita Pedro Gomez 800)` +
-    `\n• *Trabajos Extras:* \`extra\` o \`trabajos extras\`` +
-    `\n• *Ingreso Caja Chica:* \`caja [monto]\` (ej: caja 1000)` +
-    `\n• *Corte / Saldo:* \`saldo\` o \`corte\`` +
-    `\n• *Contratistas:* \`contratistas\`` +
-    `\n• *Precios Materiales:* \`precio [mat] [monto]\` (ej: precio varilla 195)` +
-    `\n• *Comparar Precios:* \`comparar [mat]\` (ej: comparar varilla)` +
-    `\n• *Cancelar Último:* \`cancelar\``;
-
-  await enviarTexto(from, guiaComandos);
-
   const opciones = [
     { id: 'MENU_PERSONAL', title: '👷‍♂️ Personal Propio', description: 'Altas de trabajadores y Visitas Familiares' },
     { id: 'MENU_CONTRATISTAS', title: '🤝 Contratistas / Destajos', description: 'Asignación de contratos y consulta de saldos' },
@@ -709,7 +695,23 @@ async function desplegarMenuPrincipal(from) {
     { id: 'MENU_REPORTES', title: '📊 Saldos y Reportes', description: 'Caja chica, avance y facturas pendientes' }
   ];
 
-  await enviarLista(from, '🏗️ *MENÚ ADMINISTRATIVO DE OBRA*\n\nO selecciona mediante clics:', 'Abrir Menú', 'Gestión de Obra', opciones);
+  await enviarLista(from, '🏗️ *MENÚ ADMINISTRATIVO DE OBRA*\n\nSelecciona la gestión que deseas realizar:', 'Abrir Menú', 'Gestión de Obra', opciones);
+}
+
+async function desplegarGuiaComandos(from) {
+  const guiaComandos = `📝 *SINTAXIS DE COMANDOS POR TEXTO:*\n\n` +
+    `• *Gasto Rápido:* \`[concepto] [monto]\` (ej: cemento 450)\n` +
+    `• *Alta Trabajador:* \`alta [nombre]\` (ej: alta Pedro Gomez)\n` +
+    `• *Visita Familiar:* \`visita [nombre] [monto]\` (ej: visita Pedro Gomez 800)\n` +
+    `• *Trabajos Extras:* \`extra\` o \`trabajos extras\`\n` +
+    `• *Ingreso Caja Chica:* \`caja [monto]\` (ej: caja 1000)\n` +
+    `• *Corte / Saldo:* \`saldo\` o \`corte\`\n` +
+    `• *Contratistas:* \`contratistas\`\n` +
+    `• *Precios Materiales:* \`precio [mat] [monto]\` (ej: precio varilla 195)\n` +
+    `• *Comparar Precios:* \`comparar [mat]\` (ej: comparar varilla)\n` +
+    `• *Cancelar Último:* \`cancelar\``;
+
+  await enviarTexto(from, guiaComandos);
 }
 
 app.get('/webhook', (req, res) => {
@@ -758,9 +760,16 @@ app.post('/webhook', async (req, res) => {
     if (msg.type === 'text') {
       const textBody = msg.text.body.trim();
 
-      // 1) MENU / AYUDA / COMANDOS
-      if (/^(menu|hola|inicio|ayuda|comandos)$/i.test(textBody)) {
+      // 1) COMANDO MENU / AYUDA / HOLA (ÚNICAMENTE EL MENÚ DESPLEGABLE)
+      if (/^(menu|hola|inicio|ayuda)$/i.test(textBody)) {
         await desplegarMenuPrincipal(from);
+        res.sendStatus(200);
+        return;
+      }
+
+      // COMANDO COMANDOS (ÚNICAMENTE EL TEXTO DE LA IMAGEN)
+      if (/^(comandos)$/i.test(textBody)) {
+        await desplegarGuiaComandos(from);
         res.sendStatus(200);
         return;
       }
