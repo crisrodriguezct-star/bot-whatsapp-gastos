@@ -694,7 +694,7 @@ async function desplegarMenuPrincipal(from) {
     { id: 'MENU_CONTRATISTAS', title: '🤝 Contratistas / Destajos', description: 'Asignación de contratos y consulta de saldos' },
     { id: 'MENU_EXTRAS', title: '🔨 Trabajos Extras', description: 'Registro de extras con evidencia fotográfica' },
     { id: 'MENU_PRESU', title: '🏦 Presupuestos e Ingresos', description: 'Presupuesto autorizado y cobro a clientes' },
-    { id: 'MENU_PRECIOS', title: '🏷️ Precios de Materiales', description: 'Registrar precio y comparar histórico' },
+    { id: 'MENU_PRECIOS', title: '🏷️ Precios Materiales', description: 'Registrar precio y comparar histórico' },
     { id: 'MENU_REPORTES', title: '📊 Saldos y Reportes', description: 'Caja chica, avance y facturas pendientes' }
   ];
 
