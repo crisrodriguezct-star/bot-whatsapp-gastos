@@ -320,6 +320,15 @@ async function guardarTrabajoExtra(datos) {
     const filaDestino = await obtenerSiguienteFilaDisponible(SPREADSHEET_EXTRAS_ID, 'Extras!B:B');
     const numFila = filaDestino - 2;
 
+    // CONVERTIR TODAS LAS FOTOS A HIPERVÍNCULOS NATIVOS DE GOOGLE SHEETS
+    let formulaLinks = '';
+    if (datos.linksFotos && datos.linksFotos.length > 0) {
+      const linksFormateados = datos.linksFotos.map((link, idx) => `HYPERLINK("${link}", "📸 Foto ${idx + 1}")`);
+      formulaLinks = `=${linksFormateados.join(' & CHAR(10) & ')}`;
+    } else {
+      formulaLinks = 'Sin Fotos';
+    }
+
     const valores = [[
       numFila,
       datos.idExtra,
@@ -327,7 +336,7 @@ async function guardarTrabajoExtra(datos) {
       datos.obra,
       datos.descripcion,
       datos.monto,
-      datos.linksFotos.join('\n'),
+      formulaLinks,
       datos.usuario,
       'Pendiente 🟡'
     ]];
@@ -760,14 +769,14 @@ app.post('/webhook', async (req, res) => {
     if (msg.type === 'text') {
       const textBody = msg.text.body.trim();
 
-      // 1) COMANDO MENU / AYUDA / HOLA (ÚNICAMENTE EL MENÚ DESPLEGABLE)
+      // 1) COMANDO MENU / AYUDA / HOLA
       if (/^(menu|hola|inicio|ayuda)$/i.test(textBody)) {
         await desplegarMenuPrincipal(from);
         res.sendStatus(200);
         return;
       }
 
-      // COMANDO COMANDOS (ÚNICAMENTE EL TEXTO DE LA IMAGEN)
+      // COMANDO COMANDOS
       if (/^(comandos)$/i.test(textBody)) {
         await desplegarGuiaComandos(from);
         res.sendStatus(200);
