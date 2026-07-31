@@ -914,7 +914,7 @@ app.post('/webhook', async (req, res) => {
     const from = msg.from;
     const nombreUsuario = obtenerNombreUsuario(from);
 
-    // IMÁGENES O VIDEOS PARA TRABAJOS EXTRAS
+    // IMÁGENES O VIDEOS
     if (msg.type === 'image' || msg.type === 'video') {
       const sesionActual = sesiones[from];
       if (sesionActual && sesionActual.esperandoFotosExtra) {
@@ -923,11 +923,12 @@ app.post('/webhook', async (req, res) => {
         const ext = msg.type === 'image' ? 'jpg' : 'mp4';
         const tipoEtiqueta = msg.type === 'image' ? 'Foto' : 'Video';
 
-        // SI POR ALGÚN MOTIVO RARO NO ESTÁ LISTO EL ID, LO OBTENEMOS DE RESPALDO
+        // SINCRONIZACIÓN DE CARPETAS DE SESIÓN
+        if (!sesionActual.parentFolderId) {
+          sesionActual.parentFolderId = await obtenerOcrearSubcarpetaObra(sesionActual.obra);
+        }
+
         if (!sesionActual.subfolderId) {
-          if (!sesionActual.parentFolderId) {
-            sesionActual.parentFolderId = await obtenerOcrearSubcarpetaObra(sesionActual.obra);
-          }
           const extraFolder = await obtenerOcrearCarpetaTrabajoExtra(sesionActual.parentFolderId, sesionActual.idExtra, sesionActual.descripcion || 'EXTRA');
           sesionActual.subfolderId = extraFolder.folderId;
           sesionActual.carpetaExtraLink = extraFolder.folderLink;
@@ -935,11 +936,13 @@ app.post('/webhook', async (req, res) => {
 
         const numArchivo = sesionActual.linksFotos.length + 1;
         const palabraClave = extraerPalabraClave(sesionActual.descripcion);
-        const nombreArchivo = `${sesionActual.idExtra}_${palabraClave}_${tipoEtiqueta}${numArchivo}.${ext}`;
+        
+        // TIMESTAMP DE ALTA PRECISIÓN: Evita que webhooks concurrentes generen nombres iguales
+        const timestampUnico = Date.now().toString().slice(-4);
+        const nombreArchivo = `${sesionActual.idExtra}_${palabraClave}_${tipoEtiqueta}${numArchivo}_${timestampUnico}.${ext}`;
 
         try {
           const buffer = await descargarArchivoWhatsApp(mediaId);
-          // SUBIDA DIRECTA AL ID ALMACENADO EN SESIÓN (CERO PETICIONES DE BÚSQUEDA A DRIVE)
           const driveLink = await subirArchivoADrive(buffer, nombreArchivo, sesionActual.subfolderId, mimeType);
           sesionActual.linksFotos.push(driveLink);
 
@@ -1061,7 +1064,7 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // 4) COMANDOS DIRECTOS POR TEXTO
+      // 4) COMANDOS DIRECTOS
 
       // ALTA TRABAJADOR
       const matchAltaTrabajador = textBody.match(/^alta\s+(.+)/i);
@@ -1368,7 +1371,7 @@ app.post('/webhook', async (req, res) => {
         delete sesionActual.esperandoDescripcionExtra;
         sesionActual.esperandoMontoExtra = true;
 
-        // SE CREAN LAS CARPETAS EN DRIVE AHORA (SÍNCRONO Y ÚNICO)
+        // CREA LAS CARPETAS EN DRIVE Y GUARDA LOS IDS EN LA SESIÓN DE UN SOLO GOLPE
         sesionActual.parentFolderId = await obtenerOcrearSubcarpetaObra(sesionActual.obra);
         const extraFolder = await obtenerOcrearCarpetaTrabajoExtra(sesionActual.parentFolderId, sesionActual.idExtra, sesionActual.descripcion);
         sesionActual.subfolderId = extraFolder.folderId;
