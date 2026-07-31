@@ -209,12 +209,12 @@ async function obtenerOcrearSubcarpetaObra(nombreObra) {
   }
 }
 
-function descargarImagenWhatsApp(imageId) {
+function descargarArchivoWhatsApp(mediaId) {
   return new Promise((resolve, reject) => {
     const optionsUrl = {
       hostname: 'graph.facebook.com',
       port: 443,
-      path: `/v18.0/${imageId}`,
+      path: `/v18.0/${mediaId}`,
       method: 'GET',
       headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN.trim()}` }
     };
@@ -238,7 +238,7 @@ function descargarImagenWhatsApp(imageId) {
   });
 }
 
-async function subirFotoADrive(buffer, nombreArchivo, folderId) {
+async function subirArchivoADrive(buffer, nombreArchivo, folderId, mimeType) {
   if (!drive) return 'N/A';
   try {
     const Readable = require('stream').Readable;
@@ -247,7 +247,7 @@ async function subirFotoADrive(buffer, nombreArchivo, folderId) {
     stream.push(null);
 
     const fileMetadata = { name: nombreArchivo, parents: [folderId] };
-    const media = { mimeType: 'image/jpeg', body: stream };
+    const media = { mimeType: mimeType || 'image/jpeg', body: stream };
 
     const file = await drive.files.create({
       resource: fileMetadata,
@@ -320,11 +320,20 @@ async function guardarTrabajoExtra(datos) {
     const filaDestino = await obtenerSiguienteFilaDisponible(SPREADSHEET_EXTRAS_ID, 'Extras!B:B');
     const numFila = filaDestino - 2;
 
-    // ALINEACIÓN DE LINKS: Se envían las URLs directas separadas por salto de línea.
-    // Sheets auto-detecta cada URL completa y la hace clicable independientemente.
-    const textoLinks = (datos.linksFotos && datos.linksFotos.length > 0) 
-      ? datos.linksFotos.join('\n') 
-      : 'Sin Fotos';
+    // FORMULACIÓN HIPERVÍNCULO DIRECTO ACTIVO:
+    // Si hay 1 solo archivo manda =HIPERVINCULO("url", "📸 Evidencia 1")
+    // Si hay más, crea el primer link directo para que Sheets active el hipervínculo azul de inmediato
+    let formulaEvidencias = '';
+    if (datos.linksFotos && datos.linksFotos.length > 0) {
+      if (datos.linksFotos.length === 1) {
+        formulaEvidencias = `=HIPERVINCULO("${datos.linksFotos[0]}", "📸 Ver Evidencia")`;
+      } else {
+        const primerLink = datos.linksFotos[0];
+        formulaEvidencias = `=HIPERVINCULO("${primerLink}", "📸 Ver Evidencias (${datos.linksFotos.length} archivos)")`;
+      }
+    } else {
+      formulaEvidencias = 'Sin Evidencias';
+    }
 
     const valores = [[
       numFila,
@@ -333,7 +342,7 @@ async function guardarTrabajoExtra(datos) {
       datos.obra,
       datos.descripcion,
       datos.monto,
-      textoLinks,
+      formulaEvidencias,
       datos.usuario,
       'Pendiente 🟡'
     ]];
@@ -420,7 +429,7 @@ async function guardarTrabajador(datos) {
       datos.obra,
       datos.tipo,
       datos.sueldo,
-      'ACTIVO 🟢' // Columna G: Estatus
+      'ACTIVO 🟢'
     ]];
 
     await sheets.spreadsheets.values.update({
@@ -452,7 +461,6 @@ async function darDeBajaTrabajador(nombreBuscado) {
         const nombreCompleto = filas[i][2];
         const obra = filas[i][3];
 
-        // MANTIENE TIPO (Col E) Y SUELDO (Col F) INTACTOS. Solo actualiza Columna G (ESTATUS)
         await sheets.spreadsheets.values.update({
           spreadsheetId: SPREADSHEET_PERSONAL_ID,
           range: `PLANTILLA_PERSONAL!G${filaIndex}`,
@@ -803,7 +811,7 @@ async function desplegarGuiaComandos(from) {
     `• *Alta Trabajador:* \`alta [nombre]\` (ej: alta Pedro Gomez)\n` +
     `• *Baja Trabajador:* \`baja [nombre]\` (ej: baja Pedro Gomez)\n` +
     `• *Visita Familiar:* \`visita [nombre] [monto]\` (ej: visita Pedro Gomez 800)\n` +
-    `• *Trabajos Extras:* \`extra\` o \`trabajos extras\`\n` +
+    `• *Trabajos Extras:* \`extra\` o \`trabajos extras\` (Fotos o Videos)\n` +
     `• *Estatus Extras:* \`extras pendientes\`\n` +
     `• *Ingreso Caja Chica:* \`caja [monto]\` (ej: caja 1000)\n` +
     `• *Corte / Saldo:* \`saldo\` o \`corte\`\n` +
@@ -830,28 +838,32 @@ app.post('/webhook', async (req, res) => {
     const from = msg.from;
     const nombreUsuario = obtenerNombreUsuario(from);
 
-    // IMÁGENES
-    if (msg.type === 'image') {
+    // IMÁGENES O VIDEOS PARA TRABAJOS EXTRAS
+    if (msg.type === 'image' || msg.type === 'video') {
       const sesionActual = sesiones[from];
       if (sesionActual && sesionActual.esperandoFotosExtra) {
-        const imageId = msg.image.id;
+        const mediaId = msg.type === 'image' ? msg.image.id : msg.video.id;
+        const mimeType = msg.type === 'image' ? 'image/jpeg' : 'video/mp4';
+        const ext = msg.type === 'image' ? 'jpg' : 'mp4';
+        const tipoEtiqueta = msg.type === 'image' ? 'Foto' : 'Video';
+
         const subfolderId = await obtenerOcrearSubcarpetaObra(sesionActual.obra);
-        const numFoto = sesionActual.linksFotos.length + 1;
+        const numArchivo = sesionActual.linksFotos.length + 1;
         const palabraClave = extraerPalabraClave(sesionActual.descripcion);
-        const nombreArchivo = `${sesionActual.idExtra}_${palabraClave}_Foto${numFoto}.jpg`;
+        const nombreArchivo = `${sesionActual.idExtra}_${palabraClave}_${tipoEtiqueta}${numArchivo}.${ext}`;
 
         try {
-          const buffer = await descargarImagenWhatsApp(imageId);
-          const driveLink = await subirFotoADrive(buffer, nombreArchivo, subfolderId);
+          const buffer = await descargarArchivoWhatsApp(mediaId);
+          const driveLink = await subirArchivoADrive(buffer, nombreArchivo, subfolderId, mimeType);
           sesionActual.linksFotos.push(driveLink);
 
-          await enviarBotones(from, `📸 *Foto ${numFoto} ("${palabraClave}") guardada en Drive.*\n\n¿Deseas agregar otra evidencia o finalizar?`, [
-            { id: 'EXTRAFOTO_OTRA', title: '📸 Agregar Foto' },
+          await enviarBotones(from, `📸 *${tipoEtiqueta} ${numArchivo} ("${palabraClave}") guardado en Drive.*\n\n¿Deseas agregar otra evidencia (foto/video) o finalizar?`, [
+            { id: 'EXTRAFOTO_OTRA', title: '📸 Agregar Evidencia' },
             { id: 'EXTRAFOTO_FIN', title: '✅ Finalizar' }
           ]);
         } catch (e) {
-          console.error('❌ Error procesando foto WhatsApp:', e.message);
-          await enviarTexto(from, '⚠️ Error guardando la foto. Intenta enviarla nuevamente.');
+          console.error('❌ Error procesando archivo WhatsApp:', e.message);
+          await enviarTexto(from, '⚠️ Error guardando el archivo. Intenta enviarlo nuevamente.');
         }
         res.sendStatus(200);
         return;
@@ -886,7 +898,7 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // 3) REPORTES DIRECTOS POR TEXTO
+      // 3) REPORTES DIRECTOS
       if (/^(saldo|corte|reporte|resumen)$/i.test(textBody)) {
         await enviarBotones(from, '📊 *¿De qué Sucursal deseas consultar el Reporte?*', [
           { id: 'REP_Pelicano', title: 'Pelicano' },
@@ -963,7 +975,7 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // 4) COMANDOS DIRECTOS POR TEXTO
+      // 4) COMANDOS DIRECTOS
 
       // ALTA TRABAJADOR
       const matchAltaTrabajador = textBody.match(/^alta\s+(.+)/i);
@@ -1292,7 +1304,7 @@ app.post('/webhook', async (req, res) => {
         delete sesionActual.esperandoMontoExtra;
         sesionActual.esperandoFotosExtra = true;
 
-        await enviarTexto(from, `📸 *Monto registrado:* $${sesionActual.monto.toFixed(2)}\n\n*Por favor, envía la primera FOTO de evidencia por WhatsApp:*`);
+        await enviarTexto(from, `📸 *Monto registrado:* $${sesionActual.monto.toFixed(2)}\n\n*Por favor, envía la primera FOTO o VIDEO de evidencia por WhatsApp:*`);
         res.sendStatus(200);
         return;
       }
@@ -1333,7 +1345,7 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // 6) REGISTRO DEFAULT DE GASTO REGULAR: "concepto monto"
+      // 6) REGISTRO DEFAULT DE GASTO REGULAR
       const partes = textBody.split(/\s+/);
       const posibleMonto = parseFloat(partes[partes.length - 1]);
       let concepto = '';
@@ -1568,7 +1580,7 @@ app.post('/webhook', async (req, res) => {
       }
 
       if (respuestaId === 'EXTRAFOTO_OTRA') {
-        await enviarTexto(from, '📸 *Envía la siguiente foto de evidencia:*');
+        await enviarTexto(from, '📸 *Envía la siguiente foto o video de evidencia:*');
         res.sendStatus(200);
         return;
       }
@@ -1577,7 +1589,7 @@ app.post('/webhook', async (req, res) => {
         const sesion = sesiones[from];
         if (sesion) {
           await guardarTrabajoExtra(sesion);
-          await enviarTexto(from, `✅ *Trabajo Extra Guardado con Éxito*\n\n🆔 *ID:* ${sesion.idExtra}\n🏗️ *Obra:* ${sesion.obra}\n📝 *Descripción:* ${sesion.descripcion}\n💵 *Monto Estimado:* $${sesion.monto.toFixed(2)}\n📷 *Fotos en Drive:* ${sesion.linksFotos.length} archivo(s)\n👤 *Registró:* ${sesion.usuario}`);
+          await enviarTexto(from, `✅ *Trabajo Extra Guardado con Éxito*\n\n🆔 *ID:* ${sesion.idExtra}\n🏗️ *Obra:* ${sesion.obra}\n📝 *Descripción:* ${sesion.descripcion}\n💵 *Monto Estimado:* $${sesion.monto.toFixed(2)}\n📷 *Archivos en Drive:* ${sesion.linksFotos.length} evidencia(s)\n👤 *Registró:* ${sesion.usuario}`);
           delete sesiones[from];
         }
         res.sendStatus(200);
