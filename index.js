@@ -387,7 +387,7 @@ async function guardarTrabajoExtra(datos) {
     const numFila = filaDestino - 1; // Encabezados en Fila 1
 
     let formulaEvidencias = '';
-    if (datos.carpetaExtraLink) {
+    if (datos.carpetaExtraLink && datos.linksFotos && datos.linksFotos.length > 0) {
       formulaEvidencias = `=HIPERVINCULO("${datos.carpetaExtraLink}", "📁 Ver Carpeta Evidencias (${datos.linksFotos.length} archivos)")`;
     } else if (datos.linksFotos && datos.linksFotos.length > 0) {
       formulaEvidencias = `=HIPERVINCULO("${datos.linksFotos[0]}", "📸 Ver Evidencia Directa")`;
@@ -1387,7 +1387,10 @@ app.post('/webhook', async (req, res) => {
         delete sesionActual.esperandoMontoExtra;
         sesionActual.esperandoFotosExtra = true;
 
-        await enviarTexto(from, `📸 *Monto registrado:* $${sesionActual.monto.toFixed(2)}\n\n*Por favor, envía la primera FOTO o VIDEO de evidencia por WhatsApp:*`);
+        // MENSAJE CON INSTRUCCIÓN Y BOTÓN DE OMISIÓN
+        await enviarBotones(from, `📸 *Monto registrado:* $${sesionActual.monto.toFixed(2)}\n\n*Por favor, envía la primera FOTO o VIDEO de evidencia por WhatsApp, o presiona el botón si no se requiere evidencia visual:*`, [
+          { id: 'EXTRAFOTO_OMITIR', title: '🚫 Sin Evidencia' }
+        ]);
         res.sendStatus(200);
         return;
       }
@@ -1467,6 +1470,19 @@ app.post('/webhook', async (req, res) => {
 
     } else if (msg.type === 'interactive') {
       const respuestaId = msg.interactive.button_reply?.id || msg.interactive.list_reply?.id;
+
+      if (respuestaId === 'EXTRAFOTO_OMITIR') {
+        const sesion = sesiones[from];
+        if (sesion) {
+          sesion.linksFotos = [];
+          delete sesion.carpetaExtraLink; // Elimina la carpeta vacía conceptualmente
+          await guardarTrabajoExtra(sesion);
+          await enviarTexto(from, `✅ *Trabajo Extra Guardado con Éxito*\n\n🆔 *ID:* ${sesion.idExtra}\n🏗️ *Obra:* ${sesion.obra}\n📝 *Descripción:* ${sesion.descripcion}\n💵 *Monto Estimado:* $${sesion.monto.toFixed(2)}\n📷 *Evidencia:* Sin Evidencias\n👤 *Registró:* ${sesion.usuario}`);
+          delete sesiones[from];
+        }
+        res.sendStatus(200);
+        return;
+      }
 
       if (respuestaId?.startsWith('EJECUTARBAJA_')) {
         const filaIndex = parseInt(respuestaId.replace('EJECUTARBAJA_', ''));
