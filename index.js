@@ -187,13 +187,11 @@ async function enviarLista(to, textoBody, tituloBoton, tituloSeccion, opciones) 
   });
 }
 
-// DRIVE - UNIFICACIÓN STRICTA DE CARPETAS POR SUCURSAL
+// DRIVE - UNIFICACIÓN DE CARPETAS
 async function obtenerOcrearSubcarpetaObra(nombreObra) {
   if (!drive || !DRIVE_FOLDER_EXTRAS_ID) return DRIVE_FOLDER_EXTRAS_ID;
   try {
     const nombreLimpio = nombreObra.replace(/^Suc\.\s*/i, '').trim();
-    
-    // Busca si existe alguna carpeta que contenga la palabra clave de la obra (ej. Pelicano, Nativitas)
     const q = `'${DRIVE_FOLDER_EXTRAS_ID}' in parents and name contains '${nombreLimpio}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
     const res = await drive.files.list({ q, fields: 'files(id, name)' });
     
@@ -214,12 +212,19 @@ async function obtenerOcrearSubcarpetaObra(nombreObra) {
   }
 }
 
-// DRIVE - CREAR SUBCARPETA ESPECÍFICA DE TRABAJO EXTRA
 async function obtenerOcrearCarpetaTrabajoExtra(parentFolderId, idExtra, descripcion) {
   if (!drive) return { folderId: parentFolderId, folderLink: '' };
   try {
     const palabraClave = extraerPalabraClave(descripcion);
     const nombreCarpetaExtra = `${idExtra}_${palabraClave}`;
+
+    // Revisa si ya existe esa subcarpeta del movimiento para no duplicarla
+    const q = `'${parentFolderId}' in parents and name = '${nombreCarpetaExtra}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+    const res = await drive.files.list({ q, fields: 'files(id, webViewLink)' });
+
+    if (res.data.files && res.data.files.length > 0) {
+      return { folderId: res.data.files[0].id, folderLink: res.data.files[0].webViewLink };
+    }
 
     const folderMetadata = {
       name: nombreCarpetaExtra,
@@ -382,7 +387,6 @@ async function guardarTrabajoExtra(datos) {
     const filaDestino = await obtenerSiguienteFilaDisponible(SPREADSHEET_EXTRAS_ID, 'Extras!B:B');
     const numFila = filaDestino - 2;
 
-    // HIPERVÍNCULO LIMPIO Y ACTIVO EN AUTOMÁTICO
     let formulaEvidencias = '';
     if (datos.carpetaExtraLink) {
       formulaEvidencias = `=HIPERVINCULO("${datos.carpetaExtraLink}", "📁 Ver Carpeta Evidencias (${datos.linksFotos.length} archivos)")`;
@@ -920,12 +924,11 @@ app.post('/webhook', async (req, res) => {
         const ext = msg.type === 'image' ? 'jpg' : 'mp4';
         const tipoEtiqueta = msg.type === 'image' ? 'Foto' : 'Video';
 
-        // 1. Obtiene o unifica la carpeta principal de la obra en Drive
+        // SINCRONIZACIÓN DE CARPETAS DE SESIÓN
         if (!sesionActual.parentFolderId) {
           sesionActual.parentFolderId = await obtenerOcrearSubcarpetaObra(sesionActual.obra);
         }
 
-        // 2. Crea la subcarpeta específica del Trabajo Extra
         if (!sesionActual.subfolderId) {
           const extraFolder = await obtenerOcrearCarpetaTrabajoExtra(sesionActual.parentFolderId, sesionActual.idExtra, sesionActual.descripcion);
           sesionActual.subfolderId = extraFolder.folderId;
