@@ -281,7 +281,7 @@ async function obtenerSiguienteFilaDisponible(spreadsheetId, hojaYColumna) {
   }
 }
 
-// GOOGLE SHEETS - FUNCIONES DE ESCRITURA Y CONSULTA
+// GOOGLE SHEETS
 async function guardarEnSheets(datos) {
   if (!sheets || !SPREADSHEET_ID) return;
   try {
@@ -320,13 +320,11 @@ async function guardarTrabajoExtra(datos) {
     const filaDestino = await obtenerSiguienteFilaDisponible(SPREADSHEET_EXTRAS_ID, 'Extras!B:B');
     const numFila = filaDestino - 2;
 
-    let formulaLinks = '';
-    if (datos.linksFotos && datos.linksFotos.length > 0) {
-      const linksFormateados = datos.linksFotos.map((link, idx) => `HYPERLINK("${link}", "📸 Foto ${idx + 1}")`);
-      formulaLinks = `=${linksFormateados.join(' & CHAR(10) & ')}`;
-    } else {
-      formulaLinks = 'Sin Fotos';
-    }
+    // ALINEACIÓN DE LINKS: Se envían las URLs directas separadas por salto de línea.
+    // Sheets auto-detecta cada URL completa y la hace clicable independientemente.
+    const textoLinks = (datos.linksFotos && datos.linksFotos.length > 0) 
+      ? datos.linksFotos.join('\n') 
+      : 'Sin Fotos';
 
     const valores = [[
       numFila,
@@ -335,7 +333,7 @@ async function guardarTrabajoExtra(datos) {
       datos.obra,
       datos.descripcion,
       datos.monto,
-      formulaLinks,
+      textoLinks,
       datos.usuario,
       'Pendiente 🟡'
     ]];
@@ -343,10 +341,10 @@ async function guardarTrabajoExtra(datos) {
     await sheets.spreadsheets.values.update({
       spreadsheetId: SPREADSHEET_EXTRAS_ID,
       range: `Extras!A${filaDestino}:I${filaDestino}`,
-      valueInputOption: 'USER_ENTERED', // CRÍTICO: Interpreta la fórmula HYPERLINK
+      valueInputOption: 'USER_ENTERED',
       requestBody: { values: valores }
     });
-    console.log(`✅ Trabajo Extra registrado con hipervínculos en Fila ${filaDestino}: ${datos.idExtra}`);
+    console.log(`✅ Trabajo Extra registrado en Fila ${filaDestino}: ${datos.idExtra}`);
   } catch (error) {
     console.error('❌ Error guardando trabajo extra:', error.message);
   }
@@ -421,12 +419,13 @@ async function guardarTrabajador(datos) {
       datos.nombre,
       datos.obra,
       datos.tipo,
-      datos.sueldo
+      datos.sueldo,
+      'ACTIVO 🟢' // Columna G: Estatus
     ]];
 
     await sheets.spreadsheets.values.update({
       spreadsheetId: SPREADSHEET_PERSONAL_ID,
-      range: `PLANTILLA_PERSONAL!A${filaDestino}:F${filaDestino}`,
+      range: `PLANTILLA_PERSONAL!A${filaDestino}:G${filaDestino}`,
       valueInputOption: 'USER_ENTERED',
       requestBody: { values: valores }
     });
@@ -441,7 +440,7 @@ async function darDeBajaTrabajador(nombreBuscado) {
   try {
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_PERSONAL_ID,
-      range: 'PLANTILLA_PERSONAL!A:F'
+      range: 'PLANTILLA_PERSONAL!A:G'
     });
     const filas = res.data.values || [];
     const fechaBaja = new Date().toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City' });
@@ -453,11 +452,12 @@ async function darDeBajaTrabajador(nombreBuscado) {
         const nombreCompleto = filas[i][2];
         const obra = filas[i][3];
 
+        // MANTIENE TIPO (Col E) Y SUELDO (Col F) INTACTOS. Solo actualiza Columna G (ESTATUS)
         await sheets.spreadsheets.values.update({
           spreadsheetId: SPREADSHEET_PERSONAL_ID,
-          range: `PLANTILLA_PERSONAL!E${filaIndex}:F${filaIndex}`,
+          range: `PLANTILLA_PERSONAL!G${filaIndex}`,
           valueInputOption: 'USER_ENTERED',
-          requestBody: { values: [[`BAJA 🔴 (${fechaBaja})`, 0]] }
+          requestBody: { values: [[`BAJA 🔴 (${fechaBaja})`]] }
         });
 
         return { nombre: nombreCompleto, obra, fechaBaja };
@@ -997,9 +997,9 @@ app.post('/webhook', async (req, res) => {
         const baja = await darDeBajaTrabajador(nombreTrabajador);
 
         if (baja) {
-          await enviarTexto(from, `🔴 *Trabajador Dado de Baja Correctamente*\n\n👤 *Nombre:* ${baja.nombre}\n🏗️ *Obra:* ${baja.obra}\n📅 *Fecha de Baja:* ${baja.fechaBaja}\n\n*Su sueldo semanal ha sido actualizado a $0.00 en Sheets.*`);
+          await enviarTexto(from, `🔴 *Trabajador Dado de Baja Correctamente*\n\n👤 *Nombre:* ${baja.nombre}\n🏗️ *Obra:* ${baja.obra}\n📅 *Fecha de Baja:* ${baja.fechaBaja}\n📌 *Estatus:* BAJA 🔴\n\n*Nota: El tipo y el sueldo original se mantienen intactos en Sheets.*`);
         } else {
-          await enviarTexto(from, `⚠️ No se encontró al trabajador "${nombreTrabajador}" en la lista activa.`);
+          await enviarTexto(from, `⚠️ No se encontró al trabajador "${nombreTrabajador}" en la plantilla.`);
         }
         res.sendStatus(200);
         return;
@@ -1163,9 +1163,9 @@ app.post('/webhook', async (req, res) => {
         const baja = await darDeBajaTrabajador(textBody.trim());
 
         if (baja) {
-          await enviarTexto(from, `🔴 *Trabajador Dado de Baja Correctamente*\n\n👤 *Nombre:* ${baja.nombre}\n🏗️ *Obra:* ${baja.obra}\n📅 *Fecha de Baja:* ${baja.fechaBaja}\n\n*Su sueldo semanal ha sido actualizado a $0.00 en Sheets.*`);
+          await enviarTexto(from, `🔴 *Trabajador Dado de Baja Correctamente*\n\n👤 *Nombre:* ${baja.nombre}\n🏗️ *Obra:* ${baja.obra}\n📅 *Fecha de Baja:* ${baja.fechaBaja}\n📌 *Estatus:* BAJA 🔴\n\n*Nota: El tipo y el sueldo original se mantienen intactos en Sheets.*`);
         } else {
-          await enviarTexto(from, `⚠️ No se encontró al trabajador "${textBody}" en la lista activa.`);
+          await enviarTexto(from, `⚠️ No se encontró al trabajador "${textBody}" en la plantilla.`);
         }
         delete sesiones[from];
         res.sendStatus(200);
@@ -1194,7 +1194,7 @@ app.post('/webhook', async (req, res) => {
         delete sesionActual.esperandoSueldoTrabajador;
 
         await guardarTrabajador(sesionActual);
-        await enviarTexto(from, `✅ *Trabajador Registrado con Éxito*\n\n🆔 *ID:* ${sesionActual.idTrabajador}\n👤 *Nombre:* ${sesionActual.nombre}\n🏗️ *Obra:* ${sesionActual.obra}\n📌 *Tipo:* ${sesionActual.tipo}\n💵 *Sueldo Semanal:* $${sesionActual.sueldo.toFixed(2)}`);
+        await enviarTexto(from, `✅ *Trabajador Registrado con Éxito*\n\n🆔 *ID:* ${sesionActual.idTrabajador}\n👤 *Nombre:* ${sesionActual.nombre}\n🏗️ *Obra:* ${sesionActual.obra}\n📌 *Tipo:* ${sesionActual.tipo}\n💵 *Sueldo Semanal:* $${sesionActual.sueldo.toFixed(2)}\n📌 *Estatus:* ACTIVO 🟢`);
         delete sesiones[from];
         res.sendStatus(200);
         return;
