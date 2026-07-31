@@ -187,7 +187,7 @@ async function enviarLista(to, textoBody, tituloBoton, tituloSeccion, opciones) 
   });
 }
 
-// DRIVE - UNIFICACIÓN DE CARPETAS
+// DRIVE - UNIFICACIÓN DE CARPETAS Y PREVENCIÓN DE DUPLICADOS
 async function obtenerOcrearSubcarpetaObra(nombreObra) {
   if (!drive || !DRIVE_FOLDER_EXTRAS_ID) return DRIVE_FOLDER_EXTRAS_ID;
   try {
@@ -218,7 +218,6 @@ async function obtenerOcrearCarpetaTrabajoExtra(parentFolderId, idExtra, descrip
     const palabraClave = extraerPalabraClave(descripcion);
     const nombreCarpetaExtra = `${idExtra}_${palabraClave}`;
 
-    // Revisa si ya existe esa subcarpeta del movimiento para no duplicarla
     const q = `'${parentFolderId}' in parents and name = '${nombreCarpetaExtra}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
     const res = await drive.files.list({ q, fields: 'files(id, webViewLink)' });
 
@@ -915,7 +914,7 @@ app.post('/webhook', async (req, res) => {
     const from = msg.from;
     const nombreUsuario = obtenerNombreUsuario(from);
 
-    // IMÁGENES O VIDEOS
+    // IMÁGENES O VIDEOS PARA TRABAJOS EXTRAS
     if (msg.type === 'image' || msg.type === 'video') {
       const sesionActual = sesiones[from];
       if (sesionActual && sesionActual.esperandoFotosExtra) {
@@ -924,13 +923,12 @@ app.post('/webhook', async (req, res) => {
         const ext = msg.type === 'image' ? 'jpg' : 'mp4';
         const tipoEtiqueta = msg.type === 'image' ? 'Foto' : 'Video';
 
-        // SINCRONIZACIÓN DE CARPETAS DE SESIÓN
-        if (!sesionActual.parentFolderId) {
-          sesionActual.parentFolderId = await obtenerOcrearSubcarpetaObra(sesionActual.obra);
-        }
-
+        // SI POR ALGÚN MOTIVO RARO NO ESTÁ LISTO EL ID, LO OBTENEMOS DE RESPALDO
         if (!sesionActual.subfolderId) {
-          const extraFolder = await obtenerOcrearCarpetaTrabajoExtra(sesionActual.parentFolderId, sesionActual.idExtra, sesionActual.descripcion);
+          if (!sesionActual.parentFolderId) {
+            sesionActual.parentFolderId = await obtenerOcrearSubcarpetaObra(sesionActual.obra);
+          }
+          const extraFolder = await obtenerOcrearCarpetaTrabajoExtra(sesionActual.parentFolderId, sesionActual.idExtra, sesionActual.descripcion || 'EXTRA');
           sesionActual.subfolderId = extraFolder.folderId;
           sesionActual.carpetaExtraLink = extraFolder.folderLink;
         }
@@ -941,6 +939,7 @@ app.post('/webhook', async (req, res) => {
 
         try {
           const buffer = await descargarArchivoWhatsApp(mediaId);
+          // SUBIDA DIRECTA AL ID ALMACENADO EN SESIÓN (CERO PETICIONES DE BÚSQUEDA A DRIVE)
           const driveLink = await subirArchivoADrive(buffer, nombreArchivo, sesionActual.subfolderId, mimeType);
           sesionActual.linksFotos.push(driveLink);
 
@@ -1062,7 +1061,7 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // 4) COMANDOS DIRECTOS
+      // 4) COMANDOS DIRECTOS POR TEXTO
 
       // ALTA TRABAJADOR
       const matchAltaTrabajador = textBody.match(/^alta\s+(.+)/i);
@@ -1368,6 +1367,12 @@ app.post('/webhook', async (req, res) => {
         sesionActual.descripcion = textBody;
         delete sesionActual.esperandoDescripcionExtra;
         sesionActual.esperandoMontoExtra = true;
+
+        // SE CREAN LAS CARPETAS EN DRIVE AHORA (SÍNCRONO Y ÚNICO)
+        sesionActual.parentFolderId = await obtenerOcrearSubcarpetaObra(sesionActual.obra);
+        const extraFolder = await obtenerOcrearCarpetaTrabajoExtra(sesionActual.parentFolderId, sesionActual.idExtra, sesionActual.descripcion);
+        sesionActual.subfolderId = extraFolder.folderId;
+        sesionActual.carpetaExtraLink = extraFolder.folderLink;
 
         await enviarTexto(from, '💵 *Escribe el Monto Estimado o Valor a cobrar por este trabajo extra:*');
         res.sendStatus(200);
