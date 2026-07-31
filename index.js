@@ -187,12 +187,14 @@ async function enviarLista(to, textoBody, tituloBoton, tituloSeccion, opciones) 
   });
 }
 
-// DRIVE
+// DRIVE - UNIFICACIÓN STRICTA DE CARPETAS POR SUCURSAL
 async function obtenerOcrearSubcarpetaObra(nombreObra) {
   if (!drive || !DRIVE_FOLDER_EXTRAS_ID) return DRIVE_FOLDER_EXTRAS_ID;
   try {
-    const nombreLimpio = nombreObra.trim();
-    const q = `'${DRIVE_FOLDER_EXTRAS_ID}' in parents and name = '${nombreLimpio}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+    const nombreLimpio = nombreObra.replace(/^Suc\.\s*/i, '').trim();
+    
+    // Busca si existe alguna carpeta que contenga la palabra clave de la obra (ej. Pelicano, Nativitas)
+    const q = `'${DRIVE_FOLDER_EXTRAS_ID}' in parents and name contains '${nombreLimpio}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
     const res = await drive.files.list({ q, fields: 'files(id, name)' });
     
     if (res.data.files && res.data.files.length > 0) {
@@ -200,15 +202,41 @@ async function obtenerOcrearSubcarpetaObra(nombreObra) {
     }
     
     const folderMetadata = {
-      name: nombreLimpio,
+      name: `Suc. ${nombreLimpio}`,
       mimeType: 'application/vnd.google-apps.folder',
       parents: [DRIVE_FOLDER_EXTRAS_ID]
     };
     const folder = await drive.files.create({ resource: folderMetadata, fields: 'id' });
     return folder.data.id;
   } catch (error) {
-    console.error('❌ Error en Drive Subcarpeta:', error.message);
+    console.error('❌ Error en Drive Subcarpeta Obra:', error.message);
     return DRIVE_FOLDER_EXTRAS_ID;
+  }
+}
+
+// DRIVE - CREAR SUBCARPETA ESPECÍFICA DE TRABAJO EXTRA
+async function obtenerOcrearCarpetaTrabajoExtra(parentFolderId, idExtra, descripcion) {
+  if (!drive) return { folderId: parentFolderId, folderLink: '' };
+  try {
+    const palabraClave = extraerPalabraClave(descripcion);
+    const nombreCarpetaExtra = `${idExtra}_${palabraClave}`;
+
+    const folderMetadata = {
+      name: nombreCarpetaExtra,
+      mimeType: 'application/vnd.google-apps.folder',
+      parents: [parentFolderId]
+    };
+    const folder = await drive.files.create({ resource: folderMetadata, fields: 'id, webViewLink' });
+
+    await drive.permissions.create({
+      fileId: folder.data.id,
+      requestBody: { role: 'reader', type: 'anyone' }
+    });
+
+    return { folderId: folder.data.id, folderLink: folder.data.webViewLink };
+  } catch (error) {
+    console.error('❌ Error creando carpeta de Trabajo Extra:', error.message);
+    return { folderId: parentFolderId, folderLink: '' };
   }
 }
 
@@ -284,7 +312,7 @@ async function obtenerSiguienteFilaDisponible(spreadsheetId, hojaYColumna) {
   }
 }
 
-// BUSCADOR DE COINCIDENCIA DE TRABAJADORES ACTIVOS
+// BUSCADOR DE TRABAJADORES ACTIVOS
 async function buscarTrabajadoresActivos(busqueda) {
   if (!sheets || !SPREADSHEET_PERSONAL_ID) return [];
   try {
@@ -354,9 +382,15 @@ async function guardarTrabajoExtra(datos) {
     const filaDestino = await obtenerSiguienteFilaDisponible(SPREADSHEET_EXTRAS_ID, 'Extras!B:B');
     const numFila = filaDestino - 2;
 
-    const textoLinks = (datos.linksFotos && datos.linksFotos.length > 0) 
-      ? datos.linksFotos.join('\n') 
-      : 'Sin Evidencias';
+    // HIPERVÍNCULO LIMPIO Y ACTIVO EN AUTOMÁTICO
+    let formulaEvidencias = '';
+    if (datos.carpetaExtraLink) {
+      formulaEvidencias = `=HIPERVINCULO("${datos.carpetaExtraLink}", "📁 Ver Carpeta Evidencias (${datos.linksFotos.length} archivos)")`;
+    } else if (datos.linksFotos && datos.linksFotos.length > 0) {
+      formulaEvidencias = `=HIPERVINCULO("${datos.linksFotos[0]}", "📸 Ver Evidencia Directa")`;
+    } else {
+      formulaEvidencias = 'Sin Evidencias';
+    }
 
     const valores = [[
       numFila,
@@ -365,7 +399,7 @@ async function guardarTrabajoExtra(datos) {
       datos.obra,
       datos.descripcion,
       datos.monto,
-      textoLinks,
+      formulaEvidencias,
       datos.usuario,
       'Pendiente 🟡'
     ]];
@@ -824,7 +858,7 @@ async function desplegarGuiaComandos(from) {
   const guiaComandos = `📝 *SINTAXIS DE COMANDOS POR TEXTO:*\n\n` +
     `• *Gasto Rápido:* \`[concepto] [monto]\` (ej: cemento 450)\n` +
     `• *Alta Trabajador:* \`alta [nombre]\` (ej: alta Pedro Gomez)\n` +
-    `• *Baja Trabajador:* \`baja\` o \`baja [nombre]\` (Buscador Táctil Intelegente)\n` +
+    `• *Baja Trabajador:* \`baja\` o \`baja [nombre]\` (Buscador Táctil Inteligente)\n` +
     `• *Visita Familiar:* \`visita [nombre] [monto]\` (ej: visita Pedro Gomez 800)\n` +
     `• *Trabajos Extras:* \`extra\` o \`trabajos extras\` (Fotos o Videos)\n` +
     `• *Estatus Extras:* \`extras pendientes\`\n` +
@@ -852,7 +886,6 @@ async function procesarBusquedaBaja(from, busqueda) {
       await enviarTexto(from, '⚠️ Error procesando la baja.');
     }
   } else {
-    // Si hay entre 2 y 10 coincidencias, despliega BOTONES o LISTA
     const opciones = coincidencias.slice(0, 10).map(c => ({
       id: `EJECUTARBAJA_${c.filaIndex}`,
       title: c.nombre.substring(0, 24),
@@ -887,8 +920,16 @@ app.post('/webhook', async (req, res) => {
         const ext = msg.type === 'image' ? 'jpg' : 'mp4';
         const tipoEtiqueta = msg.type === 'image' ? 'Foto' : 'Video';
 
+        // 1. Obtiene o unifica la carpeta principal de la obra en Drive
+        if (!sesionActual.parentFolderId) {
+          sesionActual.parentFolderId = await obtenerOcrearSubcarpetaObra(sesionActual.obra);
+        }
+
+        // 2. Crea la subcarpeta específica del Trabajo Extra
         if (!sesionActual.subfolderId) {
-          sesionActual.subfolderId = await obtenerOcrearSubcarpetaObra(sesionActual.obra);
+          const extraFolder = await obtenerOcrearCarpetaTrabajoExtra(sesionActual.parentFolderId, sesionActual.idExtra, sesionActual.descripcion);
+          sesionActual.subfolderId = extraFolder.folderId;
+          sesionActual.carpetaExtraLink = extraFolder.folderLink;
         }
 
         const numArchivo = sesionActual.linksFotos.length + 1;
@@ -1018,7 +1059,7 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // 4) COMANDOS DIRECTOS POR TEXTO
+      // 4) COMANDOS DIRECTOS
 
       // ALTA TRABAJADOR
       const matchAltaTrabajador = textBody.match(/^alta\s+(.+)/i);
@@ -1045,7 +1086,7 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // BAJA TRABAJADOR CON BÚSQUEDA INTELIGENTE ("baja", "baja Pedro", "baja Perez")
+      // BAJA TRABAJADOR
       const matchBajaGenerico = textBody.match(/^baja(\s+(.+))?/i);
       if (matchBajaGenerico) {
         const busqueda = matchBajaGenerico[2] ? matchBajaGenerico[2].trim() : '';
@@ -1416,7 +1457,6 @@ app.post('/webhook', async (req, res) => {
     } else if (msg.type === 'interactive') {
       const respuestaId = msg.interactive.button_reply?.id || msg.interactive.list_reply?.id;
 
-      // ATENCIÓN DE BAZA DESDE LISTA DE COINCIDENCIAS
       if (respuestaId?.startsWith('EJECUTARBAJA_')) {
         const filaIndex = parseInt(respuestaId.replace('EJECUTARBAJA_', ''));
         const baja = await darDeBajaTrabajadorPorFila(filaIndex);
