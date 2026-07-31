@@ -191,13 +191,16 @@ async function enviarLista(to, textoBody, tituloBoton, tituloSeccion, opciones) 
 async function obtenerOcrearSubcarpetaObra(nombreObra) {
   if (!drive || !DRIVE_FOLDER_EXTRAS_ID) return DRIVE_FOLDER_EXTRAS_ID;
   try {
-    const q = `'${DRIVE_FOLDER_EXTRAS_ID}' in parents and name = '${nombreObra}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+    const nombreLimpio = nombreObra.trim();
+    const q = `'${DRIVE_FOLDER_EXTRAS_ID}' in parents and name = '${nombreLimpio}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
     const res = await drive.files.list({ q, fields: 'files(id, name)' });
+    
     if (res.data.files && res.data.files.length > 0) {
       return res.data.files[0].id;
     }
+    
     const folderMetadata = {
-      name: nombreObra,
+      name: nombreLimpio,
       mimeType: 'application/vnd.google-apps.folder',
       parents: [DRIVE_FOLDER_EXTRAS_ID]
     };
@@ -281,6 +284,37 @@ async function obtenerSiguienteFilaDisponible(spreadsheetId, hojaYColumna) {
   }
 }
 
+// BUSCADOR DE COINCIDENCIA DE TRABAJADORES ACTIVOS
+async function buscarTrabajadoresActivos(busqueda) {
+  if (!sheets || !SPREADSHEET_PERSONAL_ID) return [];
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_PERSONAL_ID,
+      range: 'PLANTILLA_PERSONAL!A:G'
+    });
+    const filas = res.data.values || [];
+    const coincidencia = [];
+    const termino = (busqueda || '').toLowerCase().trim();
+
+    for (let i = 2; i < filas.length; i++) {
+      const filaIndex = i + 1;
+      const nombre = filas[i][2] || '';
+      const obra = filas[i][3] || '';
+      const estatus = filas[i][6] || '';
+
+      if (nombre && !estatus.includes('BAJA')) {
+        if (!termino || nombre.toLowerCase().includes(termino)) {
+          coincidencia.push({ filaIndex, nombre, obra });
+        }
+      }
+    }
+    return coincidencia;
+  } catch (e) {
+    console.error('❌ Error buscando trabajadores:', e.message);
+    return [];
+  }
+}
+
 // GOOGLE SHEETS
 async function guardarEnSheets(datos) {
   if (!sheets || !SPREADSHEET_ID) return;
@@ -320,20 +354,9 @@ async function guardarTrabajoExtra(datos) {
     const filaDestino = await obtenerSiguienteFilaDisponible(SPREADSHEET_EXTRAS_ID, 'Extras!B:B');
     const numFila = filaDestino - 2;
 
-    // FORMULACIÓN HIPERVÍNCULO DIRECTO ACTIVO:
-    // Si hay 1 solo archivo manda =HIPERVINCULO("url", "📸 Evidencia 1")
-    // Si hay más, crea el primer link directo para que Sheets active el hipervínculo azul de inmediato
-    let formulaEvidencias = '';
-    if (datos.linksFotos && datos.linksFotos.length > 0) {
-      if (datos.linksFotos.length === 1) {
-        formulaEvidencias = `=HIPERVINCULO("${datos.linksFotos[0]}", "📸 Ver Evidencia")`;
-      } else {
-        const primerLink = datos.linksFotos[0];
-        formulaEvidencias = `=HIPERVINCULO("${primerLink}", "📸 Ver Evidencias (${datos.linksFotos.length} archivos)")`;
-      }
-    } else {
-      formulaEvidencias = 'Sin Evidencias';
-    }
+    const textoLinks = (datos.linksFotos && datos.linksFotos.length > 0) 
+      ? datos.linksFotos.join('\n') 
+      : 'Sin Evidencias';
 
     const valores = [[
       numFila,
@@ -342,7 +365,7 @@ async function guardarTrabajoExtra(datos) {
       datos.obra,
       datos.descripcion,
       datos.monto,
-      formulaEvidencias,
+      textoLinks,
       datos.usuario,
       'Pendiente 🟡'
     ]];
@@ -444,36 +467,28 @@ async function guardarTrabajador(datos) {
   }
 }
 
-async function darDeBajaTrabajador(nombreBuscado) {
+async function darDeBajaTrabajadorPorFila(filaIndex) {
   if (!sheets || !SPREADSHEET_PERSONAL_ID) return null;
   try {
+    const fechaBaja = new Date().toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City' });
     const res = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_PERSONAL_ID,
-      range: 'PLANTILLA_PERSONAL!A:G'
+      range: `PLANTILLA_PERSONAL!C${filaIndex}:D${filaIndex}`
     });
-    const filas = res.data.values || [];
-    const fechaBaja = new Date().toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City' });
 
-    for (let i = 2; i < filas.length; i++) {
-      const nombreActual = (filas[i][2] || '').toUpperCase();
-      if (nombreActual.includes(nombreBuscado.toUpperCase())) {
-        const filaIndex = i + 1;
-        const nombreCompleto = filas[i][2];
-        const obra = filas[i][3];
+    const nombre = res.data.values?.[0]?.[0] || 'Trabajador';
+    const obra = res.data.values?.[0]?.[1] || 'N/A';
 
-        await sheets.spreadsheets.values.update({
-          spreadsheetId: SPREADSHEET_PERSONAL_ID,
-          range: `PLANTILLA_PERSONAL!G${filaIndex}`,
-          valueInputOption: 'USER_ENTERED',
-          requestBody: { values: [[`BAJA 🔴 (${fechaBaja})`]] }
-        });
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SPREADSHEET_PERSONAL_ID,
+      range: `PLANTILLA_PERSONAL!G${filaIndex}`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: [[`BAJA 🔴 (${fechaBaja})`]] }
+    });
 
-        return { nombre: nombreCompleto, obra, fechaBaja };
-      }
-    }
-    return null;
+    return { nombre, obra, fechaBaja };
   } catch (error) {
-    console.error('❌ Error dando de baja trabajador:', error.message);
+    console.error('❌ Error ejecutando baja por fila:', error.message);
     return null;
   }
 }
@@ -809,7 +824,7 @@ async function desplegarGuiaComandos(from) {
   const guiaComandos = `📝 *SINTAXIS DE COMANDOS POR TEXTO:*\n\n` +
     `• *Gasto Rápido:* \`[concepto] [monto]\` (ej: cemento 450)\n` +
     `• *Alta Trabajador:* \`alta [nombre]\` (ej: alta Pedro Gomez)\n` +
-    `• *Baja Trabajador:* \`baja [nombre]\` (ej: baja Pedro Gomez)\n` +
+    `• *Baja Trabajador:* \`baja\` o \`baja [nombre]\` (Buscador Táctil Intelegente)\n` +
     `• *Visita Familiar:* \`visita [nombre] [monto]\` (ej: visita Pedro Gomez 800)\n` +
     `• *Trabajos Extras:* \`extra\` o \`trabajos extras\` (Fotos o Videos)\n` +
     `• *Estatus Extras:* \`extras pendientes\`\n` +
@@ -821,6 +836,31 @@ async function desplegarGuiaComandos(from) {
     `• *Cancelar Último:* \`cancelar\``;
 
   await enviarTexto(from, guiaComandos);
+}
+
+async function procesarBusquedaBaja(from, busqueda) {
+  const coincidencias = await buscarTrabajadoresActivos(busqueda);
+
+  if (coincidencias.length === 0) {
+    await enviarTexto(from, `⚠️ No se encontró a ningún trabajador activo registrado que coincida con "${busqueda || 'la consulta'}".`);
+  } else if (coincidencias.length === 1) {
+    const t = coincidencias[0];
+    const baja = await darDeBajaTrabajadorPorFila(t.filaIndex);
+    if (baja) {
+      await enviarTexto(from, `🔴 *Trabajador Dado de Baja Correctamente*\n\n👤 *Nombre:* ${baja.nombre}\n🏗️ *Obra:* ${baja.obra}\n📅 *Fecha de Baja:* ${baja.fechaBaja}\n📌 *Estatus:* BAJA 🔴\n\n*Nota: El tipo y el sueldo original se mantienen intactos.*`);
+    } else {
+      await enviarTexto(from, '⚠️ Error procesando la baja.');
+    }
+  } else {
+    // Si hay entre 2 y 10 coincidencias, despliega BOTONES o LISTA
+    const opciones = coincidencias.slice(0, 10).map(c => ({
+      id: `EJECUTARBAJA_${c.filaIndex}`,
+      title: c.nombre.substring(0, 24),
+      description: `${c.obra} (Fila ${c.filaIndex})`
+    }));
+
+    await enviarLista(from, `🔍 *Se encontraron ${coincidencias.length} coincidencias:*`, 'Seleccionar', 'Trabajadores Activos', opciones);
+  }
 }
 
 app.get('/webhook', (req, res) => {
@@ -838,7 +878,7 @@ app.post('/webhook', async (req, res) => {
     const from = msg.from;
     const nombreUsuario = obtenerNombreUsuario(from);
 
-    // IMÁGENES O VIDEOS PARA TRABAJOS EXTRAS
+    // IMÁGENES O VIDEOS
     if (msg.type === 'image' || msg.type === 'video') {
       const sesionActual = sesiones[from];
       if (sesionActual && sesionActual.esperandoFotosExtra) {
@@ -847,14 +887,17 @@ app.post('/webhook', async (req, res) => {
         const ext = msg.type === 'image' ? 'jpg' : 'mp4';
         const tipoEtiqueta = msg.type === 'image' ? 'Foto' : 'Video';
 
-        const subfolderId = await obtenerOcrearSubcarpetaObra(sesionActual.obra);
+        if (!sesionActual.subfolderId) {
+          sesionActual.subfolderId = await obtenerOcrearSubcarpetaObra(sesionActual.obra);
+        }
+
         const numArchivo = sesionActual.linksFotos.length + 1;
         const palabraClave = extraerPalabraClave(sesionActual.descripcion);
         const nombreArchivo = `${sesionActual.idExtra}_${palabraClave}_${tipoEtiqueta}${numArchivo}.${ext}`;
 
         try {
           const buffer = await descargarArchivoWhatsApp(mediaId);
-          const driveLink = await subirArchivoADrive(buffer, nombreArchivo, subfolderId, mimeType);
+          const driveLink = await subirArchivoADrive(buffer, nombreArchivo, sesionActual.subfolderId, mimeType);
           sesionActual.linksFotos.push(driveLink);
 
           await enviarBotones(from, `📸 *${tipoEtiqueta} ${numArchivo} ("${palabraClave}") guardado en Drive.*\n\n¿Deseas agregar otra evidencia (foto/video) o finalizar?`, [
@@ -975,7 +1018,7 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // 4) COMANDOS DIRECTOS
+      // 4) COMANDOS DIRECTOS POR TEXTO
 
       // ALTA TRABAJADOR
       const matchAltaTrabajador = textBody.match(/^alta\s+(.+)/i);
@@ -1002,17 +1045,11 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // BAJA TRABAJADOR
-      const matchBajaTrabajador = textBody.match(/^baja\s+(.+)/i);
-      if (matchBajaTrabajador) {
-        const nombreTrabajador = matchBajaTrabajador[1].trim();
-        const baja = await darDeBajaTrabajador(nombreTrabajador);
-
-        if (baja) {
-          await enviarTexto(from, `🔴 *Trabajador Dado de Baja Correctamente*\n\n👤 *Nombre:* ${baja.nombre}\n🏗️ *Obra:* ${baja.obra}\n📅 *Fecha de Baja:* ${baja.fechaBaja}\n📌 *Estatus:* BAJA 🔴\n\n*Nota: El tipo y el sueldo original se mantienen intactos en Sheets.*`);
-        } else {
-          await enviarTexto(from, `⚠️ No se encontró al trabajador "${nombreTrabajador}" en la plantilla.`);
-        }
+      // BAJA TRABAJADOR CON BÚSQUEDA INTELIGENTE ("baja", "baja Pedro", "baja Perez")
+      const matchBajaGenerico = textBody.match(/^baja(\s+(.+))?/i);
+      if (matchBajaGenerico) {
+        const busqueda = matchBajaGenerico[2] ? matchBajaGenerico[2].trim() : '';
+        await procesarBusquedaBaja(from, busqueda);
         res.sendStatus(200);
         return;
       }
@@ -1172,13 +1209,7 @@ app.post('/webhook', async (req, res) => {
 
       if (sesionActual && sesionActual.esperandoNombreTrabajadorBaja) {
         delete sesionActual.esperandoNombreTrabajadorBaja;
-        const baja = await darDeBajaTrabajador(textBody.trim());
-
-        if (baja) {
-          await enviarTexto(from, `🔴 *Trabajador Dado de Baja Correctamente*\n\n👤 *Nombre:* ${baja.nombre}\n🏗️ *Obra:* ${baja.obra}\n📅 *Fecha de Baja:* ${baja.fechaBaja}\n📌 *Estatus:* BAJA 🔴\n\n*Nota: El tipo y el sueldo original se mantienen intactos en Sheets.*`);
-        } else {
-          await enviarTexto(from, `⚠️ No se encontró al trabajador "${textBody}" en la plantilla.`);
-        }
+        await procesarBusquedaBaja(from, textBody.trim());
         delete sesiones[from];
         res.sendStatus(200);
         return;
@@ -1385,6 +1416,20 @@ app.post('/webhook', async (req, res) => {
     } else if (msg.type === 'interactive') {
       const respuestaId = msg.interactive.button_reply?.id || msg.interactive.list_reply?.id;
 
+      // ATENCIÓN DE BAZA DESDE LISTA DE COINCIDENCIAS
+      if (respuestaId?.startsWith('EJECUTARBAJA_')) {
+        const filaIndex = parseInt(respuestaId.replace('EJECUTARBAJA_', ''));
+        const baja = await darDeBajaTrabajadorPorFila(filaIndex);
+
+        if (baja) {
+          await enviarTexto(from, `🔴 *Trabajador Dado de Baja Correctamente*\n\n👤 *Nombre:* ${baja.nombre}\n🏗️ *Obra:* ${baja.obra}\n📅 *Fecha de Baja:* ${baja.fechaBaja}\n📌 *Estatus:* BAJA 🔴\n\n*Nota: El tipo y sueldo original se conservaron intactos en Sheets.*`);
+        } else {
+          await enviarTexto(from, '⚠️ Error ejecutando la baja.');
+        }
+        res.sendStatus(200);
+        return;
+      }
+
       // MENÚ INTERACTIVO
       if (respuestaId === 'MENU_PERSONAL') {
         await enviarBotones(from, '👷‍♂️ *Gestión de Personal Propio:*', [
@@ -1517,7 +1562,7 @@ app.post('/webhook', async (req, res) => {
 
       if (respuestaId === 'OPC_BAJA_EMP') {
         sesiones[from] = { esperandoNombreTrabajadorBaja: true };
-        await enviarTexto(from, '✏️ *Escribe el Nombre del trabajador a dar de BAJA:*');
+        await enviarTexto(from, '✏️ *Escribe el Nombre (o parte del nombre) del trabajador a dar de BAJA:*');
         res.sendStatus(200);
         return;
       }
