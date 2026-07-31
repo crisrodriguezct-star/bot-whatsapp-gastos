@@ -312,7 +312,7 @@ async function obtenerSiguienteFilaDisponible(spreadsheetId, hojaYColumna) {
     const filas = res.data.values || [];
     return filas.length + 1;
   } catch (e) {
-    return 3;
+    return 2;
   }
 }
 
@@ -328,7 +328,7 @@ async function buscarTrabajadoresActivos(busqueda) {
     const coincidencia = [];
     const termino = (busqueda || '').toLowerCase().trim();
 
-    for (let i = 2; i < filas.length; i++) {
+    for (let i = 1; i < filas.length; i++) {
       const filaIndex = i + 1;
       const nombre = filas[i][2] || '';
       const obra = filas[i][3] || '';
@@ -384,7 +384,7 @@ async function guardarTrabajoExtra(datos) {
   try {
     const fechaHora = new Date().toLocaleString('es-MX', { timeZone: 'America/Mexico_City' });
     const filaDestino = await obtenerSiguienteFilaDisponible(SPREADSHEET_EXTRAS_ID, 'Extras!B:B');
-    const numFila = filaDestino - 2;
+    const numFila = filaDestino - 1; // Encabezados en Fila 1
 
     let formulaEvidencias = '';
     if (datos.carpetaExtraLink) {
@@ -429,7 +429,7 @@ async function obtenerTrabajosExtrasPendientes() {
     const filas = res.data.values || [];
     const pendientes = [];
 
-    for (let i = 2; i < filas.length; i++) {
+    for (let i = 1; i < filas.length; i++) {
       const fila = filas[i];
       const idExtra = fila[1];
       const obra = fila[3];
@@ -480,7 +480,7 @@ async function guardarTrabajador(datos) {
   if (!sheets || !SPREADSHEET_PERSONAL_ID) return;
   try {
     const filaDestino = await obtenerSiguienteFilaDisponible(SPREADSHEET_PERSONAL_ID, 'PLANTILLA_PERSONAL!C:C');
-    const numFila = filaDestino - 2;
+    const numFila = filaDestino - 1; // Encabezados en Fila 1
 
     const valores = [[
       numFila,
@@ -540,7 +540,7 @@ async function guardarVisitaFamiliar(datos) {
     const fechaSugeridaStr = fechaSugerida.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City' });
 
     const filaDestino = await obtenerSiguienteFilaDisponible(SPREADSHEET_PERSONAL_ID, 'VISITAS_FAMILIARES!C:C');
-    const numFila = filaDestino - 2;
+    const numFila = filaDestino - 1; // Encabezados en Fila 1
 
     const valores = [[
       numFila,
@@ -569,7 +569,7 @@ async function guardarPrecioHistorico(datos) {
   try {
     const fechaHora = new Date().toLocaleString('es-MX', { timeZone: 'America/Mexico_City' });
     const filaDestino = await obtenerSiguienteFilaDisponible(SPREADSHEET_PRECIOS_ID, 'PRECIOS!D:D');
-    const numFila = filaDestino - 2;
+    const numFila = filaDestino - 1; // Encabezados en Fila 1
 
     const valores = [[
       numFila,
@@ -604,7 +604,7 @@ async function buscarHistoricoPrecios(materialBuscado) {
     const filas = res.data.values || [];
     const resultados = [];
 
-    for (let i = 2; i < filas.length; i++) {
+    for (let i = 1; i < filas.length; i++) {
       const fila = filas[i];
       const fecha = fila[1] || '';
       const obra = fila[2] || '';
@@ -937,7 +937,7 @@ app.post('/webhook', async (req, res) => {
         const numArchivo = sesionActual.linksFotos.length + 1;
         const palabraClave = extraerPalabraClave(sesionActual.descripcion);
         
-        // TIMESTAMP DE ALTA PRECISIÓN: Evita que webhooks concurrentes generen nombres iguales
+        // TIMESTAMP DE ALTA PRECISIÓN
         const timestampUnico = Date.now().toString().slice(-4);
         const nombreArchivo = `${sesionActual.idExtra}_${palabraClave}_${tipoEtiqueta}${numArchivo}_${timestampUnico}.${ext}`;
 
@@ -1371,7 +1371,7 @@ app.post('/webhook', async (req, res) => {
         delete sesionActual.esperandoDescripcionExtra;
         sesionActual.esperandoMontoExtra = true;
 
-        // CREA LAS CARPETAS EN DRIVE Y GUARDA LOS IDS EN LA SESIÓN DE UN SOLO GOLPE
+        // CREA CARPETAS EN DRIVE
         sesionActual.parentFolderId = await obtenerOcrearSubcarpetaObra(sesionActual.obra);
         const extraFolder = await obtenerOcrearCarpetaTrabajoExtra(sesionActual.parentFolderId, sesionActual.idExtra, sesionActual.descripcion);
         sesionActual.subfolderId = extraFolder.folderId;
