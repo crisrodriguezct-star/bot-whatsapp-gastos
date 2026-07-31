@@ -267,7 +267,7 @@ async function subirFotoADrive(buffer, nombreArchivo, folderId) {
   }
 }
 
-// BUSCADOR STRICTO DE PRIMERA FILA LIBRE
+// BUSCADOR DE PRIMERA FILA LIBRE
 async function obtenerSiguienteFilaDisponible(spreadsheetId, hojaYColumna) {
   try {
     const res = await sheets.spreadsheets.values.get({
@@ -281,7 +281,7 @@ async function obtenerSiguienteFilaDisponible(spreadsheetId, hojaYColumna) {
   }
 }
 
-// GOOGLE SHEETS
+// GOOGLE SHEETS - FUNCIONES DE ESCRITURA Y CONSULTA
 async function guardarEnSheets(datos) {
   if (!sheets || !SPREADSHEET_ID) return;
   try {
@@ -320,7 +320,6 @@ async function guardarTrabajoExtra(datos) {
     const filaDestino = await obtenerSiguienteFilaDisponible(SPREADSHEET_EXTRAS_ID, 'Extras!B:B');
     const numFila = filaDestino - 2;
 
-    // CONVERTIR TODAS LAS FOTOS A HIPERVÍNCULOS NATIVOS DE GOOGLE SHEETS
     let formulaLinks = '';
     if (datos.linksFotos && datos.linksFotos.length > 0) {
       const linksFormateados = datos.linksFotos.map((link, idx) => `HYPERLINK("${link}", "📸 Foto ${idx + 1}")`);
@@ -344,12 +343,69 @@ async function guardarTrabajoExtra(datos) {
     await sheets.spreadsheets.values.update({
       spreadsheetId: SPREADSHEET_EXTRAS_ID,
       range: `Extras!A${filaDestino}:I${filaDestino}`,
-      valueInputOption: 'USER_ENTERED',
+      valueInputOption: 'USER_ENTERED', // CRÍTICO: Interpreta la fórmula HYPERLINK
       requestBody: { values: valores }
     });
-    console.log(`✅ Trabajo Extra registrado en Fila ${filaDestino}: ${datos.idExtra}`);
+    console.log(`✅ Trabajo Extra registrado con hipervínculos en Fila ${filaDestino}: ${datos.idExtra}`);
   } catch (error) {
     console.error('❌ Error guardando trabajo extra:', error.message);
+  }
+}
+
+async function obtenerTrabajosExtrasPendientes() {
+  if (!sheets || !SPREADSHEET_EXTRAS_ID) return [];
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_EXTRAS_ID,
+      range: 'Extras!A:I'
+    });
+    const filas = res.data.values || [];
+    const pendientes = [];
+
+    for (let i = 2; i < filas.length; i++) {
+      const fila = filas[i];
+      const idExtra = fila[1];
+      const obra = fila[3];
+      const descripcion = fila[4];
+      const monto = fila[5];
+      const estatus = fila[8] || '';
+
+      if (idExtra && (!estatus.includes('Cobrado') && !estatus.includes('Cancelado'))) {
+        pendientes.push({ filaIndex: i + 1, idExtra, obra, descripcion, monto, estatus });
+      }
+      if (pendientes.length >= 10) break;
+    }
+    return pendientes;
+  } catch (error) {
+    console.error('❌ Error obteniendo extras pendientes:', error.message);
+    return [];
+  }
+}
+
+async function actualizarEstatusTrabajoExtra(idExtra, nuevoEstatus) {
+  if (!sheets || !SPREADSHEET_EXTRAS_ID) return false;
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_EXTRAS_ID,
+      range: 'Extras!B:B'
+    });
+    const filas = res.data.values || [];
+    for (let i = 0; i < filas.length; i++) {
+      if (filas[i][0] === idExtra) {
+        const filaIndex = i + 1;
+        await sheets.spreadsheets.values.update({
+          spreadsheetId: SPREADSHEET_EXTRAS_ID,
+          range: `Extras!I${filaIndex}`,
+          valueInputOption: 'USER_ENTERED',
+          requestBody: { values: [[nuevoEstatus]] }
+        });
+        return true;
+      }
+    }
+    return false;
+  } catch (error) {
+    console.error('❌ Error actualizando estatus extra:', error.message);
+    return false;
   }
 }
 
@@ -377,6 +433,40 @@ async function guardarTrabajador(datos) {
     console.log(`✅ Trabajador registrado en Fila ${filaDestino}: ${datos.nombre}`);
   } catch (error) {
     console.error('❌ Error guardando trabajador:', error.message);
+  }
+}
+
+async function darDeBajaTrabajador(nombreBuscado) {
+  if (!sheets || !SPREADSHEET_PERSONAL_ID) return null;
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_PERSONAL_ID,
+      range: 'PLANTILLA_PERSONAL!A:F'
+    });
+    const filas = res.data.values || [];
+    const fechaBaja = new Date().toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City' });
+
+    for (let i = 2; i < filas.length; i++) {
+      const nombreActual = (filas[i][2] || '').toUpperCase();
+      if (nombreActual.includes(nombreBuscado.toUpperCase())) {
+        const filaIndex = i + 1;
+        const nombreCompleto = filas[i][2];
+        const obra = filas[i][3];
+
+        await sheets.spreadsheets.values.update({
+          spreadsheetId: SPREADSHEET_PERSONAL_ID,
+          range: `PLANTILLA_PERSONAL!E${filaIndex}:F${filaIndex}`,
+          valueInputOption: 'USER_ENTERED',
+          requestBody: { values: [[`BAJA 🔴 (${fechaBaja})`, 0]] }
+        });
+
+        return { nombre: nombreCompleto, obra, fechaBaja };
+      }
+    }
+    return null;
+  } catch (error) {
+    console.error('❌ Error dando de baja trabajador:', error.message);
+    return null;
   }
 }
 
@@ -696,9 +786,9 @@ async function calcularReportePresupuestos() {
 
 async function desplegarMenuPrincipal(from) {
   const opciones = [
-    { id: 'MENU_PERSONAL', title: '👷‍♂️ Personal Propio', description: 'Altas de trabajadores y Visitas Familiares' },
+    { id: 'MENU_PERSONAL', title: '👷‍♂️ Personal Propio', description: 'Altas, bajas y Visitas Familiares' },
     { id: 'MENU_CONTRATISTAS', title: '🤝 Contratistas / Destajos', description: 'Asignación de contratos y consulta de saldos' },
-    { id: 'MENU_EXTRAS', title: '🔨 Trabajos Extras', description: 'Registro de extras con evidencia fotográfica' },
+    { id: 'MENU_EXTRAS', title: '🔨 Trabajos Extras', description: 'Registro de extras y actualización de estatus' },
     { id: 'MENU_PRESU', title: '🏦 Presupuestos e Ingresos', description: 'Presupuesto autorizado y cobro a clientes' },
     { id: 'MENU_PRECIOS', title: '🏷️ Precios Materiales', description: 'Registrar precio y comparar histórico' },
     { id: 'MENU_REPORTES', title: '📊 Saldos y Reportes', description: 'Caja chica, avance y facturas pendientes' }
@@ -711,8 +801,10 @@ async function desplegarGuiaComandos(from) {
   const guiaComandos = `📝 *SINTAXIS DE COMANDOS POR TEXTO:*\n\n` +
     `• *Gasto Rápido:* \`[concepto] [monto]\` (ej: cemento 450)\n` +
     `• *Alta Trabajador:* \`alta [nombre]\` (ej: alta Pedro Gomez)\n` +
+    `• *Baja Trabajador:* \`baja [nombre]\` (ej: baja Pedro Gomez)\n` +
     `• *Visita Familiar:* \`visita [nombre] [monto]\` (ej: visita Pedro Gomez 800)\n` +
     `• *Trabajos Extras:* \`extra\` o \`trabajos extras\`\n` +
+    `• *Estatus Extras:* \`extras pendientes\`\n` +
     `• *Ingreso Caja Chica:* \`caja [monto]\` (ej: caja 1000)\n` +
     `• *Corte / Saldo:* \`saldo\` o \`corte\`\n` +
     `• *Contratistas:* \`contratistas\`\n` +
@@ -769,14 +861,13 @@ app.post('/webhook', async (req, res) => {
     if (msg.type === 'text') {
       const textBody = msg.text.body.trim();
 
-      // 1) COMANDO MENU / AYUDA / HOLA
+      // 1) MENÚ Y COMANDOS
       if (/^(menu|hola|inicio|ayuda)$/i.test(textBody)) {
         await desplegarMenuPrincipal(from);
         res.sendStatus(200);
         return;
       }
 
-      // COMANDO COMANDOS
       if (/^(comandos)$/i.test(textBody)) {
         await desplegarGuiaComandos(from);
         res.sendStatus(200);
@@ -795,7 +886,7 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // 3) REPORTES DIRECTOS
+      // 3) REPORTES DIRECTOS POR TEXTO
       if (/^(saldo|corte|reporte|resumen)$/i.test(textBody)) {
         await enviarBotones(from, '📊 *¿De qué Sucursal deseas consultar el Reporte?*', [
           { id: 'REP_Pelicano', title: 'Pelicano' },
@@ -821,6 +912,22 @@ app.post('/webhook', async (req, res) => {
             description: `${p.obra} | $${p.monto} (${p.id})`
           }));
           await enviarLista(from, '📋 *Gastos Pendientes de Factura:*', 'Ver Pendientes', 'Selecciona para resolver:', opciones);
+        }
+        res.sendStatus(200);
+        return;
+      }
+
+      if (/^(extras pendientes|ver extras|actualizar extras)$/i.test(textBody)) {
+        const extras = await obtenerTrabajosExtrasPendientes();
+        if (extras.length === 0) {
+          await enviarTexto(from, '🎉 ¡Excelente! No hay trabajos extras pendientes de cobro/envío.');
+        } else {
+          const opciones = extras.map(e => ({
+            id: `GESTIONEXT_${e.idExtra}`,
+            title: e.descripcion.substring(0, 24),
+            description: `${e.obra} | $${e.monto} (${e.idExtra})`
+          }));
+          await enviarLista(from, '🔨 *Trabajos Extras Pendientes:*', 'Ver Extras', 'Selecciona para actualizar:', opciones);
         }
         res.sendStatus(200);
         return;
@@ -879,6 +986,21 @@ app.post('/webhook', async (req, res) => {
           { id: 'EMPOBRA_Salud', title: 'Salud' },
           { id: 'EMPOBRA_Otro', title: 'Otro' }
         ]);
+        res.sendStatus(200);
+        return;
+      }
+
+      // BAJA TRABAJADOR
+      const matchBajaTrabajador = textBody.match(/^baja\s+(.+)/i);
+      if (matchBajaTrabajador) {
+        const nombreTrabajador = matchBajaTrabajador[1].trim();
+        const baja = await darDeBajaTrabajador(nombreTrabajador);
+
+        if (baja) {
+          await enviarTexto(from, `🔴 *Trabajador Dado de Baja Correctamente*\n\n👤 *Nombre:* ${baja.nombre}\n🏗️ *Obra:* ${baja.obra}\n📅 *Fecha de Baja:* ${baja.fechaBaja}\n\n*Su sueldo semanal ha sido actualizado a $0.00 en Sheets.*`);
+        } else {
+          await enviarTexto(from, `⚠️ No se encontró al trabajador "${nombreTrabajador}" en la lista activa.`);
+        }
         res.sendStatus(200);
         return;
       }
@@ -1035,6 +1157,20 @@ app.post('/webhook', async (req, res) => {
 
       // 5) SESIONES DE FLUJO ANTERIOR
       const sesionActual = sesiones[from];
+
+      if (sesionActual && sesionActual.esperandoNombreTrabajadorBaja) {
+        delete sesionActual.esperandoNombreTrabajadorBaja;
+        const baja = await darDeBajaTrabajador(textBody.trim());
+
+        if (baja) {
+          await enviarTexto(from, `🔴 *Trabajador Dado de Baja Correctamente*\n\n👤 *Nombre:* ${baja.nombre}\n🏗️ *Obra:* ${baja.obra}\n📅 *Fecha de Baja:* ${baja.fechaBaja}\n\n*Su sueldo semanal ha sido actualizado a $0.00 en Sheets.*`);
+        } else {
+          await enviarTexto(from, `⚠️ No se encontró al trabajador "${textBody}" en la lista activa.`);
+        }
+        delete sesiones[from];
+        res.sendStatus(200);
+        return;
+      }
 
       if (sesionActual && sesionActual.esperandoNombreTrabajadorAlta) {
         sesionActual.nombre = textBody.toUpperCase();
@@ -1241,6 +1377,7 @@ app.post('/webhook', async (req, res) => {
       if (respuestaId === 'MENU_PERSONAL') {
         await enviarBotones(from, '👷‍♂️ *Gestión de Personal Propio:*', [
           { id: 'OPC_ALTA_EMP', title: '➕ Alta Trabajador' },
+          { id: 'OPC_BAJA_EMP', title: '❌ Baja Trabajador' },
           { id: 'OPC_VISITA_EMP', title: '🚌 Visita Familiar' }
         ]);
         res.sendStatus(200);
@@ -1256,6 +1393,15 @@ app.post('/webhook', async (req, res) => {
       }
 
       if (respuestaId === 'MENU_EXTRAS') {
+        await enviarBotones(from, '🔨 *Gestión de Trabajos Extras:*', [
+          { id: 'OPC_REG_EXTRA', title: '➕ Registrar Extra' },
+          { id: 'OPC_VER_EXTRAS', title: '📋 Estatus Extras' }
+        ]);
+        res.sendStatus(200);
+        return;
+      }
+
+      if (respuestaId === 'OPC_REG_EXTRA') {
         sesiones[from] = {
           tipoAccion: 'TRABAJO_EXTRA',
           idExtra: 'EXT-' + Date.now().toString().slice(-6),
@@ -1271,6 +1417,57 @@ app.post('/webhook', async (req, res) => {
           { id: 'EXTRAOBRA_Salud', title: 'Salud' },
           { id: 'EXTRAOBRA_Otro', title: 'Otro' }
         ]);
+        res.sendStatus(200);
+        return;
+      }
+
+      if (respuestaId === 'OPC_VER_EXTRAS') {
+        const extras = await obtenerTrabajosExtrasPendientes();
+        if (extras.length === 0) {
+          await enviarTexto(from, '🎉 ¡Excelente! No hay trabajos extras pendientes de cobro/envío.');
+        } else {
+          const opciones = extras.map(e => ({
+            id: `GESTIONEXT_${e.idExtra}`,
+            title: e.descripcion.substring(0, 24),
+            description: `${e.obra} | $${e.monto} (${e.idExtra})`
+          }));
+          await enviarLista(from, '🔨 *Trabajos Extras Pendientes:*', 'Ver Extras', 'Selecciona para actualizar:', opciones);
+        }
+        res.sendStatus(200);
+        return;
+      }
+
+      if (respuestaId?.startsWith('GESTIONEXT_')) {
+        const idExtra = respuestaId.replace('GESTIONEXT_', '');
+        sesiones[from] = { idExtraSeleccionado: idExtra };
+
+        await enviarBotones(from, `🔨 *Actualizar Trabajo Extra (${idExtra}):*\n\nSelecciona el nuevo estatus:`, [
+          { id: 'ESTEXTRA_Cobrado', title: '🟢 Cobrado' },
+          { id: 'ESTEXTRA_Encargado', title: '🔵 Pasado a Encargado' },
+          { id: 'ESTEXTRA_Cancelado', title: '🔴 Cancelado' }
+        ]);
+        res.sendStatus(200);
+        return;
+      }
+
+      if (respuestaId?.startsWith('ESTEXTRA_')) {
+        const sesion = sesiones[from];
+        if (sesion && sesion.idExtraSeleccionado) {
+          const mapaEstatus = {
+            'ESTEXTRA_Cobrado': 'Cobrado 🟢',
+            'ESTEXTRA_Encargado': 'Enviado a Encargado 🔵',
+            'ESTEXTRA_Cancelado': 'Cancelado 🔴'
+          };
+          const nuevoEst = mapaEstatus[respuestaId] || 'Pendiente 🟡';
+          const ok = await actualizarEstatusTrabajoExtra(sesion.idExtraSeleccionado, nuevoEst);
+
+          if (ok) {
+            await enviarTexto(from, `✅ *Estatus del Trabajo Extra (${sesion.idExtraSeleccionado}) actualizado a:* ${nuevoEst}`);
+          } else {
+            await enviarTexto(from, '⚠️ No se pudo actualizar el trabajo extra.');
+          }
+          delete sesiones[from];
+        }
         res.sendStatus(200);
         return;
       }
@@ -1302,6 +1499,13 @@ app.post('/webhook', async (req, res) => {
           usuario: nombreUsuario
         };
         await enviarTexto(from, '✏️ *Escribe el Nombre Completo del nuevo trabajador:*');
+        res.sendStatus(200);
+        return;
+      }
+
+      if (respuestaId === 'OPC_BAJA_EMP') {
+        sesiones[from] = { esperandoNombreTrabajadorBaja: true };
+        await enviarTexto(from, '✏️ *Escribe el Nombre del trabajador a dar de BAJA:*');
         res.sendStatus(200);
         return;
       }
