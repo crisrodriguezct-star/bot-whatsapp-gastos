@@ -438,15 +438,13 @@ async function generarDatosCorteSemanal(obraBuscada) {
     const filas = res.data.values || [];
 
     const ahora = new Date();
-    const diaSemana = ahora.getDay(); // 0: Domingo, 1: Lunes...
+    const diaSemana = ahora.getDay();
     const diferenciaLunes = diaSemana === 0 ? 6 : diaSemana - 1;
 
-    // Inicio Lunes 00:00:00 hrs
     const inicioLunes = new Date(ahora);
     inicioLunes.setDate(ahora.getDate() - diferenciaLunes);
     inicioLunes.setHours(0, 0, 0, 0);
 
-    // Fin Domingo 23:59:59 hrs
     const finDomingo = new Date(inicioLunes);
     finDomingo.setDate(inicioLunes.getDate() + 6);
     finDomingo.setHours(23, 59, 59, 999);
@@ -478,7 +476,6 @@ async function generarDatosCorteSemanal(obraBuscada) {
           fechaMov = new Date(partesFecha[2], partesFecha[1] - 1, partesFecha[0]);
         }
         
-        // Rango de la semana calendario (Lunes a Domingo completo)
         const esSemanaActual = !isNaN(fechaMov.getTime()) && fechaMov >= inicioLunes && fechaMov <= finDomingo;
 
         if (metodo.includes('Ingreso Presupuesto')) {
@@ -1226,7 +1223,7 @@ async function desplegarGuiaComandos(from) {
   const guiaComandos = `📝 *SINTAXIS DE COMANDOS Y AYUDA DE TEXTO:*\n\n` +
     `• *Menú Interactivo:* \`menu\`, \`hola\`, \`inicio\` o \`ayuda\`\n` +
     `• *Gasto Rápido:* \`[concepto] [monto]\` (ej: cemento 450)\n` +
-    `• *Generar PDF Corte:* \`corte\` o \`saldo\` (Lunes 00:00:00 a Domingo 23:59:59)\n` +
+    `• *Generar PDF Corte:* \`corte\` o \`saldo\` (Lunes 00:00 hrs a Domingo 23:59 hrs)\n` +
     `• *Alta Trabajador:* \`alta [nombre]\` (ej: alta Pedro Gomez)\n` +
     `• *Baja Trabajador:* \`baja\` o \`baja [nombre]\` (Buscador Táctil Inteligente)\n` +
     `• *Visita Familiar:* \`visita [nombre] [monto]\` (ej: visita Pedro Gomez 800)\n` +
@@ -1359,7 +1356,7 @@ app.post('/webhook', async (req, res) => {
         ]);
         await enviarBotones(from, '👇 *Otras Opciones:*', [
           { id: 'REP_Salud', title: 'Salud' },
-          { id: 'REP_GLOBAL', title: 'Caja General Efectivo' }
+          { id: 'REP_GLOBAL', title: '💰 Caja Chica (Efectivo)' }
         ]);
         res.sendStatus(200);
         return;
@@ -1968,7 +1965,7 @@ app.post('/webhook', async (req, res) => {
 
       if (respuestaId === 'MENU_REPORTES') {
         await enviarBotones(from, '📊 *Saldos y Reportes:*', [
-          { id: 'REP_GLOBAL', title: '💰 Caja Chica' },
+          { id: 'REP_GLOBAL', title: '💰 Caja Chica (Efectivo)' },
           { id: 'OPC_VER_FAC', title: '📄 Facturas Pendientes' }
         ]);
         res.sendStatus(200);
@@ -2219,14 +2216,27 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // MANEJO DE GENERACIÓN DE PDF PARA REPORTES
+      // MANEJO DE REPORTES Y GENERACIÓN DE PDF
       if (respuestaId?.startsWith('REP_')) {
+        if (respuestaId === 'REP_GLOBAL') {
+          // RESPUESTA RÁPIDA DE TEXTO PARA CAJA CHICA EN EFECTIVO
+          const rep = await calcularReporteSaldos(null);
+          let txt = `📊 *Corte de Caja Chica General (Efectivo)*\n\n` +
+            `💵 *Total Efectivo Ingresado:* $${rep.dotacionesCaja.toFixed(2)} MXN\n` +
+            `💸 *Egresos en Efectivo:* $${rep.egresosEfectivo.toFixed(2)} MXN\n` +
+            `💰 *Efectivo Disponible en Mano:* $${rep.cajaDisponible.toFixed(2)} MXN\n` +
+            `📄 *Total Facturado en Efectivo:* $${rep.facturadoEfectivo.toFixed(2)} MXN`;
+
+          await enviarTexto(from, txt);
+          res.sendStatus(200);
+          return;
+        }
+
         const obraMap = {
           'REP_Pelicano': 'Suc. Pelicano',
           'REP_Caldera': 'Suc. Caldera',
           'REP_Nativitas': 'Suc. Nativitas',
-          'REP_Salud': 'Suc. Salud',
-          'REP_GLOBAL': null
+          'REP_Salud': 'Suc. Salud'
         };
         const obraSel = obraMap[respuestaId];
 
