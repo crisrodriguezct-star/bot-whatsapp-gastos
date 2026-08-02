@@ -1,6 +1,9 @@
 const express = require('express');
 const { google } = require('googleapis');
 const https = require('https');
+const PDFDocument = require('pdfkit');
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
 app.use(express.json());
@@ -185,6 +188,292 @@ async function enviarLista(to, textoBody, tituloBoton, tituloSeccion, opciones) 
       }
     }
   });
+}
+
+// FUNCIONALIDAD PARA ENVIAR PDF DE CORTE A WHATSAPP
+async function enviarDocumentoWhatsApp(to, rutaArchivo, nombreArchivo, caption) {
+  return new Promise((resolve, reject) => {
+    if (!fs.existsSync(rutaArchivo)) return resolve();
+
+    const FormData = require('form-data');
+    const form = new FormData();
+    form.append('file', fs.createReadStream(rutaArchivo), { filename: nombreArchivo, contentType: 'application/pdf' });
+    form.append('type', 'document');
+    form.append('messaging_product', 'whatsapp');
+
+    const reqMetaMedia = https.request({
+      hostname: 'graph.facebook.com',
+      port: 443,
+      path: `/v18.0/${PHONE_NUMBER_ID.trim()}/media`,
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${WHATSAPP_TOKEN.trim()}`,
+        ...form.getHeaders()
+      }
+    }, (res) => {
+      let body = '';
+      res.on('data', chunk => body += chunk);
+      res.on('end', async () => {
+        try {
+          const resJson = JSON.parse(body);
+          const mediaId = resJson.id;
+          if (mediaId) {
+            await enviarPeticionMeta({
+              messaging_product: 'whatsapp',
+              to,
+              type: 'document',
+              document: {
+                id: mediaId,
+                filename: nombreArchivo,
+                caption: caption
+              }
+            });
+          }
+          resolve();
+        } catch (e) {
+          console.error('❌ Error enviando PDF en Meta:', e.message);
+          resolve();
+        }
+      });
+    });
+
+    reqMetaMedia.on('error', (err) => {
+      console.error('❌ Error subiendo media a Meta:', err.message);
+      resolve();
+    });
+
+    form.pipe(reqMetaMedia);
+  });
+}
+
+// GENERADOR DE PDF EJECUTIVO DE CORTE SEMANAL
+function generarPDFCorteSemanal(datos, rutaSalida) {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ margin: 35, size: 'LETTER' });
+    const stream = fs.createWriteStream(rutaSalida);
+    doc.pipe(stream);
+
+    // 1. CARGAR LOGO
+    const rutaLogo = path.join(__dirname, 'Imagenes', 'logo.png');
+    if (fs.existsSync(rutaLogo)) {
+      doc.image(rutaLogo, 35, 25, { width: 110 });
+    }
+
+    // Encabezado
+    doc.fillColor('#000000').fontSize(11).font('Helvetica-Bold')
+       .text('CONSTRUCTIVE GALLERY ARCHITECTS', 180, 25, { align: 'right' });
+    doc.fontSize(9).fillColor('#4A5568')
+       .text('ESTADO DE CUENTA Y CORTE FINANCIERO SEMANAL', 180, 40, { align: 'right' });
+    doc.fontSize(8).fillColor('#718096')
+       .text(`SUCURSAL: ${datos.sucursal.toUpperCase()}  |  PERIODO: ${datos.periodo}`, 180, 53, { align: 'right' });
+
+    doc.moveTo(35, 70).lineTo(575, 70).strokeColor('#000000').lineWidth(1.5).stroke();
+
+    // 2. RESUMEN DE FLUJO SEMANAL
+    doc.moveDown(1.2);
+    let y = 80;
+    doc.rect(35, y, 540, 16).fill('#000000');
+    doc.fillColor('#FFFFFF').fontSize(8.5).font('Helvetica-Bold').text('1. RESUMEN DE FLUJO SEMANAL (ÚLTIMOS 7 DÍAS)', 40, y + 4);
+
+    y += 22;
+    const anchoCaja = 130;
+    const cajas = [
+      { t: 'GASTOS EFECTIVO', v: `$${datos.semanaEfectivo.toFixed(2)}` },
+      { t: 'GASTOS TARJETA', v: `$${datos.semanaTarjeta.toFixed(2)}` },
+      { t: 'TRANSFERENCIAS', v: `$${datos.semanaTransferencia.toFixed(2)}` },
+      { t: 'TOTAL SEMANAL', v: `$${datos.semanaTotal.toFixed(2)}` }
+    ];
+
+    cajas.forEach((c, i) => {
+      const x = 35 + (i * 135);
+      doc.rect(x, y, anchoCaja, 28).fillAndStroke('#F8FAFC', '#CBD5E1');
+      doc.fillColor('#64748B').fontSize(6.5).text(c.t, x + 5, y + 4, { width: anchoCaja - 10, align: 'center' });
+      doc.fillColor('#0F172A').fontSize(9.5).font('Helvetica-Bold').text(c.v, x + 5, y + 14, { width: anchoCaja - 10, align: 'center' });
+    });
+
+    // 3. DESGLOSE POR CATEGORÍAS (SEMANA VS ACUMULADO)
+    y += 35;
+    doc.rect(35, y, 540, 16).fill('#000000');
+    doc.fillColor('#FFFFFF').fontSize(8.5).font('Helvetica-Bold').text('2. COMPARATIVO DE GASTOS POR CATEGORÍA / PARTIDA', 40, y + 4);
+
+    y += 20;
+    doc.rect(35, y, 540, 15).fill('#E2E8F0');
+    doc.fillColor('#0F172A').fontSize(7.5).font('Helvetica-Bold');
+    doc.text('Partida Presupuestal', 40, y + 4);
+    doc.text('Gastado en la Semana', 300, y + 4, { width: 120, align: 'right' });
+    doc.text('Acumulado Histórico', 430, y + 4, { width: 140, align: 'right' });
+
+    y += 16;
+    doc.font('Helvetica').fontSize(7.5);
+    datos.partidas.forEach((p, idx) => {
+      if (p.semana > 0 || p.acumulado > 0) {
+        if (idx % 2 === 1) doc.rect(35, y - 2, 540, 12).fill('#F8FAFC');
+        doc.fillColor('#1A1A1A').text(p.nombre, 40, y);
+        doc.text(`$${p.semana.toFixed(2)}`, 300, y, { width: 120, align: 'right' });
+        doc.text(`$${p.acumulado.toFixed(2)}`, 430, y, { width: 140, align: 'right' });
+        y += 12;
+      }
+    });
+
+    // Total de acumulados
+    doc.rect(35, y, 540, 14).fill('#F1F5F9');
+    doc.fillColor('#0F172A').font('Helvetica-Bold').fontSize(8);
+    doc.text('TOTAL GENERAL ACUMULADO DE OBRA', 40, y + 3);
+    doc.text(`$${datos.semanaTotal.toFixed(2)}`, 300, y + 3, { width: 120, align: 'right' });
+    doc.text(`$${datos.gastosTotal.toFixed(2)}`, 430, y + 3, { width: 140, align: 'right' });
+
+    // 4. CONTRATISTAS Y BALANCE DE OBRA
+    y += 22;
+    const anchoMitad = 265;
+    
+    // Contratistas
+    doc.rect(35, y, anchoMitad, 16).fill('#000000');
+    doc.fillColor('#FFFFFF').fontSize(8.5).font('Helvetica-Bold').text('3. CONTROL DE CONTRATISTAS', 40, y + 4);
+    
+    // Balance
+    doc.rect(310, y, anchoMitad, 16).fill('#000000');
+    doc.fillColor('#FFFFFF').fontSize(8.5).font('Helvetica-Bold').text('4. BALANCE FINANCIERO DE OBRA', 315, y + 4);
+
+    y += 20;
+    doc.fillColor('#000000').fontSize(7.5).font('Helvetica');
+    doc.text('Monto Total Contratado:', 40, y);
+    doc.font('Helvetica-Bold').text(`$${datos.contratistasContrato.toFixed(2)}`, 160, y, { align: 'right' });
+
+    doc.font('Helvetica').text('Ingresos / Presupuesto Recibido:', 315, y);
+    doc.font('Helvetica-Bold').text(`$${datos.ingresosTotal.toFixed(2)}`, 465, y, { align: 'right' });
+
+    y += 12;
+    doc.font('Helvetica').text('Monto Pagado a la Fecha:', 40, y);
+    doc.font('Helvetica-Bold').fillColor('#166534').text(`$${datos.contratistasPagado.toFixed(2)}`, 160, y, { align: 'right' });
+
+    doc.fillColor('#991B1B').font('Helvetica').text('(-) Gastos Acumulados Totales:', 315, y);
+    doc.font('Helvetica-Bold').text(`$${datos.gastosTotal.toFixed(2)}`, 465, y, { align: 'right' });
+
+    y += 12;
+    doc.fillColor('#991B1B').font('Helvetica-Bold').text('Saldo Pendiente por Pagar:', 40, y);
+    doc.text(`$${datos.contratistasDeuda.toFixed(2)}`, 160, y, { align: 'right' });
+
+    doc.fillColor('#166534').font('Helvetica-Bold').text('(=) SALDO TOTAL DISPONIBLE:', 315, y);
+    doc.text(`$${datos.saldoDisponible.toFixed(2)}`, 465, y, { align: 'right' });
+
+    // 5. UBICACIÓN Y DISPONIBILIDAD DEL SALDO
+    y += 20;
+    doc.rect(35, y, 540, 26).fillAndStroke('#F8FAFC', '#CBD5E1');
+    doc.fillColor('#0F172A').fontSize(7.5).font('Helvetica-Bold').text('📍 UBICACIÓN Y DISPONIBILIDAD REAL DEL SALDO DISPONIBLE:', 42, y + 4);
+    doc.font('Helvetica').text(`• En Cuenta de Banco (Transferencias/Tarjeta): $${datos.saldoBanco.toFixed(2)}`, 50, y + 15);
+    doc.text(`• En Efectivo (Caja Chica y Campo): $${datos.saldoEfectivo.toFixed(2)}`, 320, y + 15);
+
+    // 6. FIRMA DIGITAL AUTÓGRAFA
+    y += 45;
+    doc.moveTo(340, y).lineTo(540, y).strokeColor('#000000').lineWidth(1).stroke();
+    doc.fontSize(9.5).font('Helvetica-BoldOblique').fillColor('#0F172A')
+       .text('Administración Constructive Gallery Architects', 340, y + 4, { width: 200, align: 'center' });
+    doc.fontSize(6.5).font('Helvetica').fillColor('#64748B')
+       .text('Validación y Firma Digital Autónoma', 340, y + 15, { width: 200, align: 'center' });
+
+    doc.end();
+    stream.on('finish', () => resolve(rutaSalida));
+    stream.on('error', reject);
+  });
+}
+
+// CÁLCULO CONSOLIDADOS PARA EL CORTE SEMANAL Y PDF
+async function generarDatosCorteSemanal(obraBuscada) {
+  if (!sheets || !SPREADSHEET_ID) return null;
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: 'Hoja 1!A:J'
+    });
+    const filas = res.data.values || [];
+
+    const ahora = new Date();
+    const hace7Dias = new Date(ahora.getTime() - (7 * 24 * 60 * 60 * 1000));
+
+    let semanaEfectivo = 0, semanaTarjeta = 0, semanaTransferencia = 0;
+    let gastosTotal = 0, ingresosTotal = 0, dotacionesCaja = 0;
+
+    const mapaPartidas = {};
+    const mapaContratistas = { contrato: 0, pagado: 0 };
+
+    for (let i = 1; i < filas.length; i++) {
+      const fila = filas[i];
+      const fechaStr = fila[1] || '';
+      const obra = fila[2] || '';
+      const metodo = fila[3] || '';
+      const categoria = fila[4] || '20) VARIOS';
+      let montoStr = (fila[5] || '0').toString().replace('$', '').replace(/,/g, '').trim();
+      const monto = parseFloat(montoStr) || 0;
+      const concepto = (fila[6] || '').toLowerCase();
+      const estatus = fila[8] || '';
+
+      if (estatus.includes('CANCELADO')) continue;
+
+      if (!mapaPartidas[categoria]) mapaPartidas[categoria] = { semana: 0, acumulado: 0 };
+
+      // Filtrar por obra si se selecciona una específica
+      if (!obraBuscada || obra.toLowerCase() === obraBuscada.toLowerCase()) {
+        const fechaMov = new Date(fechaStr);
+        const esUltimaSemana = !isNaN(fechaMov.getTime()) && fechaMov >= hace7Dias;
+
+        if (metodo.includes('Ingreso Presupuesto')) {
+          ingresosTotal += monto;
+        } else if (metodo.includes('Dotación Caja Chica')) {
+          dotacionesCaja += monto;
+        } else {
+          gastosTotal += monto;
+          mapaPartidas[categoria].acumulado += monto;
+
+          if (esUltimaSemana) {
+            mapaPartidas[categoria].semana += monto;
+            if (metodo.startsWith('Efectivo')) semanaEfectivo += monto;
+            else if (metodo.startsWith('Tarjeta')) semanaTarjeta += monto;
+            else if (metodo.startsWith('Transferencia')) semanaTransferencia += monto;
+          }
+        }
+
+        // Contratistas
+        CONTRATISTAS_VALIDOS.forEach(c => {
+          if (concepto.includes(`contrato ${c}`)) mapaContratistas.contrato += monto;
+          else if (concepto.includes(c) || categoria.toLowerCase().includes(c)) mapaContratistas.pagado += monto;
+        });
+      }
+    }
+
+    const listaPartidas = Object.keys(mapaPartidas).map(k => ({
+      nombre: k,
+      semana: mapaPartidas[k].semana,
+      acumulado: mapaPartidas[k].acumulado
+    }));
+
+    const hoyStr = ahora.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City' });
+    const hace7Str = hace7Dias.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City' });
+
+    const saldoEfectivo = dotacionesCaja - semanaEfectivo; // Aproximación de efectivo disponible
+    const saldoDisponible = ingresosTotal - gastosTotal;
+    const saldoBanco = saldoDisponible - (saldoEfectivo > 0 ? saldoEfectivo : 0);
+
+    return {
+      sucursal: obraBuscada || 'General Global',
+      periodo: `${hace7Str} al ${hoyStr}`,
+      semanaEfectivo,
+      semanaTarjeta,
+      semanaTransferencia,
+      semanaTotal: semanaEfectivo + semanaTarjeta + semanaTransferencia,
+      partidas: listaPartidas,
+      contratistasContrato: mapaContratistas.contrato,
+      contratistasPagado: mapaContratistas.pagado,
+      contratistasDeuda: mapaContratistas.contrato - mapaContratistas.pagado,
+      ingresosTotal,
+      gastosTotal,
+      saldoDisponible,
+      saldoBanco: saldoBanco > 0 ? saldoBanco : 0,
+      saldoEfectivo: saldoEfectivo > 0 ? saldoEfectivo : 0
+    };
+  } catch (error) {
+    console.error('❌ Error calculando datos PDF:', error.message);
+    return null;
+  }
 }
 
 // DRIVE - UNIFICACIÓN DE CARPETAS Y PREVENCIÓN DE DUPLICADOS
@@ -384,7 +673,7 @@ async function guardarTrabajoExtra(datos) {
   try {
     const fechaHora = new Date().toLocaleString('es-MX', { timeZone: 'America/Mexico_City' });
     const filaDestino = await obtenerSiguienteFilaDisponible(SPREADSHEET_EXTRAS_ID, 'Extras!B:B');
-    const numFila = filaDestino - 1; // Encabezados en Fila 1
+    const numFila = filaDestino - 1;
 
     let formulaEvidencias = '';
     if (datos.carpetaExtraLink && datos.linksFotos && datos.linksFotos.length > 0) {
@@ -480,7 +769,7 @@ async function guardarTrabajador(datos) {
   if (!sheets || !SPREADSHEET_PERSONAL_ID) return;
   try {
     const filaDestino = await obtenerSiguienteFilaDisponible(SPREADSHEET_PERSONAL_ID, 'PLANTILLA_PERSONAL!C:C');
-    const numFila = filaDestino - 1; // Encabezados en Fila 1
+    const numFila = filaDestino - 1;
 
     const valores = [[
       numFila,
@@ -540,7 +829,7 @@ async function guardarVisitaFamiliar(datos) {
     const fechaSugeridaStr = fechaSugerida.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City' });
 
     const filaDestino = await obtenerSiguienteFilaDisponible(SPREADSHEET_PERSONAL_ID, 'VISITAS_FAMILIARES!C:C');
-    const numFila = filaDestino - 1; // Encabezados en Fila 1
+    const numFila = filaDestino - 1;
 
     const valores = [[
       numFila,
@@ -569,7 +858,7 @@ async function guardarPrecioHistorico(datos) {
   try {
     const fechaHora = new Date().toLocaleString('es-MX', { timeZone: 'America/Mexico_City' });
     const filaDestino = await obtenerSiguienteFilaDisponible(SPREADSHEET_PRECIOS_ID, 'PRECIOS!D:D');
-    const numFila = filaDestino - 1; // Encabezados en Fila 1
+    const numFila = filaDestino - 1;
 
     const valores = [[
       numFila,
@@ -923,7 +1212,6 @@ app.post('/webhook', async (req, res) => {
         const ext = msg.type === 'image' ? 'jpg' : 'mp4';
         const tipoEtiqueta = msg.type === 'image' ? 'Foto' : 'Video';
 
-        // SINCRONIZACIÓN DE CARPETAS DE SESIÓN
         if (!sesionActual.parentFolderId) {
           sesionActual.parentFolderId = await obtenerOcrearSubcarpetaObra(sesionActual.obra);
         }
@@ -936,8 +1224,6 @@ app.post('/webhook', async (req, res) => {
 
         const numArchivo = sesionActual.linksFotos.length + 1;
         const palabraClave = extraerPalabraClave(sesionActual.descripcion);
-        
-        // TIMESTAMP DE ALTA PRECISIÓN
         const timestampUnico = Date.now().toString().slice(-4);
         const nombreArchivo = `${sesionActual.idExtra}_${palabraClave}_${tipoEtiqueta}${numArchivo}_${timestampUnico}.${ext}`;
 
@@ -987,9 +1273,9 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // 3) REPORTES DIRECTOS
+      // 3) REPORTES DIRECTOS Y CORTE EN PDF
       if (/^(saldo|corte|reporte|resumen)$/i.test(textBody)) {
-        await enviarBotones(from, '📊 *¿De qué Sucursal deseas consultar el Reporte?*', [
+        await enviarBotones(from, '📊 *¿De qué Sucursal deseas generar el Reporte PDF?*', [
           { id: 'REP_Pelicano', title: 'Pelicano' },
           { id: 'REP_Caldera', title: 'Caldera' },
           { id: 'REP_Nativitas', title: 'Nativitas' }
@@ -1187,10 +1473,10 @@ app.post('/webhook', async (req, res) => {
           resultados.forEach((r, idx) => {
             const emoji = idx === 0 ? '🟢' : idx === 1 ? '🟡' : '🔴';
             msgTxt += `${emoji} *$${r.precio.toFixed(2)}* / ${r.unidad}\n` +
-              `   📍 ${r.obra}\n` +
-              `   🏢 Proveedor: ${r.proveedor}\n` +
-              `   📝 Material: ${r.material}\n` +
-              `   📅 Fecha: ${r.fecha.split(',')[0]}\n\n`;
+              `    📍 ${r.obra}\n` +
+              `    🏢 Proveedor: ${r.proveedor}\n` +
+              `    📝 Material: ${r.material}\n` +
+              `    📅 Fecha: ${r.fecha.split(',')[0]}\n\n`;
           });
           await enviarTexto(from, msgTxt);
         }
@@ -1354,10 +1640,10 @@ app.post('/webhook', async (req, res) => {
           resultados.forEach((r, idx) => {
             const emoji = idx === 0 ? '🟢' : idx === 1 ? '🟡' : '🔴';
             msgTxt += `${emoji} *$${r.precio.toFixed(2)}* / ${r.unidad}\n` +
-              `   📍 ${r.obra}\n` +
-              `   🏢 Proveedor: ${r.proveedor}\n` +
-              `   📝 Material: ${r.material}\n` +
-              `   📅 Fecha: ${r.fecha.split(',')[0]}\n\n`;
+              `    📍 ${r.obra}\n` +
+              `    🏢 Proveedor: ${r.proveedor}\n` +
+              `    📝 Material: ${r.material}\n` +
+              `    📅 Fecha: ${r.fecha.split(',')[0]}\n\n`;
           });
           await enviarTexto(from, msgTxt);
         }
@@ -1371,7 +1657,6 @@ app.post('/webhook', async (req, res) => {
         delete sesionActual.esperandoDescripcionExtra;
         sesionActual.esperandoMontoExtra = true;
 
-        // CREA CARPETAS EN DRIVE
         sesionActual.parentFolderId = await obtenerOcrearSubcarpetaObra(sesionActual.obra);
         const extraFolder = await obtenerOcrearCarpetaTrabajoExtra(sesionActual.parentFolderId, sesionActual.idExtra, sesionActual.descripcion);
         sesionActual.subfolderId = extraFolder.folderId;
@@ -1387,7 +1672,6 @@ app.post('/webhook', async (req, res) => {
         delete sesionActual.esperandoMontoExtra;
         sesionActual.esperandoFotosExtra = true;
 
-        // MENSAJE CON INSTRUCCIÓN Y BOTÓN DE OMISIÓN
         await enviarBotones(from, `📸 *Monto registrado:* $${sesionActual.monto.toFixed(2)}\n\n*Por favor, envía la primera FOTO o VIDEO de evidencia por WhatsApp, o presiona el botón si no se requiere evidencia visual:*`, [
           { id: 'EXTRAFOTO_OMITIR', title: '🚫 Sin Evidencia' }
         ]);
@@ -1475,7 +1759,7 @@ app.post('/webhook', async (req, res) => {
         const sesion = sesiones[from];
         if (sesion) {
           sesion.linksFotos = [];
-          delete sesion.carpetaExtraLink; // Elimina la carpeta vacía conceptualmente
+          delete sesion.carpetaExtraLink;
           await guardarTrabajoExtra(sesion);
           await enviarTexto(from, `✅ *Trabajo Extra Guardado con Éxito*\n\n🆔 *ID:* ${sesion.idExtra}\n🏗️ *Obra:* ${sesion.obra}\n📝 *Descripción:* ${sesion.descripcion}\n💵 *Monto Estimado:* $${sesion.monto.toFixed(2)}\n📷 *Evidencia:* Sin Evidencias\n👤 *Registró:* ${sesion.usuario}`);
           delete sesiones[from];
@@ -1858,6 +2142,7 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
+      // MANEJO DE GENERACIÓN DE PDF PARA REPORTES
       if (respuestaId?.startsWith('REP_')) {
         const obraMap = {
           'REP_Pelicano': 'Suc. Pelicano',
@@ -1867,15 +2152,32 @@ app.post('/webhook', async (req, res) => {
           'REP_GLOBAL': null
         };
         const obraSel = obraMap[respuestaId];
-        const rep = await calcularReporteSaldos(obraSel);
 
-        let txt = obraSel ? `📊 *Corte de Caja - ${obraSel}*\n\n` : `📊 *Corte de Caja Chica General*\n\n`;
-        txt += `💵 *Total Efectivo Ingresado:* $${rep.dotacionesCaja.toFixed(2)} MXN\n` +
-          `💸 *Egresos en Efectivo:* $${rep.egresosEfectivo.toFixed(2)} MXN\n` +
-          `💰 *Efectivo Disponible en Mano:* $${rep.cajaDisponible.toFixed(2)} MXN\n` +
-          `📄 *Total Facturado en Efectivo:* $${rep.facturadoEfectivo.toFixed(2)} MXN`;
+        await enviarTexto(from, `⏳ *Generando Estado de Cuenta y Corte Semanal en PDF...*`);
 
-        await enviarTexto(from, txt);
+        const datosCorte = await generarDatosCorteSemanal(obraSel);
+
+        if (datosCorte) {
+          const nombreArchivoPdf = `Corte_${(obraSel || 'General').replace(/\s+/g, '_')}_${Date.now()}.pdf`;
+          const rutaPdfLocal = path.join(__dirname, nombreArchivoPdf);
+
+          await generarPDFCorteSemanal(datosCorte, rutaPdfLocal);
+
+          const captionTxt = `📄 *Corte Financiero Semanal — ${datosCorte.sucursal}*\n\n` +
+            `💵 *Gastos de la Semana:* $${datosCorte.semanaTotal.toFixed(2)}\n` +
+            `💰 *Saldo Total Disponible:* $${datosCorte.saldoDisponible.toFixed(2)}\n` +
+            `  • Banco: $${datosCorte.saldoBanco.toFixed(2)}\n` +
+            `  • Efectivo: $${datosCorte.saldoEfectivo.toFixed(2)}\n\n` +
+            `✍️ *Validado y Firmado por Constructive Gallery Architects.*`;
+
+          await enviarDocumentoWhatsApp(from, rutaPdfLocal, nombreArchivoPdf, captionTxt);
+
+          // Limpiar archivo local borrándolo del servidor tras enviar
+          if (fs.existsSync(rutaPdfLocal)) fs.unlinkSync(rutaPdfLocal);
+        } else {
+          await enviarTexto(from, '⚠️ No se pudieron obtener los datos para generar el reporte.');
+        }
+
         res.sendStatus(200);
         return;
       }
