@@ -253,7 +253,7 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
     const stream = fs.createWriteStream(rutaSalida);
     doc.pipe(stream);
 
-    // 1. BUSCADOR MULTI-RUTA DE LOGO (Busca suelto en raíz o dentro de carpetas)
+    // 1. BUSCADOR MULTI-RUTA DE LOGO
     const rutasPosibles = [
       path.join(__dirname, 'logo.png'),
       path.join(__dirname, 'logo.PNG'),
@@ -282,7 +282,7 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
     // 2. RESUMEN DE FLUJO SEMANAL POR FORMA DE PAGO
     let y = 80;
     doc.rect(35, y, 540, 16).fill('#000000');
-    doc.fillColor('#FFFFFF').fontSize(8.5).font('Helvetica-Bold').text('1. RESUMEN DE FLUJO SEMANAL (ÚLTIMOS 7 DÍAS)', 40, y + 4);
+    doc.fillColor('#FFFFFF').fontSize(8.5).font('Helvetica-Bold').text('1. RESUMEN DE FLUJO SEMANAL (LUNES A DOMINGO)', 40, y + 4);
 
     y += 20;
     const anchoCaja = 130;
@@ -328,7 +328,7 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
     });
 
     if (contadorFilas === 0) {
-      doc.fillColor('#64748B').text('Sin gastos registrados en el periodo seleccionado.', 40, y, { align: 'left' });
+      doc.fillColor('#64748B').text('Sin gastos registrados en la semana seleccionada.', 40, y, { align: 'left' });
       y += 12;
     }
 
@@ -427,7 +427,7 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
   });
 }
 
-// CÁLCULO DE DATOS DESDE GOOGLE SHEETS
+// CÁLCULO DE DATOS: LUNES 00:00:00 HRS A DOMINGO 23:59:59 HRS
 async function generarDatosCorteSemanal(obraBuscada) {
   if (!sheets || !SPREADSHEET_ID) return null;
   try {
@@ -438,7 +438,18 @@ async function generarDatosCorteSemanal(obraBuscada) {
     const filas = res.data.values || [];
 
     const ahora = new Date();
-    const hace7Dias = new Date(ahora.getTime() - (7 * 24 * 60 * 60 * 1000));
+    const diaSemana = ahora.getDay(); // 0: Domingo, 1: Lunes...
+    const diferenciaLunes = diaSemana === 0 ? 6 : diaSemana - 1;
+
+    // Inicio Lunes 00:00:00 hrs
+    const inicioLunes = new Date(ahora);
+    inicioLunes.setDate(ahora.getDate() - diferenciaLunes);
+    inicioLunes.setHours(0, 0, 0, 0);
+
+    // Fin Domingo 23:59:59 hrs
+    const finDomingo = new Date(inicioLunes);
+    finDomingo.setDate(inicioLunes.getDate() + 6);
+    finDomingo.setHours(23, 59, 59, 999);
 
     let semanaEfectivo = 0, semanaTarjeta = 0, semanaTransferencia = 0;
     let gastosTotal = 0, ingresosTotal = 0, dotacionesCaja = 0;
@@ -466,7 +477,9 @@ async function generarDatosCorteSemanal(obraBuscada) {
         if (partesFecha.length === 3) {
           fechaMov = new Date(partesFecha[2], partesFecha[1] - 1, partesFecha[0]);
         }
-        const esUltimaSemana = !isNaN(fechaMov.getTime()) && fechaMov >= hace7Dias;
+        
+        // Rango de la semana calendario (Lunes a Domingo completo)
+        const esSemanaActual = !isNaN(fechaMov.getTime()) && fechaMov >= inicioLunes && fechaMov <= finDomingo;
 
         if (metodo.includes('Ingreso Presupuesto')) {
           ingresosTotal += monto;
@@ -478,7 +491,7 @@ async function generarDatosCorteSemanal(obraBuscada) {
           if (!mapaPartidas[categoria]) mapaPartidas[categoria] = { semana: 0, acumulado: 0 };
           mapaPartidas[categoria].acumulado += monto;
 
-          if (esUltimaSemana) {
+          if (esSemanaActual) {
             mapaPartidas[categoria].semana += monto;
             if (metodo.startsWith('Efectivo')) semanaEfectivo += monto;
             else if (metodo.startsWith('Tarjeta')) semanaTarjeta += monto;
@@ -508,8 +521,8 @@ async function generarDatosCorteSemanal(obraBuscada) {
       contratistasPagado += detalleContratistas[k].pagado;
     });
 
-    const hoyStr = ahora.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City' });
-    const hace7Str = hace7Dias.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City' });
+    const inicioStr = inicioLunes.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City' });
+    const finStr = finDomingo.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City' });
 
     const saldoEfectivo = dotacionesCaja - semanaEfectivo;
     const saldoDisponible = ingresosTotal - gastosTotal;
@@ -517,7 +530,7 @@ async function generarDatosCorteSemanal(obraBuscada) {
 
     return {
       sucursal: obraBuscada || 'General Global',
-      periodo: `${hace7Str} al ${hoyStr}`,
+      periodo: `${inicioStr} al ${finStr}`,
       semanaEfectivo,
       semanaTarjeta,
       semanaTransferencia,
@@ -1203,22 +1216,23 @@ async function desplegarMenuPrincipal(from) {
     { id: 'MENU_EXTRAS', title: '🔨 Trabajos Extras', description: 'Registro de extras y actualización de estatus' },
     { id: 'MENU_PRESU', title: '🏦 Presupuestos e Ingresos', description: 'Presupuesto autorizado y cobro a clientes' },
     { id: 'MENU_PRECIOS', title: '🏷️ Precios Materiales', description: 'Registrar precio y comparar histórico' },
-    { id: 'MENU_REPORTES', title: '📊 Saldos y Reportes', description: 'Caja chica, avance y facturas pendientes' }
+    { id: 'MENU_REPORTES', title: '📊 Saldos y Reportes', description: 'Caja chica, avance y PDF de Corte Semanal' }
   ];
 
   await enviarLista(from, '🏗️ *MENÚ ADMINISTRATIVO DE OBRA*\n\nSelecciona la gestión que deseas realizar:', 'Abrir Menú', 'Gestión de Obra', opciones);
 }
 
 async function desplegarGuiaComandos(from) {
-  const guiaComandos = `📝 *SINTAXIS DE COMANDOS POR TEXTO:*\n\n` +
+  const guiaComandos = `📝 *SINTAXIS DE COMANDOS Y AYUDA DE TEXTO:*\n\n` +
+    `• *Menú Interactivo:* \`menu\`, \`hola\`, \`inicio\` o \`ayuda\`\n` +
     `• *Gasto Rápido:* \`[concepto] [monto]\` (ej: cemento 450)\n` +
+    `• *Generar PDF Corte:* \`corte\` o \`saldo\` (Lunes 00:00:00 a Domingo 23:59:59)\n` +
     `• *Alta Trabajador:* \`alta [nombre]\` (ej: alta Pedro Gomez)\n` +
     `• *Baja Trabajador:* \`baja\` o \`baja [nombre]\` (Buscador Táctil Inteligente)\n` +
     `• *Visita Familiar:* \`visita [nombre] [monto]\` (ej: visita Pedro Gomez 800)\n` +
-    `• *Trabajos Extras:* \`extra\` o \`trabajos extras\` (Fotos o Videos)\n` +
+    `• *Trabajos Extras:* \`extra\` o \`trabajos extras\` (Fotos/Videos)\n` +
     `• *Estatus Extras:* \`extras pendientes\`\n` +
     `• *Ingreso Caja Chica:* \`caja [monto]\` (ej: caja 1000)\n` +
-    `• *Corte / Saldo:* \`saldo\` o \`corte\`\n` +
     `• *Contratistas:* \`contratistas\`\n` +
     `• *Precios Materiales:* \`precio [mat] [monto]\` (ej: precio varilla 195)\n` +
     `• *Comparar Precios:* \`comparar [mat]\` (ej: comparar varilla)\n` +
@@ -2216,7 +2230,7 @@ app.post('/webhook', async (req, res) => {
         };
         const obraSel = obraMap[respuestaId];
 
-        await enviarTexto(from, `⏳ *Generando Estado de Cuenta y Corte Semanal en PDF...*`);
+        await enviarTexto(from, `⏳ *Generando Estado de Cuenta y Corte Semanal (Lunes a Domingo) en PDF...*`);
 
         const datosCorte = await generarDatosCorteSemanal(obraSel);
 
@@ -2226,7 +2240,8 @@ app.post('/webhook', async (req, res) => {
 
           await generarPDFCorteSemanal(datosCorte, rutaPdfLocal);
 
-          const captionTxt = `📄 *Corte Financiero Semanal — ${datosCorte.sucursal}*\n\n` +
+          const captionTxt = `📄 *Corte Financiero Semanal — ${datosCorte.sucursal}*\n` +
+            `📅 *Periodo:* ${datosCorte.periodo}\n\n` +
             `💵 *Gastos de la Semana:* $${datosCorte.semanaTotal.toFixed(2)}\n` +
             `💰 *Saldo Total Disponible:* $${datosCorte.saldoDisponible.toFixed(2)}\n` +
             `  • Banco: $${datosCorte.saldoBanco.toFixed(2)}\n` +
