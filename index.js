@@ -246,17 +246,23 @@ async function enviarDocumentoWhatsApp(to, rutaArchivo, nombreArchivo, caption) 
   });
 }
 
-// GENERADOR DE PDF EJECUTIVO DE CORTE SEMANAL
+// GENERADOR DE PDF EJECUTIVO DE CORTE SEMANAL (COMPLETO Y CORREGIDO)
 function generarPDFCorteSemanal(datos, rutaSalida) {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ margin: 35, size: 'LETTER' });
     const stream = fs.createWriteStream(rutaSalida);
     doc.pipe(stream);
 
-    // 1. CARGAR LOGO
-    const rutaLogo = path.join(__dirname, 'Imagenes', 'logo.png');
-    if (fs.existsSync(rutaLogo)) {
-      doc.image(rutaLogo, 35, 25, { width: 110 });
+    // 1. VERIFICACIÓN Y CARGA DE LOGO
+    const posibleRutaLogo = path.join(__dirname, 'Imagenes', 'logo.png');
+    const rutaLogoAlt = path.join(__dirname, 'imagenes', 'logo.png');
+    
+    let logoAEncontrar = null;
+    if (fs.existsSync(posibleRutaLogo)) logoAEncontrar = posibleRutaLogo;
+    else if (fs.existsSync(rutaLogoAlt)) logoAEncontrar = rutaLogoAlt;
+
+    if (logoAEncontrar) {
+      doc.image(logoAEncontrar, 35, 20, { width: 105 });
     }
 
     // Encabezado
@@ -269,13 +275,12 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
 
     doc.moveTo(35, 70).lineTo(575, 70).strokeColor('#000000').lineWidth(1.5).stroke();
 
-    // 2. RESUMEN DE FLUJO SEMANAL
-    doc.moveDown(1.2);
+    // 2. RESUMEN DE FLUJO SEMANAL POR FORMA DE PAGO
     let y = 80;
     doc.rect(35, y, 540, 16).fill('#000000');
     doc.fillColor('#FFFFFF').fontSize(8.5).font('Helvetica-Bold').text('1. RESUMEN DE FLUJO SEMANAL (ÚLTIMOS 7 DÍAS)', 40, y + 4);
 
-    y += 22;
+    y += 20;
     const anchoCaja = 130;
     const cajas = [
       { t: 'GASTOS EFECTIVO', v: `$${datos.semanaEfectivo.toFixed(2)}` },
@@ -287,89 +292,130 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
     cajas.forEach((c, i) => {
       const x = 35 + (i * 135);
       doc.rect(x, y, anchoCaja, 28).fillAndStroke('#F8FAFC', '#CBD5E1');
-      doc.fillColor('#64748B').fontSize(6.5).text(c.t, x + 5, y + 4, { width: anchoCaja - 10, align: 'center' });
+      doc.fillColor('#64748B').fontSize(6.5).font('Helvetica-Bold').text(c.t, x + 5, y + 4, { width: anchoCaja - 10, align: 'center' });
       doc.fillColor('#0F172A').fontSize(9.5).font('Helvetica-Bold').text(c.v, x + 5, y + 14, { width: anchoCaja - 10, align: 'center' });
     });
 
-    // 3. DESGLOSE POR CATEGORÍAS (SEMANA VS ACUMULADO)
-    y += 35;
+    // 3. COMPARATIVO DE GASTOS SEMANALES POR CATEGORÍA / PARTIDA
+    y += 36;
     doc.rect(35, y, 540, 16).fill('#000000');
-    doc.fillColor('#FFFFFF').fontSize(8.5).font('Helvetica-Bold').text('2. COMPARATIVO DE GASTOS POR CATEGORÍA / PARTIDA', 40, y + 4);
+    doc.fillColor('#FFFFFF').fontSize(8.5).font('Helvetica-Bold').text('2. DESGLOSE DE GASTOS SEMANALES VS ACUMULADO POR CATEGORÍA', 40, y + 4);
 
-    y += 20;
-    doc.rect(35, y, 540, 15).fill('#E2E8F0');
+    y += 18;
+    doc.rect(35, y, 540, 14).fill('#E2E8F0');
     doc.fillColor('#0F172A').fontSize(7.5).font('Helvetica-Bold');
-    doc.text('Partida Presupuestal', 40, y + 4);
-    doc.text('Gastado en la Semana', 300, y + 4, { width: 120, align: 'right' });
-    doc.text('Acumulado Histórico', 430, y + 4, { width: 140, align: 'right' });
+    doc.text('Partida Presupuestal / Categoría', 40, y + 3);
+    doc.text('Gastado en la Semana', 300, y + 3, { width: 120, align: 'right' });
+    doc.text('Acumulado Histórico', 430, y + 3, { width: 140, align: 'right' });
 
-    y += 16;
+    y += 15;
     doc.font('Helvetica').fontSize(7.5);
-    datos.partidas.forEach((p, idx) => {
+    
+    let contadorFilas = 0;
+    datos.partidas.forEach((p) => {
       if (p.semana > 0 || p.acumulado > 0) {
-        if (idx % 2 === 1) doc.rect(35, y - 2, 540, 12).fill('#F8FAFC');
+        if (contadorFilas % 2 === 1) doc.rect(35, y - 2, 540, 12).fill('#F8FAFC');
         doc.fillColor('#1A1A1A').text(p.nombre, 40, y);
         doc.text(`$${p.semana.toFixed(2)}`, 300, y, { width: 120, align: 'right' });
         doc.text(`$${p.acumulado.toFixed(2)}`, 430, y, { width: 140, align: 'right' });
         y += 12;
+        contadorFilas++;
       }
     });
 
-    // Total de acumulados
-    doc.rect(35, y, 540, 14).fill('#F1F5F9');
-    doc.fillColor('#0F172A').font('Helvetica-Bold').fontSize(8);
+    if (contadorFilas === 0) {
+      doc.fillColor('#64748B').text('Sin gastos registrados en el periodo seleccionado.', 40, y, { align: 'left' });
+      y += 12;
+    }
+
+    // Fila Totales
+    doc.rect(35, y, 540, 13).fill('#F1F5F9');
+    doc.fillColor('#0F172A').font('Helvetica-Bold').fontSize(7.5);
     doc.text('TOTAL GENERAL ACUMULADO DE OBRA', 40, y + 3);
     doc.text(`$${datos.semanaTotal.toFixed(2)}`, 300, y + 3, { width: 120, align: 'right' });
     doc.text(`$${datos.gastosTotal.toFixed(2)}`, 430, y + 3, { width: 140, align: 'right' });
 
-    // 4. CONTRATISTAS Y BALANCE DE OBRA
-    y += 22;
-    const anchoMitad = 265;
-    
-    // Contratistas
-    doc.rect(35, y, anchoMitad, 16).fill('#000000');
-    doc.fillColor('#FFFFFF').fontSize(8.5).font('Helvetica-Bold').text('3. CONTROL DE CONTRATISTAS', 40, y + 4);
-    
-    // Balance
-    doc.rect(310, y, anchoMitad, 16).fill('#000000');
-    doc.fillColor('#FFFFFF').fontSize(8.5).font('Helvetica-Bold').text('4. BALANCE FINANCIERO DE OBRA', 315, y + 4);
-
+    // 4. TABLA DETALLADA DE CONTRATISTAS Y DESTAJOS
     y += 20;
+    doc.rect(35, y, 540, 16).fill('#000000');
+    doc.fillColor('#FFFFFF').fontSize(8.5).font('Helvetica-Bold').text('3. ESTADO DE CUENTA DETALLADO DE CONTRATISTAS', 40, y + 4);
+
+    y += 18;
+    doc.rect(35, y, 540, 14).fill('#E2E8F0');
+    doc.fillColor('#0F172A').fontSize(7.5).font('Helvetica-Bold');
+    doc.text('Especialidad / Contratista', 40, y + 3);
+    doc.text('Contrato Autorizado', 250, y + 3, { width: 100, align: 'right' });
+    doc.text('Pagado a la Fecha', 360, y + 3, { width: 100, align: 'right' });
+    doc.text('Saldo Pendiente', 470, y + 3, { width: 100, align: 'right' });
+
+    y += 15;
+    doc.font('Helvetica').fontSize(7.5);
+
+    let cFilas = 0;
+    Object.keys(datos.detalleContratistas).forEach((esp) => {
+      const c = datos.detalleContratistas[esp];
+      if (c.contrato > 0 || c.pagado > 0) {
+        if (cFilas % 2 === 1) doc.rect(35, y - 2, 540, 12).fill('#F8FAFC');
+        const pendiente = c.contrato - c.pagado;
+        doc.fillColor('#1A1A1A').text(esp.toUpperCase(), 40, y);
+        doc.text(`$${c.contrato.toFixed(2)}`, 250, y, { width: 100, align: 'right' });
+        doc.fillColor('#166534').text(`$${c.pagado.toFixed(2)}`, 360, y, { width: 100, align: 'right' });
+        doc.fillColor(pendiente > 0 ? '#991B1B' : '#0F172A').text(`$${pendiente.toFixed(2)}`, 470, y, { width: 100, align: 'right' });
+        y += 12;
+        cFilas++;
+      }
+    });
+
+    if (cFilas === 0) {
+      doc.fillColor('#64748B').text('Sin contratos o destajos asignados a esta sucursal.', 40, y, { align: 'left' });
+      y += 12;
+    }
+
+    // Fila Totales Contratistas
+    doc.rect(35, y, 540, 13).fill('#F1F5F9');
+    doc.fillColor('#0F172A').font('Helvetica-Bold').fontSize(7.5);
+    doc.text('TOTAL CONTRATISTAS', 40, y + 3);
+    doc.text(`$${datos.contratistasContrato.toFixed(2)}`, 250, y + 3, { width: 100, align: 'right' });
+    doc.fillColor('#166534').text(`$${datos.contratistasPagado.toFixed(2)}`, 360, y + 3, { width: 100, align: 'right' });
+    doc.fillColor('#991B1B').text(`$${datos.contratistasDeuda.toFixed(2)}`, 470, y + 3, { width: 100, align: 'right' });
+
+    // 5. BALANCE FINANCIERO Y DISPONIBILIDAD EN BANCO / EFECTIVO
+    y += 20;
+    doc.rect(35, y, 540, 16).fill('#000000');
+    doc.fillColor('#FFFFFF').fontSize(8.5).font('Helvetica-Bold').text('4. BALANCE FINANCIERO GENERAL Y DISPONIBILIDAD', 40, y + 4);
+
+    y += 18;
     doc.fillColor('#000000').fontSize(7.5).font('Helvetica');
-    doc.text('Monto Total Contratado:', 40, y);
-    doc.font('Helvetica-Bold').text(`$${datos.contratistasContrato.toFixed(2)}`, 160, y, { align: 'right' });
+    doc.text('(+) Total Presupuesto / Ingresos Recibidos:', 40, y);
+    doc.font('Helvetica-Bold').text(`$${datos.ingresosTotal.toFixed(2)}`, 220, y, { align: 'right' });
 
-    doc.font('Helvetica').text('Ingresos / Presupuesto Recibido:', 315, y);
-    doc.font('Helvetica-Bold').text(`$${datos.ingresosTotal.toFixed(2)}`, 465, y, { align: 'right' });
-
-    y += 12;
-    doc.font('Helvetica').text('Monto Pagado a la Fecha:', 40, y);
-    doc.font('Helvetica-Bold').fillColor('#166534').text(`$${datos.contratistasPagado.toFixed(2)}`, 160, y, { align: 'right' });
-
-    doc.fillColor('#991B1B').font('Helvetica').text('(-) Gastos Acumulados Totales:', 315, y);
-    doc.font('Helvetica-Bold').text(`$${datos.gastosTotal.toFixed(2)}`, 465, y, { align: 'right' });
+    doc.font('Helvetica').fillColor('#991B1B').text('(-) Gastos Acumulados Totales de Obra:', 300, y);
+    doc.font('Helvetica-Bold').text(`$${datos.gastosTotal.toFixed(2)}`, 540, y, { align: 'right' });
 
     y += 12;
-    doc.fillColor('#991B1B').font('Helvetica-Bold').text('Saldo Pendiente por Pagar:', 40, y);
-    doc.text(`$${datos.contratistasDeuda.toFixed(2)}`, 160, y, { align: 'right' });
+    doc.fillColor('#166534').font('Helvetica-Bold').text('(=) SALDO TOTAL DISPONIBLE EN OBRA:', 40, y);
+    doc.text(`$${datos.saldoDisponible.toFixed(2)}`, 220, y, { align: 'right' });
 
-    doc.fillColor('#166534').font('Helvetica-Bold').text('(=) SALDO TOTAL DISPONIBLE:', 315, y);
-    doc.text(`$${datos.saldoDisponible.toFixed(2)}`, 465, y, { align: 'right' });
-
-    // 5. UBICACIÓN Y DISPONIBILIDAD DEL SALDO
-    y += 20;
+    y += 18;
     doc.rect(35, y, 540, 26).fillAndStroke('#F8FAFC', '#CBD5E1');
-    doc.fillColor('#0F172A').fontSize(7.5).font('Helvetica-Bold').text('📍 UBICACIÓN Y DISPONIBILIDAD REAL DEL SALDO DISPONIBLE:', 42, y + 4);
+    doc.fillColor('#0F172A').fontSize(7.5).font('Helvetica-Bold').text('UBICACION Y DISPONIBILIDAD REAL DEL SALDO:', 42, y + 4);
     doc.font('Helvetica').text(`• En Cuenta de Banco (Transferencias/Tarjeta): $${datos.saldoBanco.toFixed(2)}`, 50, y + 15);
     doc.text(`• En Efectivo (Caja Chica y Campo): $${datos.saldoEfectivo.toFixed(2)}`, 320, y + 15);
 
     // 6. FIRMA DIGITAL AUTÓGRAFA
     y += 45;
-    doc.moveTo(340, y).lineTo(540, y).strokeColor('#000000').lineWidth(1).stroke();
-    doc.fontSize(9.5).font('Helvetica-BoldOblique').fillColor('#0F172A')
-       .text('Administración Constructive Gallery Architects', 340, y + 4, { width: 200, align: 'center' });
+    const xFirma = 320;
+    const anchoFirma = 240;
+
+    doc.moveTo(xFirma, y).lineTo(xFirma + anchoFirma, y).strokeColor('#000000').lineWidth(1).stroke();
+    
+    y += 5;
+    doc.fontSize(8).font('Helvetica-Bold').fillColor('#0F172A')
+       .text('Administracion Constructive Gallery Architects', xFirma, y, { width: anchoFirma, align: 'center' });
+    
+    y += 11;
     doc.fontSize(6.5).font('Helvetica').fillColor('#64748B')
-       .text('Validación y Firma Digital Autónoma', 340, y + 15, { width: 200, align: 'center' });
+       .text('Validacion y Firma Digital Autonoma', xFirma, y, { width: anchoFirma, align: 'center' });
 
     doc.end();
     stream.on('finish', () => resolve(rutaSalida));
@@ -377,7 +423,7 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
   });
 }
 
-// CÁLCULO CONSOLIDADOS PARA EL CORTE SEMANAL Y PDF
+// CÁLCULO DE DATOS CORREGIDO PARA GOOGLE SHEETS
 async function generarDatosCorteSemanal(obraBuscada) {
   if (!sheets || !SPREADSHEET_ID) return null;
   try {
@@ -394,7 +440,8 @@ async function generarDatosCorteSemanal(obraBuscada) {
     let gastosTotal = 0, ingresosTotal = 0, dotacionesCaja = 0;
 
     const mapaPartidas = {};
-    const mapaContratistas = { contrato: 0, pagado: 0 };
+    const detalleContratistas = {};
+    CONTRATISTAS_VALIDOS.forEach(c => detalleContratistas[c] = { contrato: 0, pagado: 0 });
 
     for (let i = 1; i < filas.length; i++) {
       const fila = filas[i];
@@ -409,11 +456,12 @@ async function generarDatosCorteSemanal(obraBuscada) {
 
       if (estatus.includes('CANCELADO')) continue;
 
-      if (!mapaPartidas[categoria]) mapaPartidas[categoria] = { semana: 0, acumulado: 0 };
-
-      // Filtrar por obra si se selecciona una específica
       if (!obraBuscada || obra.toLowerCase() === obraBuscada.toLowerCase()) {
-        const fechaMov = new Date(fechaStr);
+        const partesFecha = fechaStr.split(',')[0].split('/');
+        let fechaMov = new Date(fechaStr);
+        if (partesFecha.length === 3) {
+          fechaMov = new Date(partesFecha[2], partesFecha[1] - 1, partesFecha[0]);
+        }
         const esUltimaSemana = !isNaN(fechaMov.getTime()) && fechaMov >= hace7Dias;
 
         if (metodo.includes('Ingreso Presupuesto')) {
@@ -422,6 +470,8 @@ async function generarDatosCorteSemanal(obraBuscada) {
           dotacionesCaja += monto;
         } else {
           gastosTotal += monto;
+
+          if (!mapaPartidas[categoria]) mapaPartidas[categoria] = { semana: 0, acumulado: 0 };
           mapaPartidas[categoria].acumulado += monto;
 
           if (esUltimaSemana) {
@@ -432,10 +482,12 @@ async function generarDatosCorteSemanal(obraBuscada) {
           }
         }
 
-        // Contratistas
         CONTRATISTAS_VALIDOS.forEach(c => {
-          if (concepto.includes(`contrato ${c}`)) mapaContratistas.contrato += monto;
-          else if (concepto.includes(c) || categoria.toLowerCase().includes(c)) mapaContratistas.pagado += monto;
+          if (concepto.includes(`contrato ${c}`)) {
+            detalleContratistas[c].contrato += monto;
+          } else if (concepto.includes(c) || categoria.toLowerCase().includes(c)) {
+            detalleContratistas[c].pagado += monto;
+          }
         });
       }
     }
@@ -446,10 +498,16 @@ async function generarDatosCorteSemanal(obraBuscada) {
       acumulado: mapaPartidas[k].acumulado
     }));
 
+    let contratistasContrato = 0, contratistasPagado = 0;
+    Object.keys(detalleContratistas).forEach(k => {
+      contratistasContrato += detalleContratistas[k].contrato;
+      contratistasPagado += detalleContratistas[k].pagado;
+    });
+
     const hoyStr = ahora.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City' });
     const hace7Str = hace7Dias.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City' });
 
-    const saldoEfectivo = dotacionesCaja - semanaEfectivo; // Aproximación de efectivo disponible
+    const saldoEfectivo = dotacionesCaja - semanaEfectivo;
     const saldoDisponible = ingresosTotal - gastosTotal;
     const saldoBanco = saldoDisponible - (saldoEfectivo > 0 ? saldoEfectivo : 0);
 
@@ -461,9 +519,10 @@ async function generarDatosCorteSemanal(obraBuscada) {
       semanaTransferencia,
       semanaTotal: semanaEfectivo + semanaTarjeta + semanaTransferencia,
       partidas: listaPartidas,
-      contratistasContrato: mapaContratistas.contrato,
-      contratistasPagado: mapaContratistas.pagado,
-      contratistasDeuda: mapaContratistas.contrato - mapaContratistas.pagado,
+      detalleContratistas,
+      contratistasContrato,
+      contratistasPagado,
+      contratistasDeuda: contratistasContrato - contratistasPagado,
       ingresosTotal,
       gastosTotal,
       saldoDisponible,
@@ -2172,7 +2231,7 @@ app.post('/webhook', async (req, res) => {
 
           await enviarDocumentoWhatsApp(from, rutaPdfLocal, nombreArchivoPdf, captionTxt);
 
-          // Limpiar archivo local borrándolo del servidor tras enviar
+          // Limpiar archivo local tras enviar
           if (fs.existsSync(rutaPdfLocal)) fs.unlinkSync(rutaPdfLocal);
         } else {
           await enviarTexto(from, '⚠️ No se pudieron obtener los datos para generar el reporte.');
