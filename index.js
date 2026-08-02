@@ -246,23 +246,27 @@ async function enviarDocumentoWhatsApp(to, rutaArchivo, nombreArchivo, caption) 
   });
 }
 
-// GENERADOR DE PDF EJECUTIVO DE CORTE SEMANAL (COMPLETO Y CORREGIDO)
+// GENERADOR DE PDF EJECUTIVO DE CORTE SEMANAL
 function generarPDFCorteSemanal(datos, rutaSalida) {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ margin: 35, size: 'LETTER' });
     const stream = fs.createWriteStream(rutaSalida);
     doc.pipe(stream);
 
-    // 1. VERIFICACIÓN Y CARGA DE LOGO
-    const posibleRutaLogo = path.join(__dirname, 'Imagenes', 'logo.png');
-    const rutaLogoAlt = path.join(__dirname, 'imagenes', 'logo.png');
-    
-    let logoAEncontrar = null;
-    if (fs.existsSync(posibleRutaLogo)) logoAEncontrar = posibleRutaLogo;
-    else if (fs.existsSync(rutaLogoAlt)) logoAEncontrar = rutaLogoAlt;
+    // 1. BUSCADOR MULTI-RUTA DE LOGO (Busca suelto en raíz o dentro de carpetas)
+    const rutasPosibles = [
+      path.join(__dirname, 'logo.png'),
+      path.join(__dirname, 'logo.PNG'),
+      path.join(__dirname, 'Imagenes', 'logo.png'),
+      path.join(__dirname, 'imagenes', 'logo.png'),
+      path.join(__dirname, 'Imagenes', 'logo.PNG'),
+      path.join(__dirname, 'imagenes', 'logo.PNG')
+    ];
 
-    if (logoAEncontrar) {
-      doc.image(logoAEncontrar, 35, 20, { width: 105 });
+    let rutaLogoEncontrada = rutasPosibles.find(r => fs.existsSync(r));
+
+    if (rutaLogoEncontrada) {
+      doc.image(rutaLogoEncontrada, 35, 20, { width: 105 });
     }
 
     // Encabezado
@@ -423,7 +427,7 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
   });
 }
 
-// CÁLCULO DE DATOS CORREGIDO PARA GOOGLE SHEETS
+// CÁLCULO DE DATOS DESDE GOOGLE SHEETS
 async function generarDatosCorteSemanal(obraBuscada) {
   if (!sheets || !SPREADSHEET_ID) return null;
   try {
