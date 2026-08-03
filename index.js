@@ -383,7 +383,7 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
     doc.fillColor('#166534').text(`$${datos.contratistasPagado.toFixed(2)}`, 360, y + 3, { width: 100, align: 'right' });
     doc.fillColor('#991B1B').text(`$${datos.contratistasDeuda.toFixed(2)}`, 470, y + 3, { width: 100, align: 'right' });
 
-    // 5. BALANCE FINANCIERO Y DISPONIBILIDAD EN BANCO / EFECTIVO
+    // 5. BALANCE FINANCIERO Y DISPONIBILIDAD EN BANCO / EFECTIVO (CORREGIDO ESPACIADO)
     y += 20;
     doc.rect(35, y, 540, 16).fill('#000000');
     doc.fillColor('#FFFFFF').fontSize(8.5).font('Helvetica-Bold').text('4. BALANCE FINANCIERO GENERAL Y DISPONIBILIDAD', 40, y + 4);
@@ -391,14 +391,14 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
     y += 18;
     doc.fillColor('#000000').fontSize(7.5).font('Helvetica');
     doc.text('(+) Total Presupuesto / Ingresos Recibidos:', 40, y);
-    doc.font('Helvetica-Bold').text(`$${datos.ingresosTotal.toFixed(2)}`, 220, y, { align: 'right' });
+    doc.font('Helvetica-Bold').text(`$${datos.ingresosTotal.toFixed(2)}`, 200, y, { align: 'right' });
 
-    doc.font('Helvetica').fillColor('#991B1B').text('(-) Gastos Acumulados Totales de Obra:', 300, y);
+    doc.font('Helvetica').fillColor('#991B1B').text('(-) Gastos Acumulados Totales de Obra:', 280, y);
     doc.font('Helvetica-Bold').text(`$${datos.gastosTotal.toFixed(2)}`, 540, y, { align: 'right' });
 
     y += 12;
     doc.fillColor('#166534').font('Helvetica-Bold').text('(=) SALDO TOTAL DISPONIBLE EN OBRA:', 40, y);
-    doc.text(`$${datos.saldoDisponible.toFixed(2)}`, 220, y, { align: 'right' });
+    doc.text(`$${datos.saldoDisponible.toFixed(2)}`, 200, y, { align: 'right' });
 
     y += 18;
     doc.rect(35, y, 540, 26).fillAndStroke('#F8FAFC', '#CBD5E1');
@@ -427,7 +427,7 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
   });
 }
 
-// CÁLCULO DE DATOS: LUNES 00:00:00 HRS A DOMINGO 23:59:59 HRS
+// CÁLCULO DE DATOS CORREGIDO DE LUNES A DOMINGO (ZONA HORARIA MÉXICO)
 async function generarDatosCorteSemanal(obraBuscada) {
   if (!sheets || !SPREADSHEET_ID) return null;
   try {
@@ -437,6 +437,7 @@ async function generarDatosCorteSemanal(obraBuscada) {
     });
     const filas = res.data.values || [];
 
+    // Lógica para obtener el Lunes 00:00 al Domingo 23:59 con tiempo MX
     const ahora = new Date();
     const diaSemana = ahora.getDay();
     const diferenciaLunes = diaSemana === 0 ? 6 : diaSemana - 1;
@@ -470,10 +471,11 @@ async function generarDatosCorteSemanal(obraBuscada) {
       if (estatus.includes('CANCELADO')) continue;
 
       if (!obraBuscada || obra.toLowerCase() === obraBuscada.toLowerCase()) {
-        const partesFecha = fechaStr.split(',')[0].split('/');
+        // Conversión flexible de fecha
         let fechaMov = new Date(fechaStr);
-        if (partesFecha.length === 3) {
-          fechaMov = new Date(partesFecha[2], partesFecha[1] - 1, partesFecha[0]);
+        const partes = fechaStr.split(',')[0].split('/');
+        if (partes.length === 3) {
+          fechaMov = new Date(partes[2], partes[1] - 1, partes[0]);
         }
         
         const esSemanaActual = !isNaN(fechaMov.getTime()) && fechaMov >= inicioLunes && fechaMov <= finDomingo;
@@ -549,7 +551,7 @@ async function generarDatosCorteSemanal(obraBuscada) {
   }
 }
 
-// DRIVE - UNIFICACIÓN DE CARPETAS Y PREVENCIÓN DE DUPLICADOS
+// DRIVE - UNIFICACIÓN DE CARPETAS
 async function obtenerOcrearSubcarpetaObra(nombreObra) {
   if (!drive || !DRIVE_FOLDER_EXTRAS_ID) return DRIVE_FOLDER_EXTRAS_ID;
   try {
@@ -838,9 +840,11 @@ async function actualizarEstatusTrabajoExtra(idExtra, nuevoEstatus) {
   }
 }
 
+// ALTA DE TRABAJADORES (CON FECHA Y USUARIO)
 async function guardarTrabajador(datos) {
   if (!sheets || !SPREADSHEET_PERSONAL_ID) return;
   try {
+    const fechaHora = new Date().toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City' });
     const filaDestino = await obtenerSiguienteFilaDisponible(SPREADSHEET_PERSONAL_ID, 'PLANTILLA_PERSONAL!C:C');
     const numFila = filaDestino - 1;
 
@@ -851,12 +855,14 @@ async function guardarTrabajador(datos) {
       datos.obra,
       datos.tipo,
       datos.sueldo,
-      'ACTIVO 🟢'
+      'ACTIVO 🟢',
+      fechaHora,
+      datos.usuario
     ]];
 
     await sheets.spreadsheets.values.update({
       spreadsheetId: SPREADSHEET_PERSONAL_ID,
-      range: `PLANTILLA_PERSONAL!A${filaDestino}:G${filaDestino}`,
+      range: `PLANTILLA_PERSONAL!A${filaDestino}:I${filaDestino}`,
       valueInputOption: 'USER_ENTERED',
       requestBody: { values: valores }
     });
@@ -1855,6 +1861,31 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
+      // MANEJO DE CONTRATO AUTORIZADO (CORREGIDO)
+      if (respuestaId?.startsWith('CTROBRA_')) {
+        const obraMap = {
+          'CTROBRA_Pelicano': 'Suc. Pelicano',
+          'CTROBRA_Caldera': 'Suc. Caldera',
+          'CTROBRA_Nativitas': 'Suc. Nativitas',
+          'CTROBRA_Salud': 'Suc. Salud',
+          'CTROBRA_Otro': 'Suc. Otro'
+        };
+        const sesion = sesiones[from];
+        if (sesion) {
+          sesion.obra = obraMap[respuestaId] || 'Suc. Otro';
+          sesion.categoria = '20) VARIOS';
+          sesion.metodo = 'Transferencia';
+          sesion.estatusFactura = 'No Requiere 🔴';
+
+          await guardarEnSheets(sesion);
+
+          await enviarTexto(from, `✅ *Contrato Autorizado Guardado con Éxito*\n\n🆔 *ID:* ${sesion.idMovimiento}\n👷‍♂️ *Contratista:* ${sesion.contratista}\n🏗️ *Sucursal:* ${sesion.obra}\n💵 *Monto Total Contratado:* $${sesion.monto.toFixed(2)}\n👤 *Registró:* ${sesion.usuario}`);
+          delete sesiones[from];
+        }
+        res.sendStatus(200);
+        return;
+      }
+
       // MENÚ INTERACTIVO
       if (respuestaId === 'MENU_PERSONAL') {
         await enviarBotones(from, '👷‍♂️ *Gestión de Personal Propio:*', [
@@ -2219,7 +2250,6 @@ app.post('/webhook', async (req, res) => {
       // MANEJO DE REPORTES Y GENERACIÓN DE PDF
       if (respuestaId?.startsWith('REP_')) {
         if (respuestaId === 'REP_GLOBAL') {
-          // RESPUESTA RÁPIDA DE TEXTO PARA CAJA CHICA EN EFECTIVO
           const rep = await calcularReporteSaldos(null);
           let txt = `📊 *Corte de Caja Chica General (Efectivo)*\n\n` +
             `💵 *Total Efectivo Ingresado:* $${rep.dotacionesCaja.toFixed(2)} MXN\n` +
@@ -2260,7 +2290,6 @@ app.post('/webhook', async (req, res) => {
 
           await enviarDocumentoWhatsApp(from, rutaPdfLocal, nombreArchivoPdf, captionTxt);
 
-          // Limpiar archivo local tras enviar
           if (fs.existsSync(rutaPdfLocal)) fs.unlinkSync(rutaPdfLocal);
         } else {
           await enviarTexto(from, '⚠️ No se pudieron obtener los datos para generar el reporte.');
