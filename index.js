@@ -12,7 +12,7 @@ const PORT = process.env.PORT || 3000;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 
 // IDs de Google Sheets y Drive
-const SPREADSHEET_ID = process.env.SPREADSHEET_ID; // Principal de Gastos
+const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 const SPREADSHEET_PRECIOS_ID = process.env.SPREADSHEET_PRECIOS_ID || '1Cscdoi4k3BkHLWPSB9nSxrGyZsshRXMKEtx2jbBcIQ0';
 const SPREADSHEET_EXTRAS_ID = process.env.SPREADSHEET_EXTRAS_ID || '1uO9QMilrhjooFgsqF7Nu7GA4WYEV94QZRNjwQj2Jz5o';
 const SPREADSHEET_PERSONAL_ID = process.env.SPREADSHEET_PERSONAL_ID || '1LU5V21D9wPILoq6HHEBqxJc9mE7EwDMJEnwpvQHnpFQ';
@@ -23,16 +23,18 @@ const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 
 const sesiones = {};
 
-// Mapeo de Números de Teléfono a Nombres
+// Números con Nivel Dirección Autorizado
+const ROLES_DIRECCION = ['3314856080', '3314107902', '3313008395'];
+
+// Mapeo de Números a Nombres
 const DIRECTORIO_USUARIOS = {
   '3336673972': 'Paty',
   '3314107902': 'Rigo',
   '3331747434': 'Miguelonches',
-  '3314856080': 'Gato',
+  '3314856080': 'Beto',
   '3313008395': 'Cris'
 };
 
-// Categorías agrupadas por Etapas de Obra
 const ETAPA_1_ESTRUCTURA = [
   { id: 'CAT_1', title: '01) PREELIMINARES' },
   { id: 'CAT_2', title: '02) ALBAÑILERIA MDO' },
@@ -69,7 +71,13 @@ const ETAPA_4_ADMIN = [
   { id: 'CAT_28', title: '28) RESIDENCIA DE OBRA' }
 ];
 
-const CONTRATISTAS_VALIDOS = ['tablaroca', 'aluminio y vidrio', 'aluminio', 'cortinas', 'pintura', 'cubiertas'];
+const CONTRATISTAS_VALIDOS = ['tablaroca', 'aluminio y vidrio', 'aluminio', 'cortinas', 'pintura', 'cubiertas', 'herreria', 'carpinteria'];
+
+function esDireccion(from) {
+  if (!from) return false;
+  const diez = from.replace(/\D/g, '').slice(-10);
+  return ROLES_DIRECCION.includes(diez);
+}
 
 function obtenerNombreUsuario(numeroFrom) {
   if (!numeroFrom) return 'Usuario WhatsApp';
@@ -192,7 +200,7 @@ async function enviarLista(to, textoBody, tituloBoton, tituloSeccion, opciones) 
 
 // FUNCIONALIDAD PARA ENVIAR PDF DE CORTE A WHATSAPP
 async function enviarDocumentoWhatsApp(to, rutaArchivo, nombreArchivo, caption) {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     if (!fs.existsSync(rutaArchivo)) return resolve();
 
     const FormData = require('form-data');
@@ -253,7 +261,6 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
     const stream = fs.createWriteStream(rutaSalida);
     doc.pipe(stream);
 
-    // 1. BUSCADOR MULTI-RUTA DE LOGO
     const rutasPosibles = [
       path.join(__dirname, 'logo.png'),
       path.join(__dirname, 'logo.PNG'),
@@ -264,12 +271,10 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
     ];
 
     let rutaLogoEncontrada = rutasPosibles.find(r => fs.existsSync(r));
-
     if (rutaLogoEncontrada) {
       doc.image(rutaLogoEncontrada, 35, 20, { width: 105 });
     }
 
-    // Encabezado
     doc.fillColor('#000000').fontSize(11).font('Helvetica-Bold')
        .text('CONSTRUCTIVE GALLERY ARCHITECTS', 180, 25, { align: 'right' });
     doc.fontSize(9).fillColor('#4A5568')
@@ -279,7 +284,6 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
 
     doc.moveTo(35, 70).lineTo(575, 70).strokeColor('#000000').lineWidth(1.5).stroke();
 
-    // 2. RESUMEN DE FLUJO SEMANAL POR FORMA DE PAGO
     let y = 80;
     doc.rect(35, y, 540, 16).fill('#000000');
     doc.fillColor('#FFFFFF').fontSize(8.5).font('Helvetica-Bold').text('1. RESUMEN DE FLUJO SEMANAL (LUNES A DOMINGO)', 40, y + 4);
@@ -300,7 +304,6 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
       doc.fillColor('#0F172A').fontSize(9.5).font('Helvetica-Bold').text(c.v, x + 5, y + 14, { width: anchoCaja - 10, align: 'center' });
     });
 
-    // 3. COMPARATIVO DE GASTOS SEMANALES POR CATEGORÍA / PARTIDA
     y += 36;
     doc.rect(35, y, 540, 16).fill('#000000');
     doc.fillColor('#FFFFFF').fontSize(8.5).font('Helvetica-Bold').text('2. DESGLOSE DE GASTOS SEMANALES VS ACUMULADO POR CATEGORÍA', 40, y + 4);
@@ -332,14 +335,12 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
       y += 12;
     }
 
-    // Fila Totales
     doc.rect(35, y, 540, 13).fill('#F1F5F9');
     doc.fillColor('#0F172A').font('Helvetica-Bold').fontSize(7.5);
     doc.text('TOTAL GENERAL ACUMULADO DE OBRA', 40, y + 3);
     doc.text(`$${datos.semanaTotal.toFixed(2)}`, 300, y + 3, { width: 120, align: 'right' });
     doc.text(`$${datos.gastosTotal.toFixed(2)}`, 430, y + 3, { width: 140, align: 'right' });
 
-    // 4. TABLA DETALLADA DE CONTRATISTAS Y DESTAJOS
     y += 20;
     doc.rect(35, y, 540, 16).fill('#000000');
     doc.fillColor('#FFFFFF').fontSize(8.5).font('Helvetica-Bold').text('3. ESTADO DE CUENTA DETALLADO DE CONTRATISTAS', 40, y + 4);
@@ -375,7 +376,6 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
       y += 12;
     }
 
-    // Fila Totales Contratistas
     doc.rect(35, y, 540, 13).fill('#F1F5F9');
     doc.fillColor('#0F172A').font('Helvetica-Bold').fontSize(7.5);
     doc.text('TOTAL CONTRATISTAS', 40, y + 3);
@@ -383,7 +383,6 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
     doc.fillColor('#166534').text(`$${datos.contratistasPagado.toFixed(2)}`, 360, y + 3, { width: 100, align: 'right' });
     doc.fillColor('#991B1B').text(`$${datos.contratistasDeuda.toFixed(2)}`, 470, y + 3, { width: 100, align: 'right' });
 
-    // 5. BALANCE FINANCIERO Y DISPONIBILIDAD EN BANCO / EFECTIVO (CORREGIDO ESPACIADO)
     y += 20;
     doc.rect(35, y, 540, 16).fill('#000000');
     doc.fillColor('#FFFFFF').fontSize(8.5).font('Helvetica-Bold').text('4. BALANCE FINANCIERO GENERAL Y DISPONIBILIDAD', 40, y + 4);
@@ -406,7 +405,6 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
     doc.font('Helvetica').text(`• En Cuenta de Banco (Transferencias/Tarjeta): $${datos.saldoBanco.toFixed(2)}`, 50, y + 15);
     doc.text(`• En Efectivo (Caja Chica y Campo): $${datos.saldoEfectivo.toFixed(2)}`, 320, y + 15);
 
-    // 6. FIRMA DIGITAL AUTÓGRAFA
     y += 45;
     const xFirma = 320;
     const anchoFirma = 240;
@@ -427,7 +425,7 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
   });
 }
 
-// CÁLCULO DE DATOS CORREGIDO DE LUNES A DOMINGO (ZONA HORARIA MÉXICO)
+// CÁLCULO DE DATOS CORREGIDO DE LUNES A DOMINGO
 async function generarDatosCorteSemanal(obraBuscada) {
   if (!sheets || !SPREADSHEET_ID) return null;
   try {
@@ -437,7 +435,6 @@ async function generarDatosCorteSemanal(obraBuscada) {
     });
     const filas = res.data.values || [];
 
-    // Lógica para obtener el Lunes 00:00 al Domingo 23:59 con tiempo MX
     const ahora = new Date();
     const diaSemana = ahora.getDay();
     const diferenciaLunes = diaSemana === 0 ? 6 : diaSemana - 1;
@@ -471,7 +468,6 @@ async function generarDatosCorteSemanal(obraBuscada) {
       if (estatus.includes('CANCELADO')) continue;
 
       if (!obraBuscada || obra.toLowerCase() === obraBuscada.toLowerCase()) {
-        // Conversión flexible de fecha
         let fechaMov = new Date(fechaStr);
         const partes = fechaStr.split(',')[0].split('/');
         if (partes.length === 3) {
@@ -551,7 +547,96 @@ async function generarDatosCorteSemanal(obraBuscada) {
   }
 }
 
-// DRIVE - UNIFICACIÓN DE CARPETAS
+// SEMÁFORO DE SOBREGIRO DE CONTRATISTA
+async function verificarSobregiroContratista(obra, categoria, concepto, montoNuevo) {
+  if (!sheets || !SPREADSHEET_ID) return null;
+  try {
+    const textoComp = `${categoria} ${concepto}`.toLowerCase();
+    const contratista = CONTRATISTAS_VALIDOS.find(c => textoComp.includes(c));
+    if (!contratista) return null;
+
+    const rep = await calcularReporteContratistas(obra);
+    const datosC = rep[contratista];
+    if (!datosC || datosC.totalContrato <= 0) return null;
+
+    const totalPagadoFuturo = datosC.pagado + montoNuevo;
+    const porcentaje = (totalPagadoFuturo / datosC.totalContrato) * 100;
+
+    if (porcentaje > 100) {
+      const exceso = totalPagadoFuturo - datosC.totalContrato;
+      return `🚨 *ALERTA DE SOBREGIRO:* El contratista de *${contratista.toUpperCase()}* ha superado su contrato por $${exceso.toFixed(2)} (${porcentaje.toFixed(1)}% pagado).`;
+    } else if (porcentaje >= 90) {
+      return `🟡 *AVISO PREVENTIVO:* El contratista de *${contratista.toUpperCase()}* está al ${porcentaje.toFixed(1)}% de su contrato ($${totalPagadoFuturo.toFixed(2)} de $${datosC.totalContrato.toFixed(2)}).`;
+    }
+    return null;
+  } catch (e) {
+    return null;
+  }
+}
+
+// ÚLTIMOS GASTOS PARA CORRECCIÓN TÁCTIL
+async function obtenerUltimosGastos(obraFiltro) {
+  if (!sheets || !SPREADSHEET_ID) return [];
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: 'Hoja 1!A:I'
+    });
+    const filas = res.data.values || [];
+    const ultimos = [];
+
+    for (let i = filas.length - 1; i >= 1; i--) {
+      const fila = filas[i];
+      const id = fila[0] || '';
+      const obra = fila[2] || '';
+      const monto = fila[5] || '0';
+      const concepto = fila[6] || '';
+      const estatus = fila[8] || '';
+
+      if (!estatus.includes('CANCELADO') && !concepto.includes('Presupuesto Total Autorizado') && !concepto.includes('Total Autorizado')) {
+        if (!obraFiltro || obra.toLowerCase() === obraFiltro.toLowerCase()) {
+          ultimos.push({ filaIndex: i + 1, id, obra, concepto, monto });
+        }
+      }
+      if (ultimos.length >= 8) break;
+    }
+    return ultimos;
+  } catch (e) {
+    return [];
+  }
+}
+
+async function actualizarMontoGasto(filaIndex, nuevoMonto) {
+  if (!sheets || !SPREADSHEET_ID) return false;
+  try {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `Hoja 1!F${filaIndex}`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: [[nuevoMonto]] }
+    });
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+async function anularGastoPorFila(filaIndex) {
+  if (!sheets || !SPREADSHEET_ID) return false;
+  try {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `Hoja 1!F${filaIndex}:I${filaIndex}`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: [[0, 'ANULADO', '', '❌ CANCELADO']] }
+    });
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+// DRIVE
 async function obtenerOcrearSubcarpetaObra(nombreObra) {
   if (!drive || !DRIVE_FOLDER_EXTRAS_ID) return DRIVE_FOLDER_EXTRAS_ID;
   try {
@@ -571,7 +656,6 @@ async function obtenerOcrearSubcarpetaObra(nombreObra) {
     const folder = await drive.files.create({ resource: folderMetadata, fields: 'id' });
     return folder.data.id;
   } catch (error) {
-    console.error('❌ Error en Drive Subcarpeta Obra:', error.message);
     return DRIVE_FOLDER_EXTRAS_ID;
   }
 }
@@ -603,7 +687,6 @@ async function obtenerOcrearCarpetaTrabajoExtra(parentFolderId, idExtra, descrip
 
     return { folderId: folder.data.id, folderLink: folder.data.webViewLink };
   } catch (error) {
-    console.error('❌ Error creando carpeta de Trabajo Extra:', error.message);
     return { folderId: parentFolderId, folderLink: '' };
   }
 }
@@ -661,12 +744,11 @@ async function subirArchivoADrive(buffer, nombreArchivo, folderId, mimeType) {
 
     return file.data.webViewLink;
   } catch (error) {
-    console.error('❌ Error subiendo a Drive:', error.message);
     return 'Error Subida';
   }
 }
 
-// BUSCADOR DE PRIMERA FILA LIBRE
+// PRIMERA FILA LIBRE
 async function obtenerSiguienteFilaDisponible(spreadsheetId, hojaYColumna) {
   try {
     const res = await sheets.spreadsheets.values.get({
@@ -706,7 +788,6 @@ async function buscarTrabajadoresActivos(busqueda) {
     }
     return coincidencia;
   } catch (e) {
-    console.error('❌ Error buscando trabajadores:', e.message);
     return [];
   }
 }
@@ -737,7 +818,6 @@ async function guardarEnSheets(datos) {
       valueInputOption: 'USER_ENTERED',
       requestBody: { values: valores }
     });
-    console.log(`✅ Registrado en Sheets Principal: ${datos.idMovimiento}`);
   } catch (error) {
     console.error('❌ Error guardando en Sheets:', error.message);
   }
@@ -777,7 +857,6 @@ async function guardarTrabajoExtra(datos) {
       valueInputOption: 'USER_ENTERED',
       requestBody: { values: valores }
     });
-    console.log(`✅ Trabajo Extra registrado en Fila ${filaDestino}: ${datos.idExtra}`);
   } catch (error) {
     console.error('❌ Error guardando trabajo extra:', error.message);
   }
@@ -808,7 +887,6 @@ async function obtenerTrabajosExtrasPendientes() {
     }
     return pendientes;
   } catch (error) {
-    console.error('❌ Error obteniendo extras pendientes:', error.message);
     return [];
   }
 }
@@ -835,12 +913,10 @@ async function actualizarEstatusTrabajoExtra(idExtra, nuevoEstatus) {
     }
     return false;
   } catch (error) {
-    console.error('❌ Error actualizando estatus extra:', error.message);
     return false;
   }
 }
 
-// ALTA DE TRABAJADORES (CON FECHA Y USUARIO)
 async function guardarTrabajador(datos) {
   if (!sheets || !SPREADSHEET_PERSONAL_ID) return;
   try {
@@ -866,7 +942,6 @@ async function guardarTrabajador(datos) {
       valueInputOption: 'USER_ENTERED',
       requestBody: { values: valores }
     });
-    console.log(`✅ Trabajador registrado en Fila ${filaDestino}: ${datos.nombre}`);
   } catch (error) {
     console.error('❌ Error guardando trabajador:', error.message);
   }
@@ -893,7 +968,6 @@ async function darDeBajaTrabajadorPorFila(filaIndex) {
 
     return { nombre, obra, fechaBaja };
   } catch (error) {
-    console.error('❌ Error ejecutando baja por fila:', error.message);
     return null;
   }
 }
@@ -926,7 +1000,6 @@ async function guardarVisitaFamiliar(datos) {
       valueInputOption: 'USER_ENTERED',
       requestBody: { values: valores }
     });
-    console.log(`✅ Visita Familiar registrada en Fila ${filaDestino}: ${datos.nombre}`);
   } catch (error) {
     console.error('❌ Error guardando visita familiar:', error.message);
   }
@@ -956,9 +1029,8 @@ async function guardarPrecioHistorico(datos) {
       valueInputOption: 'USER_ENTERED',
       requestBody: { values: valores }
     });
-    console.log(`✅ Precio histórico registrado en Fila ${filaDestino}: ${datos.material}`);
   } catch (error) {
-    console.error('❌ Error guardando precio histórico:', error.message);
+    console.error('❌ Error guardando precio:', error.message);
   }
 }
 
@@ -990,7 +1062,6 @@ async function buscarHistoricoPrecios(materialBuscado) {
     resultados.sort((a, b) => a.precio - b.precio);
     return resultados;
   } catch (error) {
-    console.error('❌ Error buscando precios:', error.message);
     return [];
   }
 }
@@ -1025,7 +1096,6 @@ async function cancelarUltimoRegistro() {
     }
     return null;
   } catch (error) {
-    console.error('❌ Error cancelando registro:', error.message);
     return null;
   }
 }
@@ -1055,7 +1125,6 @@ async function obtenerMovimientosPendientes() {
     }
     return pendientes;
   } catch (error) {
-    console.error('❌ Error obteniendo pendientes:', error.message);
     return [];
   }
 }
@@ -1082,7 +1151,6 @@ async function marcarComoFacturado(idMovimiento) {
     }
     return false;
   } catch (error) {
-    console.error('❌ Error actualizando estatus factura:', error.message);
     return false;
   }
 }
@@ -1128,7 +1196,6 @@ async function calcularReporteSaldos(obraBuscada) {
       facturadoEfectivo
     };
   } catch (error) {
-    console.error('❌ Error en reporte saldos:', error.message);
     return { dotacionesCaja: 0, egresosEfectivo: 0, cajaDisponible: 0, facturadoEfectivo: 0 };
   }
 }
@@ -1168,7 +1235,6 @@ async function calcularReporteContratistas(obraBuscada) {
     }
     return resultado;
   } catch (error) {
-    console.error('❌ Error calculando contratistas:', error.message);
     return {};
   }
 }
@@ -1207,41 +1273,68 @@ async function calcularReportePresupuestos() {
     }
     return resultado;
   } catch (error) {
-    console.error('❌ Error calculando presupuestos:', error.message);
     return {};
   }
 }
 
+// MENÚ PRINCIPAL DINÁMICO POR ROL
 async function desplegarMenuPrincipal(from) {
-  const opciones = [
-    { id: 'MENU_PERSONAL', title: '👷‍♂️ Personal Propio', description: 'Altas, bajas y Visitas Familiares' },
-    { id: 'MENU_CONTRATISTAS', title: '🤝 Contratistas / Destajos', description: 'Asignación de contratos y consulta de saldos' },
-    { id: 'MENU_EXTRAS', title: '🔨 Trabajos Extras', description: 'Registro de extras y actualización de estatus' },
-    { id: 'MENU_PRESU', title: '🏦 Presupuestos e Ingresos', description: 'Presupuesto autorizado y cobro a clientes' },
-    { id: 'MENU_PRECIOS', title: '🏷️ Precios Materiales', description: 'Registrar precio y comparar histórico' },
-    { id: 'MENU_REPORTES', title: '📊 Saldos y Reportes', description: 'Caja chica, avance y PDF de Corte Semanal' }
-  ];
+  const tieneAccesoDireccion = esDireccion(from);
 
-  await enviarLista(from, '🏗️ *MENÚ ADMINISTRATIVO DE OBRA*\n\nSelecciona la gestión que deseas realizar:', 'Abrir Menú', 'Gestión de Obra', opciones);
+  if (tieneAccesoDireccion) {
+    const opciones = [
+      { id: 'MENU_CARGA_OBRA', title: '🚀 Configurar / Cargar Obra', description: 'Asistente de Presupuesto, Bancos y Contratos' },
+      { id: 'MENU_REPORTES', title: '📊 Saldos y PDF de Corte', description: 'Caja chica, bancos y estado de cuenta oficial' },
+      { id: 'MENU_CORREGIR', title: '✏️ Corregir Últimos Gastos', description: 'Modificar monto o anular gasto con un toque' },
+      { id: 'MENU_CONTRATISTAS', title: '🤝 Contratistas / Destajos', description: 'Asignación de contratos y consulta de saldos' },
+      { id: 'MENU_PRESU', title: '🏦 Avance de Presupuestos', description: 'Presupuesto autorizado y cobro a clientes' },
+      { id: 'MENU_PERSONAL', title: '👷‍♂️ Personal Propio', description: 'Altas, bajas y Visitas Familiares' },
+      { id: 'MENU_EXTRAS', title: '🔨 Trabajos Extras', description: 'Registro de extras y evidencias a Drive' },
+      { id: 'MENU_PRECIOS', title: '🏷️ Precios Materiales', description: 'Registrar precio y comparar histórico' }
+    ];
+    await enviarLista(from, '🏗️ *PANEL DE CONTROL CENTRAL (DIRECCIÓN)*\n\nSelecciona la gestión que deseas realizar:', 'Abrir Menú', 'Dirección de Obra', opciones);
+  } else {
+    const opciones = [
+      { id: 'MENU_PERSONAL', title: '👷‍♂️ Personal Propio', description: 'Altas, bajas y Visitas Familiares' },
+      { id: 'MENU_EXTRAS', title: '🔨 Trabajos Extras', description: 'Registro de extras y evidencias con foto' },
+      { id: 'MENU_PRECIOS', title: '🏷️ Precios Materiales', description: 'Registrar precio y comparar cotizaciones' }
+    ];
+    await enviarLista(from, '🏗️ *MENÚ OPERATIVO DE OBRA*\n\nPara registrar un gasto rápido, escribe el concepto y monto (ej: `cemento 450`).\n\nO selecciona una gestión:', 'Abrir Menú', 'Operación de Campo', opciones);
+  }
 }
 
 async function desplegarGuiaComandos(from) {
-  const guiaComandos = `📝 *SINTAXIS DE COMANDOS Y AYUDA DE TEXTO:*\n\n` +
-    `• *Menú Interactivo:* \`menu\`, \`hola\`, \`inicio\` o \`ayuda\`\n` +
-    `• *Gasto Rápido:* \`[concepto] [monto]\` (ej: cemento 450)\n` +
-    `• *Generar PDF Corte:* \`corte\` o \`saldo\` (Lunes 00:00 hrs a Domingo 23:59 hrs)\n` +
-    `• *Alta Trabajador:* \`alta [nombre]\` (ej: alta Pedro Gomez)\n` +
-    `• *Baja Trabajador:* \`baja\` o \`baja [nombre]\` (Buscador Táctil Inteligente)\n` +
-    `• *Visita Familiar:* \`visita [nombre] [monto]\` (ej: visita Pedro Gomez 800)\n` +
-    `• *Trabajos Extras:* \`extra\` o \`trabajos extras\` (Fotos/Videos)\n` +
-    `• *Estatus Extras:* \`extras pendientes\`\n` +
-    `• *Ingreso Caja Chica:* \`caja [monto]\` (ej: caja 1000)\n` +
-    `• *Contratistas:* \`contratistas\`\n` +
-    `• *Precios Materiales:* \`precio [mat] [monto]\` (ej: precio varilla 195)\n` +
-    `• *Comparar Precios:* \`comparar [mat]\` (ej: comparar varilla)\n` +
-    `• *Cancelar Último:* \`cancelar\``;
+  const tieneAccesoDireccion = esDireccion(from);
 
-  await enviarTexto(from, guiaComandos);
+  if (tieneAccesoDireccion) {
+    const guia = `📝 *COMANDOS Y ACCESOS (DIRECCIÓN):*\n\n` +
+      `• *Menú Completo:* \`menu\`, \`hola\`, \`inicio\` o \`ayuda\`\n` +
+      `• *Cargar/Configurar Obra:* \`cargar obra\` o \`configurar\`\n` +
+      `• *Generar PDF Corte:* \`corte\` o \`saldo\`\n` +
+      `• *Corregir Gasto:* \`corregir\` o \`editar\` (Táctil)\n` +
+      `• *Gasto Rápido:* \`[concepto] [monto]\` (ej: cemento 450)\n` +
+      `• *Alta Trabajador:* \`alta [nombre]\`\n` +
+      `• *Baja Trabajador:* \`baja\` o \`baja [nombre]\`\n` +
+      `• *Visita Familiar:* \`visita [nombre] [monto]\`\n` +
+      `• *Trabajos Extras:* \`extra\`\n` +
+      `• *Dotar Caja Chica:* \`caja [monto]\`\n` +
+      `• *Ver Contratistas:* \`contratistas\`\n` +
+      `• *Precios Materiales:* \`precio [mat] [monto]\`\n` +
+      `• *Comparar Precios:* \`comparar [mat]\`\n` +
+      `• *Cancelar Último:* \`cancelar\``;
+    await enviarTexto(from, guia);
+  } else {
+    const guia = `📝 *GUÍA DE REGISTRO RÁPIDO DE CAMPO:*\n\n` +
+      `• *Registrar Gasto:* \`[concepto] [monto]\` (ej: \`cemento 450\`)\n` +
+      `• *Alta Trabajador:* \`alta [nombre]\` (ej: \`alta Pedro Gomez\`)\n` +
+      `• *Baja Trabajador:* \`baja\` (Buscador táctil)\n` +
+      `• *Visita Familiar:* \`visita [nombre] [monto]\`\n` +
+      `• *Trabajo Extra:* \`extra\` (Sube fotos/videos)\n` +
+      `• *Registrar Precio:* \`precio [mat] [monto]\`\n` +
+      `• *Comparar Precios:* \`comparar [mat]\`\n` +
+      `• *Cancelar Último:* \`cancelar\``;
+    await enviarTexto(from, guia);
+  }
 }
 
 async function procesarBusquedaBaja(from, busqueda) {
@@ -1253,7 +1346,7 @@ async function procesarBusquedaBaja(from, busqueda) {
     const t = coincidencias[0];
     const baja = await darDeBajaTrabajadorPorFila(t.filaIndex);
     if (baja) {
-      await enviarTexto(from, `🔴 *Trabajador Dado de Baja Correctamente*\n\n👤 *Nombre:* ${baja.nombre}\n🏗️ *Obra:* ${baja.obra}\n📅 *Fecha de Baja:* ${baja.fechaBaja}\n📌 *Estatus:* BAJA 🔴\n\n*Nota: El tipo y el sueldo original se mantienen intactos.*`);
+      await enviarTexto(from, `🔴 *Trabajador Dado de Baja Correctamente*\n\n👤 *Nombre:* ${baja.nombre}\n🏗️ *Obra:* ${baja.obra}\n📅 *Fecha de Baja:* ${baja.fechaBaja}\n📌 *Estatus:* BAJA 🔴`);
     } else {
       await enviarTexto(from, '⚠️ Error procesando la baja.');
     }
@@ -1282,6 +1375,7 @@ app.post('/webhook', async (req, res) => {
     const msg = body.entry[0].changes[0].value.messages[0];
     const from = msg.from;
     const nombreUsuario = obtenerNombreUsuario(from);
+    const tieneAccesoDireccion = esDireccion(from);
 
     // IMÁGENES O VIDEOS
     if (msg.type === 'image' || msg.type === 'video') {
@@ -1312,12 +1406,11 @@ app.post('/webhook', async (req, res) => {
           const driveLink = await subirArchivoADrive(buffer, nombreArchivo, sesionActual.subfolderId, mimeType);
           sesionActual.linksFotos.push(driveLink);
 
-          await enviarBotones(from, `📸 *${tipoEtiqueta} ${numArchivo} ("${palabraClave}") guardado en Drive.*\n\n¿Deseas agregar otra evidencia (foto/video) o finalizar?`, [
+          await enviarBotones(from, `📸 *${tipoEtiqueta} ${numArchivo} ("${palabraClave}") guardado en Drive.*\n\n¿Deseas agregar otra evidencia o finalizar?`, [
             { id: 'EXTRAFOTO_OTRA', title: '📸 Agregar Evidencia' },
             { id: 'EXTRAFOTO_FIN', title: '✅ Finalizar' }
           ]);
         } catch (e) {
-          console.error('❌ Error procesando archivo WhatsApp:', e.message);
           await enviarTexto(from, '⚠️ Error guardando el archivo. Intenta enviarlo nuevamente.');
         }
         res.sendStatus(200);
@@ -1341,11 +1434,56 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // 2) CANCELAR ÚLTIMO
+      // 2) CARGA / CONFIGURACIÓN GUIADA DE OBRA (SOLO DIRECCIÓN)
+      if (/^(cargar obra|configurar obra|configurar|carga inicial)$/i.test(textBody)) {
+        if (!tieneAccesoDireccion) {
+          await enviarTexto(from, '⚙️ *Módulo en consolidación administrativa.*\nEsta función se encuentra deshabilitada para este perfil. Si requieres configuraciones, consulta con administración central.');
+          res.sendStatus(200);
+          return;
+        }
+
+        sesiones[from] = { tipoAccion: 'CARGA_OBRA', usuario: nombreUsuario };
+        await enviarBotones(from, '🚀 *ASISTENTE DE CONFIGURACIÓN DE OBRA*\n\n🏗️ *¿Qué sucursal deseas configurar/cargar?*', [
+          { id: 'CARGAOBRA_Pelicano', title: 'Pelicano' },
+          { id: 'CARGAOBRA_Caldera', title: 'Caldera' },
+          { id: 'CARGAOBRA_Nativitas', title: 'Nativitas' }
+        ]);
+        await enviarBotones(from, '👇 *Otras Opciones:*', [
+          { id: 'CARGAOBRA_Salud', title: 'Salud' },
+          { id: 'CARGAOBRA_Otro', title: 'Otro' }
+        ]);
+        res.sendStatus(200);
+        return;
+      }
+
+      // 3) CORREGIR GASTOS TÁCTIL (DIRECCIÓN)
+      if (/^(corregir|editar|modificar|corregir gasto)$/i.test(textBody)) {
+        if (!tieneAccesoDireccion) {
+          await enviarTexto(from, '⚙️ *Módulo en consolidación administrativa.* Para cancelar el último gasto inmediato utiliza `cancelar`.');
+          res.sendStatus(200);
+          return;
+        }
+
+        const ultimos = await obtenerUltimosGastos(null);
+        if (ultimos.length === 0) {
+          await enviarTexto(from, '⚠️ No hay gastos recientes para corregir.');
+        } else {
+          const opciones = ultimos.map(u => ({
+            id: `EDITARGAS_${u.filaIndex}`,
+            title: `$${u.monto} - ${u.concepto.substring(0, 16)}`,
+            description: `${u.obra} (${u.id})`
+          }));
+          await enviarLista(from, '✏️ *CORRECCIÓN TÁCTIL DE GASTOS*\n\nToca el gasto que deseas modificar o anular:', 'Ver Gastos', 'Últimos Movimientos', opciones);
+        }
+        res.sendStatus(200);
+        return;
+      }
+
+      // 4) CANCELAR ÚLTIMO REGISTRO
       if (/^(cancelar|borrar ultimo)$/i.test(textBody)) {
         const cancelado = await cancelarUltimoRegistro();
         if (cancelado) {
-          await enviarTexto(from, `❌ *Último registro cancelado correctamente:*\n\n🆔 *ID:* ${cancelado.idMovimiento}\n📝 *Concepto:* ${cancelado.concepto}\n💵 *Monto original:* $${cancelado.monto}\n\n*El monto ha sido ajustado a $0.00 en Sheets.*`);
+          await enviarTexto(from, `❌ *Último registro cancelado correctamente:*\n\n🆔 *ID:* ${cancelado.idMovimiento}\n📝 *Concepto:* ${cancelado.concepto}\n💵 *Monto ajustado a $0.00 en Sheets.*`);
         } else {
           await enviarTexto(from, '⚠️ No se encontró ningún registro previo para cancelar.');
         }
@@ -1353,8 +1491,14 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // 3) REPORTES DIRECTOS Y CORTE EN PDF
+      // 5) REPORTES Y CORTE PDF (PROTEGIDO)
       if (/^(saldo|corte|reporte|resumen)$/i.test(textBody)) {
+        if (!tieneAccesoDireccion) {
+          await enviarTexto(from, '⚙️ *Módulo en consolidación administrativa.*\nEsta consulta de balance financiero se encuentra deshabilitada para este perfil. Si requieres un estado de cuenta, solicítalo con administración central.');
+          res.sendStatus(200);
+          return;
+        }
+
         await enviarBotones(from, '📊 *¿De qué Sucursal deseas generar el Reporte PDF?*', [
           { id: 'REP_Pelicano', title: 'Pelicano' },
           { id: 'REP_Caldera', title: 'Caldera' },
@@ -1368,6 +1512,48 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
+      if (/^(contratistas|destajos|contratos)$/i.test(textBody)) {
+        if (!tieneAccesoDireccion) {
+          await enviarTexto(from, '⚙️ *Módulo en consolidación administrativa.*\nConsulta de contratistas disponible únicamente con administración central.');
+          res.sendStatus(200);
+          return;
+        }
+
+        await enviarBotones(from, '👷‍♂️ *¿De qué Sucursal deseas ver los Contratistas?*', [
+          { id: 'REPCONTRATISTAS_Pelicano', title: 'Pelicano' },
+          { id: 'REPCONTRATISTAS_Caldera', title: 'Caldera' },
+          { id: 'REPCONTRATISTAS_Nativitas', title: 'Nativitas' }
+        ]);
+        await enviarBotones(from, '👇 *Otras Opciones:*', [
+          { id: 'REPCONTRATISTAS_Salud', title: 'Salud' },
+          { id: 'REPCONTRATISTAS_GLOBAL', title: 'Todas las Obras' }
+        ]);
+        res.sendStatus(200);
+        return;
+      }
+
+      if (/^(avance|cobrado|avance presupuestos)$/i.test(textBody)) {
+        if (!tieneAccesoDireccion) {
+          await enviarTexto(from, '⚙️ *Módulo en consolidación administrativa.* Consulta con administración central.');
+          res.sendStatus(200);
+          return;
+        }
+
+        const rep = await calcularReportePresupuestos();
+        let msgTexto = '🏦 *Avance de Presupuestos Autorizados (Farmacias):*\n\n';
+        Object.keys(rep).forEach(o => {
+          const t = rep[o];
+          const porCobrar = t.presupuestoTotal - t.liberado;
+          msgTexto += `🏗️ *${o}*\n` +
+            `  • Presupuesto Autorizado: $${t.presupuestoTotal.toFixed(2)}\n` +
+            `  • Liberado a la Fecha: $${t.liberado.toFixed(2)}\n` +
+            `  • Pendiente por Liberar: $${porCobrar.toFixed(2)}\n\n`;
+        });
+        await enviarTexto(from, msgTexto);
+        res.sendStatus(200);
+        return;
+      }
+
       if (/^(facturar|facturas|pendientes|ver pendientes)$/i.test(textBody)) {
         const pendientes = await obtenerMovimientosPendientes();
         if (pendientes.length === 0) {
@@ -1375,7 +1561,7 @@ app.post('/webhook', async (req, res) => {
         } else {
           const opciones = pendientes.map(p => ({
             id: `RESOLVER_${p.id}`,
-            title: p.concepto,
+            title: p.concepto.substring(0, 24),
             description: `${p.obra} | $${p.monto} (${p.id})`
           }));
           await enviarLista(from, '📋 *Gastos Pendientes de Factura:*', 'Ver Pendientes', 'Selecciona para resolver:', opciones);
@@ -1400,39 +1586,7 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      if (/^(contratistas|destajos|contratos)$/i.test(textBody)) {
-        await enviarBotones(from, '👷‍♂️ *¿De qué Sucursal deseas ver los Contratistas?*', [
-          { id: 'REPCONTRATISTAS_Pelicano', title: 'Pelicano' },
-          { id: 'REPCONTRATISTAS_Caldera', title: 'Caldera' },
-          { id: 'REPCONTRATISTAS_Nativitas', title: 'Nativitas' }
-        ]);
-        await enviarBotones(from, '👇 *Otras Opciones:*', [
-          { id: 'REPCONTRATISTAS_Salud', title: 'Salud' },
-          { id: 'REPCONTRATISTAS_GLOBAL', title: 'Todas las Obras' }
-        ]);
-        res.sendStatus(200);
-        return;
-      }
-
-      if (/^(avance|cobrado|avance presupuestos)$/i.test(textBody)) {
-        const rep = await calcularReportePresupuestos();
-        let msgTexto = '🏦 *Avance de Presupuestos Autorizados (Farmacias):*\n\n';
-        Object.keys(rep).forEach(o => {
-          const t = rep[o];
-          const porCobrar = t.presupuestoTotal - t.liberado;
-          msgTexto += `🏗️ *${o}*\n` +
-            `  • Presupuesto Autorizado: $${t.presupuestoTotal.toFixed(2)}\n` +
-            `  • Liberado a la Fecha: $${t.liberado.toFixed(2)}\n` +
-            `  • Pendiente por Liberar: $${porCobrar.toFixed(2)}\n\n`;
-        });
-        await enviarTexto(from, msgTexto);
-        res.sendStatus(200);
-        return;
-      }
-
-      // 4) COMANDOS DIRECTOS
-
-      // ALTA TRABAJADOR
+      // 6) COMANDOS OPERATIVOS
       const matchAltaTrabajador = textBody.match(/^alta\s+(.+)/i);
       if (matchAltaTrabajador) {
         const nombreTrabajador = matchAltaTrabajador[1].trim();
@@ -1457,7 +1611,6 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // BAJA TRABAJADOR
       const matchBajaGenerico = textBody.match(/^baja(\s+(.+))?/i);
       if (matchBajaGenerico) {
         const busqueda = matchBajaGenerico[2] ? matchBajaGenerico[2].trim() : '';
@@ -1466,7 +1619,6 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // VISITA FAMILIAR
       const matchVisita = textBody.match(/^visita\s+(.+)\s+(\d+(\.\d+)?)/i);
       if (matchVisita) {
         const nombreTrabajador = matchVisita[1].trim();
@@ -1492,7 +1644,6 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // TRABAJOS EXTRAS
       if (/^(extra|extras|trabajo extra|trabajos extras)$/i.test(textBody)) {
         sesiones[from] = {
           tipoAccion: 'TRABAJO_EXTRA',
@@ -1514,7 +1665,6 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // REGISTRO DE PRECIO
       const matchRegistroPrecio = textBody.match(/^precio\s+(.+)\s+(\d+(\.\d+)?)/i);
       if (matchRegistroPrecio) {
         const material = matchRegistroPrecio[1].trim();
@@ -1540,7 +1690,6 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // BUSCAR PRECIO
       const matchBusquedaPrecio = textBody.match(/^(comparar|buscar|precios)\s+(.+)/i);
       if (matchBusquedaPrecio) {
         const materialBuscado = matchBusquedaPrecio[2].trim();
@@ -1564,7 +1713,6 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // DOTACION CAJA
       const matchCaja = textBody.match(/^(caja|efectivo|dotacion|fondo)\s+(\d+(\.\d+)?)/i);
       if (matchCaja) {
         const montoCaja = parseFloat(matchCaja[2]);
@@ -1588,7 +1736,6 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // CONTRATO DIRECTO
       const matchContrato = textBody.match(/^contrato\s+(.+)\s+(\d+(\.\d+)?)/i);
       if (matchContrato) {
         const nombreContratista = matchContrato[1].trim();
@@ -1616,9 +1763,249 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // 5) SESIONES DE FLUJO ANTERIOR
+      // 7) FLUJOS CONVERSACIONALES ACTIVOS (EDICIÓN Y ASISTENTE)
       const sesionActual = sesiones[from];
 
+      // Flujo de edición de monto
+      if (sesionActual && sesionActual.esperandoNuevoMontoGasto) {
+        const nuevoMonto = parseFloat(textBody) || 0;
+        const ok = await actualizarMontoGasto(sesionActual.filaIndexEditar, nuevoMonto);
+        delete sesionActual.esperandoNuevoMontoGasto;
+        delete sesionActual.filaIndexEditar;
+
+        if (ok) {
+          await enviarTexto(from, `✅ *Monto actualizado con éxito a:* $${nuevoMonto.toFixed(2)} MXN\n*Los balances y reportes se han recalculado.*`);
+        } else {
+          await enviarTexto(from, '⚠️ No se pudo actualizar el monto.');
+        }
+        delete sesiones[from];
+        res.sendStatus(200);
+        return;
+      }
+
+      // Flujo del Asistente de Carga de Obra
+      if (sesionActual && sesionActual.tipoAccion === 'CARGA_OBRA') {
+        const montoNum = parseFloat(textBody) || 0;
+
+        if (sesionActual.esperandoPresupuestoTotal) {
+          sesionActual.presupuestoTotal = montoNum;
+          delete sesionActual.esperandoPresupuestoTotal;
+
+          await guardarEnSheets({
+            idMovimiento: 'INI-' + Date.now().toString().slice(-6),
+            obra: sesionActual.obra,
+            metodo: 'Transferencia',
+            subMetodo: '',
+            categoria: '20) VARIOS',
+            monto: sesionActual.presupuestoTotal,
+            concepto: 'Presupuesto Total Autorizado',
+            usuario: nombreUsuario,
+            estatusFactura: 'No Requiere 🔴',
+            linkFactura: 'N/A'
+          });
+
+          if (sesionActual.modoCarga === 'AVANZADA') {
+            sesionActual.esperandoCobradoCliente = true;
+            await enviarTexto(from, `💰 *Presupuesto registrado:* $${montoNum.toFixed(2)}\n\n¿Cuánto dinero ha *liberado/pagado el cliente* a la fecha? (Escribe el monto):`);
+          } else {
+            sesionActual.esperandoAnticipo = true;
+            await enviarTexto(from, `💰 *Presupuesto registrado:* $${montoNum.toFixed(2)}\n\n¿Cuánto dinero entró de *anticipo inicial*? (Escribe el monto):`);
+          }
+          res.sendStatus(200);
+          return;
+        }
+
+        if (sesionActual.esperandoAnticipo || sesionActual.esperandoCobradoCliente) {
+          sesionActual.liberadoCliente = montoNum;
+          delete sesionActual.esperandoAnticipo;
+          delete sesionActual.esperandoCobradoCliente;
+
+          if (montoNum > 0) {
+            await guardarEnSheets({
+              idMovimiento: 'LIB-' + Date.now().toString().slice(-6),
+              obra: sesionActual.obra,
+              metodo: 'Ingreso Presupuesto',
+              subMetodo: '',
+              categoria: '30) HONORARIOS',
+              monto: montoNum,
+              concepto: 'Ingreso Presupuesto Inicial Recibido',
+              usuario: nombreUsuario,
+              estatusFactura: 'No Requiere 🔴',
+              linkFactura: 'N/A'
+            });
+          }
+
+          if (sesionActual.modoCarga === 'AVANZADA') {
+            sesionActual.esperandoGastadoAcumulado = true;
+            await enviarTexto(from, `💵 *Ingreso registrado:* $${montoNum.toFixed(2)}\n\n¿Cuánto se lleva *gastado en total acumulado* en esta obra a la fecha? (Escribe el monto o 0):`);
+          } else {
+            sesionActual.esperandoSaldoBanamexBeto = true;
+            await enviarTexto(from, `🏦 *Desglose de Cuentas:*\n\n¿Cuánto dinero hay en *Banamex Beto* para esta obra? (Escribe el monto o 0):`);
+          }
+          res.sendStatus(200);
+          return;
+        }
+
+        if (sesionActual.esperandoGastadoAcumulado) {
+          sesionActual.gastadoAcumulado = montoNum;
+          delete sesionActual.esperandoGastadoAcumulado;
+
+          if (montoNum > 0) {
+            await guardarEnSheets({
+              idMovimiento: 'GASINI-' + Date.now().toString().slice(-6),
+              obra: sesionActual.obra,
+              metodo: 'Transferencia',
+              subMetodo: '',
+              categoria: '20) VARIOS',
+              monto: montoNum,
+              concepto: 'Gasto Consolidado Histórico Inicial de Obra',
+              usuario: nombreUsuario,
+              estatusFactura: 'No Requiere 🔴',
+              linkFactura: 'N/A'
+            });
+          }
+
+          sesionActual.esperandoSaldoBanamexBeto = true;
+          await enviarTexto(from, `🏦 *Desglose de Cuentas:*\n\n¿Cuánto dinero hay en *Banamex Beto* para esta obra? (Escribe el monto o 0):`);
+          res.sendStatus(200);
+          return;
+        }
+
+        // Cuestionario cuenta por cuenta
+        if (sesionActual.esperandoSaldoBanamexBeto) {
+          sesionActual.banamexBeto = montoNum;
+          delete sesionActual.esperandoSaldoBanamexBeto;
+          sesionActual.esperandoSaldoBBVARigo = true;
+          await enviarTexto(from, `¿Cuánto dinero hay en *BBVA Rigo*? (Escribe el monto o 0):`);
+          res.sendStatus(200);
+          return;
+        }
+
+        if (sesionActual.esperandoSaldoBBVARigo) {
+          sesionActual.bbvaRigo = montoNum;
+          delete sesionActual.esperandoSaldoBBVARigo;
+          sesionActual.esperandoSaldoBBVABeto = true;
+          await enviarTexto(from, `¿Cuánto dinero hay en *BBVA Beto*? (Escribe el monto o 0):`);
+          res.sendStatus(200);
+          return;
+        }
+
+        if (sesionActual.esperandoSaldoBBVABeto) {
+          sesionActual.bbvaBeto = montoNum;
+          delete sesionActual.esperandoSaldoBBVABeto;
+          sesionActual.esperandoSaldoNU = true;
+          await enviarTexto(from, `¿Cuánto dinero hay en *Tarjeta NU*? (Escribe el monto o 0):`);
+          res.sendStatus(200);
+          return;
+        }
+
+        if (sesionActual.esperandoSaldoNU) {
+          sesionActual.nu = montoNum;
+          delete sesionActual.esperandoSaldoNU;
+          sesionActual.esperandoSaldoDIDI = true;
+          await enviarTexto(from, `¿Cuánto dinero hay en *Tarjeta DIDI*? (Escribe el monto o 0):`);
+          res.sendStatus(200);
+          return;
+        }
+
+        if (sesionActual.esperandoSaldoDIDI) {
+          sesionActual.didi = montoNum;
+          delete sesionActual.esperandoSaldoDIDI;
+          sesionActual.esperandoSaldoMercadoPago = true;
+          await enviarTexto(from, `¿Cuánto dinero hay en *MercadoPago*? (Escribe el monto o 0):`);
+          res.sendStatus(200);
+          return;
+        }
+
+        if (sesionActual.esperandoSaldoMercadoPago) {
+          sesionActual.mercadoPago = montoNum;
+          delete sesionActual.esperandoSaldoMercadoPago;
+          sesionActual.esperandoSaldoCajaChica = true;
+          await enviarTexto(from, `💵 ¿Cuánto efectivo disponible hay en *Caja Chica / Campo* para esta obra? (Escribe el monto o 0):`);
+          res.sendStatus(200);
+          return;
+        }
+
+        if (sesionActual.esperandoSaldoCajaChica) {
+          sesionActual.cajaChica = montoNum;
+          delete sesionActual.esperandoSaldoCajaChica;
+
+          if (montoNum > 0) {
+            await guardarEnSheets({
+              idMovimiento: 'DOTINI-' + Date.now().toString().slice(-6),
+              obra: sesionActual.obra,
+              metodo: 'Dotación Caja Chica',
+              subMetodo: '',
+              categoria: 'Fondo de Caja',
+              monto: montoNum,
+              concepto: 'Fondo Inicial Asignado a Caja Chica',
+              usuario: nombreUsuario,
+              estatusFactura: 'No Requiere 🔴',
+              linkFactura: 'N/A'
+            });
+          }
+
+          await enviarBotones(from, `✅ *Datos Financieros de ${sesionActual.obra} guardados con éxito.*\n\n🤝 ¿Deseas dar de alta contratos de contratistas/destajistas para esta obra?`, [
+            { id: 'CARGACONTRATO_SI', title: '➕ Agregar Contratista' },
+            { id: 'CARGACONTRATO_FIN', title: '✅ Finalizar Carga' }
+          ]);
+          res.sendStatus(200);
+          return;
+        }
+
+        // Bucle de contratistas en carga de obra
+        if (sesionActual.esperandoMontoContrato) {
+          sesionActual.montoContratoTemp = montoNum;
+          delete sesionActual.esperandoMontoContrato;
+          sesionActual.esperandoPagadoContrato = true;
+          await enviarTexto(from, `Monto de Contrato registrado: $${montoNum.toFixed(2)}\n\n¿Cuánto se le ha *pagado a la fecha* a este contratista? (Escribe el monto o 0 si no se ha pagado nada):`);
+          res.sendStatus(200);
+          return;
+        }
+
+        if (sesionActual.esperandoPagadoContrato) {
+          const pagadoTemp = montoNum;
+          delete sesionActual.esperandoPagadoContrato;
+
+          await guardarEnSheets({
+            idMovimiento: 'CTR-' + Date.now().toString().slice(-6),
+            obra: sesionActual.obra,
+            metodo: 'Transferencia',
+            subMetodo: '',
+            categoria: '20) VARIOS',
+            monto: sesionActual.montoContratoTemp,
+            concepto: `Contrato ${sesionActual.especialidadTemp.toUpperCase()} Total Autorizado`,
+            usuario: nombreUsuario,
+            estatusFactura: 'No Requiere 🔴',
+            linkFactura: 'N/A'
+          });
+
+          if (pagadoTemp > 0) {
+            await guardarEnSheets({
+              idMovimiento: 'PAGCTR-' + Date.now().toString().slice(-6),
+              obra: sesionActual.obra,
+              metodo: 'Transferencia',
+              subMetodo: '',
+              categoria: '20) VARIOS',
+              monto: pagadoTemp,
+              concepto: `Abono Histórico ${sesionActual.especialidadTemp.toUpperCase()}`,
+              usuario: nombreUsuario,
+              estatusFactura: 'No Requiere 🔴',
+              linkFactura: 'N/A'
+            });
+          }
+
+          const saldoPendiente = sesionActual.montoContratoTemp - pagadoTemp;
+          await enviarBotones(from, `✅ *Contratista (${sesionActual.especialidadTemp.toUpperCase()}) Registrado*\n• Contrato: $${sesionActual.montoContratoTemp.toFixed(2)}\n• Pagado: $${pagadoTemp.toFixed(2)}\n• Saldo Pendiente: $${saldoPendiente.toFixed(2)}\n\n¿Deseas agregar otro contratista?`, [
+            { id: 'CARGACONTRATO_SI', title: '➕ Agregar Otro' },
+            { id: 'CARGACONTRATO_FIN', title: '✅ Finalizar Obra' }
+          ]);
+          res.sendStatus(200);
+          return;
+        }
+      }
+
+      // Otros flujos anteriores
       if (sesionActual && sesionActual.esperandoNombreTrabajadorBaja) {
         delete sesionActual.esperandoNombreTrabajadorBaja;
         await procesarBusquedaBaja(from, textBody.trim());
@@ -1752,7 +2139,7 @@ app.post('/webhook', async (req, res) => {
         delete sesionActual.esperandoMontoExtra;
         sesionActual.esperandoFotosExtra = true;
 
-        await enviarBotones(from, `📸 *Monto registrado:* $${sesionActual.monto.toFixed(2)}\n\n*Por favor, envía la primera FOTO o VIDEO de evidencia por WhatsApp, o presiona el botón si no se requiere evidencia visual:*`, [
+        await enviarBotones(from, `📸 *Monto registrado:* $${sesionActual.monto.toFixed(2)}\n\n*Envía la primera FOTO o VIDEO de evidencia por WhatsApp, o presiona el botón:*`, [
           { id: 'EXTRAFOTO_OMITIR', title: '🚫 Sin Evidencia' }
         ]);
         res.sendStatus(200);
@@ -1789,13 +2176,13 @@ app.post('/webhook', async (req, res) => {
           usuario: sesionActual.usuario
         });
 
-        await enviarTexto(from, `✅ *Precio Histórico Guardado con Éxito*\n\n📍 *Obra/Sucursal:* ${sesionActual.obra}\n📝 *Material:* ${sesionActual.material.toUpperCase()}\n📐 *Unidad:* ${sesionActual.unidad}\n💵 *Precio:* $${sesionActual.precio.toFixed(2)}\n🏢 *Proveedor:* ${sesionActual.proveedor}\n👤 *Registró:* ${sesionActual.usuario}`);
+        await enviarTexto(from, `✅ *Precio Histórico Guardado con Éxito*\n\n📍 *Obra:* ${sesionActual.obra}\n📝 *Material:* ${sesionActual.material.toUpperCase()}\n📐 *Unidad:* ${sesionActual.unidad}\n💵 *Precio:* $${sesionActual.precio.toFixed(2)}\n🏢 *Proveedor:* ${sesionActual.proveedor}\n👤 *Registró:* ${sesionActual.usuario}`);
         delete sesiones[from];
         res.sendStatus(200);
         return;
       }
 
-      // 6) REGISTRO DEFAULT DE GASTO REGULAR
+      // 8) REGISTRO DEFAULT DE GASTO RÁPIDO
       const partes = textBody.split(/\s+/);
       const posibleMonto = parseFloat(partes[partes.length - 1]);
       let concepto = '';
@@ -1853,7 +2240,7 @@ app.post('/webhook', async (req, res) => {
         const baja = await darDeBajaTrabajadorPorFila(filaIndex);
 
         if (baja) {
-          await enviarTexto(from, `🔴 *Trabajador Dado de Baja Correctamente*\n\n👤 *Nombre:* ${baja.nombre}\n🏗️ *Obra:* ${baja.obra}\n📅 *Fecha de Baja:* ${baja.fechaBaja}\n📌 *Estatus:* BAJA 🔴\n\n*Nota: El tipo y sueldo original se conservaron intactos en Sheets.*`);
+          await enviarTexto(from, `🔴 *Trabajador Dado de Baja Correctamente*\n\n👤 *Nombre:* ${baja.nombre}\n🏗️ *Obra:* ${baja.obra}\n📅 *Fecha de Baja:* ${baja.fechaBaja}\n📌 *Estatus:* BAJA 🔴`);
         } else {
           await enviarTexto(from, '⚠️ Error ejecutando la baja.');
         }
@@ -1861,7 +2248,131 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // MANEJO DE CONTRATO AUTORIZADO (CORREGIDO)
+      // CORRECCIÓN TÁCTIL DE GASTOS
+      if (respuestaId?.startsWith('EDITARGAS_')) {
+        const filaIndex = parseInt(respuestaId.replace('EDITARGAS_', ''));
+        sesiones[from] = { filaIndexEditar: filaIndex };
+
+        await enviarBotones(from, `✏️ *Opciones para el gasto seleccionado:*\n\n¿Qué acción deseas realizar?`, [
+          { id: 'ACCIONEDIT_MONTO', title: '💵 Cambiar Monto' },
+          { id: 'ACCIONEDIT_ANULAR', title: '❌ Anular / Borrar' }
+        ]);
+        res.sendStatus(200);
+        return;
+      }
+
+      if (respuestaId === 'ACCIONEDIT_MONTO') {
+        const sesion = sesiones[from];
+        if (sesion && sesion.filaIndexEditar) {
+          sesion.esperandoNuevoMontoGasto = true;
+          await enviarTexto(from, '💵 *Escribe el nuevo monto correcto para este gasto:*');
+        }
+        res.sendStatus(200);
+        return;
+      }
+
+      if (respuestaId === 'ACCIONEDIT_ANULAR') {
+        const sesion = sesiones[from];
+        if (sesion && sesion.filaIndexEditar) {
+          const ok = await anularGastoPorFila(sesion.filaIndexEditar);
+          if (ok) {
+            await enviarTexto(from, '❌ *Gasto anulado y ajustado a $0.00 en Sheets.*');
+          } else {
+            await enviarTexto(from, '⚠️ Error al anular el gasto.');
+          }
+          delete sesiones[from];
+        }
+        res.sendStatus(200);
+        return;
+      }
+
+      // MENÚ DE ASISTENTE DE CARGA DE OBRA
+      if (respuestaId === 'MENU_CARGA_OBRA') {
+        sesiones[from] = { tipoAccion: 'CARGA_OBRA', usuario: nombreUsuario };
+        await enviarBotones(from, '🚀 *ASISTENTE DE CONFIGURACIÓN DE OBRA*\n\n🏗️ *¿Qué sucursal deseas configurar?*', [
+          { id: 'CARGAOBRA_Pelicano', title: 'Pelicano' },
+          { id: 'CARGAOBRA_Caldera', title: 'Caldera' },
+          { id: 'CARGAOBRA_Nativitas', title: 'Nativitas' }
+        ]);
+        await enviarBotones(from, '👇 *Otras Opciones:*', [
+          { id: 'CARGAOBRA_Salud', title: 'Salud' },
+          { id: 'CARGAOBRA_Otro', title: 'Otro' }
+        ]);
+        res.sendStatus(200);
+        return;
+      }
+
+      if (respuestaId?.startsWith('CARGAOBRA_')) {
+        const obraMap = {
+          'CARGAOBRA_Pelicano': 'Suc. Pelicano',
+          'CARGAOBRA_Caldera': 'Suc. Caldera',
+          'CARGAOBRA_Nativitas': 'Suc. Nativitas',
+          'CARGAOBRA_Salud': 'Suc. Salud',
+          'CARGAOBRA_Otro': 'Suc. Otro'
+        };
+        const sesion = sesiones[from] || { tipoAccion: 'CARGA_OBRA', usuario: nombreUsuario };
+        sesiones[from] = sesion;
+        sesion.obra = obraMap[respuestaId] || 'Suc. Otro';
+
+        await enviarBotones(from, `🏗️ *Obra:* ${sesion.obra}\n\n📌 *Selecciona la modalidad de carga:*`, [
+          { id: 'MODOCARGA_Nueva', title: '🆕 Obra Nueva (Desde Cero)' },
+          { id: 'MODOCARGA_Avanzada', title: '🏗️ Obra Avanzada (En Marcha)' }
+        ]);
+        res.sendStatus(200);
+        return;
+      }
+
+      if (respuestaId?.startsWith('MODOCARGA_')) {
+        const sesion = sesiones[from];
+        if (sesion) {
+          sesion.modoCarga = respuestaId === 'MODOCARGA_Nueva' ? 'NUEVA' : 'AVANZADA';
+          sesion.esperandoPresupuestoTotal = true;
+          await enviarTexto(from, `📋 *Configuración: ${sesion.obra}*\n\n💵 Escribe el *Presupuesto Total Autorizado* con el cliente:`);
+        }
+        res.sendStatus(200);
+        return;
+      }
+
+      if (respuestaId === 'CARGACONTRATO_SI') {
+        const sesion = sesiones[from];
+        if (sesion) {
+          await enviarBotones(from, '👷‍♂️ *Selecciona la especialidad del contratista:*', [
+            { id: 'ESPCONT_tablaroca', title: 'Tablaroca' },
+            { id: 'ESPCONT_aluminio y vidrio', title: 'Aluminio y Vidrio' },
+            { id: 'ESPCONT_pintura', title: 'Pintura' }
+          ]);
+          await enviarBotones(from, '👇 *Más Especialidades:*', [
+            { id: 'ESPCONT_cubiertas', title: 'Cubiertas' },
+            { id: 'ESPCONT_cortinas', title: 'Cortinas' },
+            { id: 'ESPCONT_herreria', title: 'Herrería' }
+          ]);
+        }
+        res.sendStatus(200);
+        return;
+      }
+
+      if (respuestaId?.startsWith('ESPCONT_')) {
+        const sesion = sesiones[from];
+        if (sesion) {
+          sesion.especialidadTemp = respuestaId.replace('ESPCONT_', '');
+          sesion.esperandoMontoContrato = true;
+          await enviarTexto(from, `👷‍♂️ *Especialidad:* ${sesion.especialidadTemp.toUpperCase()}\n\n💵 Escribe el *Monto Total del Contrato Cerrado*:`);
+        }
+        res.sendStatus(200);
+        return;
+      }
+
+      if (respuestaId === 'CARGACONTRATO_FIN') {
+        const sesion = sesiones[from];
+        if (sesion) {
+          await enviarTexto(from, `🎉 *¡Excelente! Configuración de ${sesion.obra} completada con éxito.*\n\nTodos los datos financieros, cuentas bancarias y contratos han quedado registrados y listos para los reportes.`);
+          delete sesiones[from];
+        }
+        res.sendStatus(200);
+        return;
+      }
+
+      // MANEJO DE CONTRATO AUTORIZADO DIRECTO
       if (respuestaId?.startsWith('CTROBRA_')) {
         const obraMap = {
           'CTROBRA_Pelicano': 'Suc. Pelicano',
@@ -1886,7 +2397,23 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // MENÚ INTERACTIVO
+      // SUBMENÚS GENERALES
+      if (respuestaId === 'MENU_CORREGIR') {
+        const ultimos = await obtenerUltimosGastos(null);
+        if (ultimos.length === 0) {
+          await enviarTexto(from, '⚠️ No hay gastos recientes para corregir.');
+        } else {
+          const opciones = ultimos.map(u => ({
+            id: `EDITARGAS_${u.filaIndex}`,
+            title: `$${u.monto} - ${u.concepto.substring(0, 16)}`,
+            description: `${u.obra} (${u.id})`
+          }));
+          await enviarLista(from, '✏️ *CORRECCIÓN TÁCTIL DE GASTOS*\n\nToca el gasto que deseas modificar o anular:', 'Ver Gastos', 'Últimos Movimientos', opciones);
+        }
+        res.sendStatus(200);
+        return;
+      }
+
       if (respuestaId === 'MENU_PERSONAL') {
         await enviarBotones(from, '👷‍♂️ *Gestión de Personal Propio:*', [
           { id: 'OPC_ALTA_EMP', title: '➕ Alta Trabajador' },
@@ -1898,9 +2425,35 @@ app.post('/webhook', async (req, res) => {
       }
 
       if (respuestaId === 'MENU_CONTRATISTAS') {
+        if (!tieneAccesoDireccion) {
+          await enviarTexto(from, '⚙️ *Módulo en consolidación administrativa.* Consulta con administración central.');
+          res.sendStatus(200);
+          return;
+        }
         await enviarBotones(from, '🤝 *Gestión de Contratistas:*', [
           { id: 'REPCONTRATISTAS_GLOBAL', title: '📊 Ver Saldos' }
         ]);
+        res.sendStatus(200);
+        return;
+      }
+
+      if (respuestaId === 'MENU_PRESU') {
+        if (!tieneAccesoDireccion) {
+          await enviarTexto(from, '⚙️ *Módulo en consolidación administrativa.* Consulta con administración central.');
+          res.sendStatus(200);
+          return;
+        }
+        const rep = await calcularReportePresupuestos();
+        let msgTexto = '🏦 *Avance de Presupuestos Autorizados (Farmacias):*\n\n';
+        Object.keys(rep).forEach(o => {
+          const t = rep[o];
+          const porCobrar = t.presupuestoTotal - t.liberado;
+          msgTexto += `🏗️ *${o}*\n` +
+            `  • Presupuesto Autorizado: $${t.presupuestoTotal.toFixed(2)}\n` +
+            `  • Liberado a la Fecha: $${t.liberado.toFixed(2)}\n` +
+            `  • Pendiente por Liberar: $${porCobrar.toFixed(2)}\n\n`;
+        });
+        await enviarTexto(from, msgTexto);
         res.sendStatus(200);
         return;
       }
@@ -1995,6 +2548,11 @@ app.post('/webhook', async (req, res) => {
       }
 
       if (respuestaId === 'MENU_REPORTES') {
+        if (!tieneAccesoDireccion) {
+          await enviarTexto(from, '⚙️ *Módulo en consolidación administrativa.* Consulta con administración central.');
+          res.sendStatus(200);
+          return;
+        }
         await enviarBotones(from, '📊 *Saldos y Reportes:*', [
           { id: 'REP_GLOBAL', title: '💰 Caja Chica (Efectivo)' },
           { id: 'OPC_VER_FAC', title: '📄 Facturas Pendientes' }
@@ -2003,7 +2561,6 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // SUBOPCIONES INTERACTIVAS
       if (respuestaId === 'OPC_ALTA_EMP') {
         sesiones[from] = {
           tipoAccion: 'ALTA_TRABAJADOR',
@@ -2059,7 +2616,7 @@ app.post('/webhook', async (req, res) => {
         } else {
           const opciones = pendientes.map(p => ({
             id: `RESOLVER_${p.id}`,
-            title: p.concepto,
+            title: p.concepto.substring(0, 24),
             description: `${p.obra} | $${p.monto} (${p.id})`
           }));
           await enviarLista(from, '📋 *Gastos Pendientes de Factura:*', 'Ver Pendientes', 'Selecciona para resolver:', opciones);
@@ -2175,7 +2732,7 @@ app.post('/webhook', async (req, res) => {
 
           const fechaProxima = new Date(Date.now() + (45 * 24 * 60 * 60 * 1000)).toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City' });
 
-          await enviarTexto(from, `✅ *Visita Familiar Registrada con Éxito*\n\n👤 *Trabajador:* ${sesion.nombre}\n🏗️ *Obra Afectada:* ${sesion.obra}\n💵 *Monto Apoyo:* $${sesion.monto.toFixed(2)}\n📅 *Próxima Visita Sugerida (+45 días):* ${fechaProxima}\n\n*El gasto de $${sesion.monto.toFixed(2)} fue registrado también en el Excel principal bajo la categoría 24) VIÁTICOS.*`);
+          await enviarTexto(from, `✅ *Visita Familiar Registrada con Éxito*\n\n👤 *Trabajador:* ${sesion.nombre}\n🏗️ *Obra Afectada:* ${sesion.obra}\n💵 *Monto Apoyo:* $${sesion.monto.toFixed(2)}\n📅 *Próxima Visita Sugerida (+45 días):* ${fechaProxima}`);
           delete sesiones[from];
         }
         res.sendStatus(200);
@@ -2247,8 +2804,14 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // MANEJO DE REPORTES Y GENERACIÓN DE PDF
+      // REPORTES Y PDF
       if (respuestaId?.startsWith('REP_')) {
+        if (!tieneAccesoDireccion) {
+          await enviarTexto(from, '⚙️ *Módulo en consolidación administrativa.* Consulta con administración central.');
+          res.sendStatus(200);
+          return;
+        }
+
         if (respuestaId === 'REP_GLOBAL') {
           const rep = await calcularReporteSaldos(null);
           let txt = `📊 *Corte de Caja Chica General (Efectivo)*\n\n` +
@@ -2300,6 +2863,12 @@ app.post('/webhook', async (req, res) => {
       }
 
       if (respuestaId?.startsWith('REPCONTRATISTAS_')) {
+        if (!tieneAccesoDireccion) {
+          await enviarTexto(from, '⚙️ *Módulo en consolidación administrativa.* Consulta con administración central.');
+          res.sendStatus(200);
+          return;
+        }
+
         const obraMap = {
           'REPCONTRATISTAS_Pelicano': 'Suc. Pelicano',
           'REPCONTRATISTAS_Caldera': 'Suc. Caldera',
@@ -2458,10 +3027,13 @@ app.post('/webhook', async (req, res) => {
           sesion.estatusFactura = 'No Requiere 🔴';
         }
 
+        // Verificación del semáforo de sobregiro
+        const alerta = await verificarSobregiroContratista(sesion.obra, sesion.categoria, sesion.concepto, sesion.monto);
+
         await guardarEnSheets(sesion);
 
         const metodoTexto = sesion.subMetodo ? `${sesion.metodo} (${sesion.subMetodo})` : sesion.metodo;
-        const resumen = `✅ *Gasto Registrado con Éxito*\n\n` +
+        let resumen = `✅ *Gasto Registrado con Éxito*\n\n` +
           `🆔 *ID:* ${sesion.idMovimiento}\n` +
           `👤 *Registró:* ${sesion.usuario}\n` +
           `📌 *Categoría:* ${sesion.categoria}\n` +
@@ -2470,6 +3042,10 @@ app.post('/webhook', async (req, res) => {
           `🏗️ *Obra:* ${sesion.obra}\n` +
           `💳 *Pago:* ${metodoTexto}\n` +
           `📄 *Factura:* ${sesion.estatusFactura}`;
+
+        if (alerta) {
+          resumen += `\n\n${alerta}`;
+        }
 
         await enviarTexto(from, resumen);
         delete sesiones[from];
