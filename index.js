@@ -68,7 +68,7 @@ const ETAPA_4_ADMIN = [
   { id: 'CAT_28', title: '28) RESIDENCIA DE OBRA' }
 ];
 
-const CONTRATISTAS_VALIDOS = ['tablaroca', 'aluminio y vidrio', 'aluminio', 'cortinas', 'pintura', 'cubiertas', 'herreria', 'carpinteria'];
+const CONTRATISTAS_VALIDOS = ['tablaroca', 'aluminio y vidrio', 'cortinas', 'pintura', 'cubiertas', 'herreria', 'carpinteria'];
 
 function formatoMoneda(monto) {
   const num = parseFloat(monto) || 0;
@@ -372,7 +372,7 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
     doc.fillColor('#166534').text(formatoMoneda(datos.contratistasPagado), 355, y + 3, { width: 105, align: 'right' });
     doc.fillColor(datos.contratistasDeuda > 0 ? '#991B1B' : '#0F172A').text(formatoMoneda(datos.contratistasDeuda), 465, y + 3, { width: 105, align: 'right' });
 
-    // 4. BALANCE FINANCIERO Y DESGLOSE CUENTA POR CUENTA
+    // 4. BALANCE FINANCIERO Y DESGLOSE EN CUENTAS
     y += 20;
     doc.rect(35, y, 540, 16).fill('#000000');
     doc.fillColor('#FFFFFF').fontSize(8.5).font('Helvetica-Bold').text('4. BALANCE FINANCIERO GENERAL Y DISPONIBILIDAD', 40, y + 4);
@@ -389,7 +389,7 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
     doc.fillColor('#166534').font('Helvetica-Bold').text('(=) SALDO TOTAL DISPONIBLE EN OBRA:', 40, y, { width: 180 });
     doc.text(formatoMoneda(datos.saldoDisponible), 205, y, { width: 90, align: 'right' });
 
-    // Caja con Desglose Cuenta por Cuenta
+    // Desglose Cuentas
     y += 18;
     doc.rect(35, y, 540, 48).fillAndStroke('#F8FAFC', '#CBD5E1');
     doc.fillColor('#0F172A').fontSize(7.5).font('Helvetica-Bold').text('DESGLOSE DETALLADO DE DISPONIBILIDAD EN CUENTAS:', 42, y + 4);
@@ -407,15 +407,21 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
     doc.text(`• En Efectivo (Caja Chica): ${formatoMoneda(datos.saldoEfectivo)}`, 385, y + 16);
     doc.text(`• Total en Bancos: ${formatoMoneda(datos.saldoBanco)}`, 385, y + 28);
 
-    // Firma
-    y += 65;
+    // FIRMA AUTÓGRAFA Y ESTILIZADA EN CURSIVA
+    y += 62;
     const xFirma = 320;
     const anchoFirma = 240;
 
-    doc.moveTo(xFirma, y).lineTo(xFirma + anchoFirma, y).strokeColor('#000000').lineWidth(1).stroke();
-    y += 5;
+    // Rúbrica en Cursiva Ejecutiva
+    doc.font('Times-Italic').fontSize(14).fillColor('#1E293B')
+       .text('Constructive Gallery Architects', xFirma, y - 10, { width: anchoFirma, align: 'center' });
+
+    doc.moveTo(xFirma, y + 10).lineTo(xFirma + anchoFirma, y + 10).strokeColor('#000000').lineWidth(1).stroke();
+    
+    y += 15;
     doc.fontSize(8).font('Helvetica-Bold').fillColor('#0F172A')
        .text('Administracion Constructive Gallery Architects', xFirma, y, { width: anchoFirma, align: 'center' });
+    
     y += 11;
     doc.fontSize(6.5).font('Helvetica').fillColor('#64748B')
        .text('Validacion y Firma Digital Autonoma', xFirma, y, { width: anchoFirma, align: 'center' });
@@ -474,6 +480,7 @@ async function generarDatosCorteSemanal(obraBuscada) {
       const estatus = fila[8] || '';
 
       if (estatus.includes('CANCELADO')) continue;
+      if (categoria.includes('00)')) continue; // Ignora registros de control para que no vicien gastos
 
       if (!obraBuscada || obra.toLowerCase() === obraBuscada.toLowerCase()) {
         let fechaMov = new Date(fechaStr);
@@ -484,7 +491,7 @@ async function generarDatosCorteSemanal(obraBuscada) {
         
         const esSemanaActual = !isNaN(fechaMov.getTime()) && fechaMov >= inicioLunes && fechaMov <= finDomingo;
 
-        // Rastrear saldos de cuentas iniciales
+        // Aperturas de Cuentas
         if (metodo.includes('Apertura Banamex Beto')) cuentas.banamexBeto += monto;
         else if (metodo.includes('Apertura BBVA Rigo')) cuentas.bbvaRigo += monto;
         else if (metodo.includes('Apertura BBVA Beto')) cuentas.bbvaBeto += monto;
@@ -492,7 +499,7 @@ async function generarDatosCorteSemanal(obraBuscada) {
         else if (metodo.includes('Apertura DIDI')) cuentas.didi += monto;
         else if (metodo.includes('Apertura MercadoPago')) cuentas.mercadoPago += monto;
 
-        // Rastrear egresos por cuenta
+        // Egresos por cuenta
         if (metodo.includes('Banamex Beto') && !metodo.includes('Apertura')) cuentas.banamexBeto -= monto;
         else if (metodo.includes('BBVA Rigo') && !metodo.includes('Apertura')) cuentas.bbvaRigo -= monto;
         else if (metodo.includes('BBVA Beto') && !metodo.includes('Apertura')) cuentas.bbvaBeto -= monto;
@@ -500,14 +507,13 @@ async function generarDatosCorteSemanal(obraBuscada) {
         else if (metodo.includes('DIDI') && !metodo.includes('Apertura')) cuentas.didi -= monto;
         else if (metodo.includes('MercadoPago') && !metodo.includes('Apertura')) cuentas.mercadoPago -= monto;
 
-        // Clasificación Presupuestos vs Gastos
         if (concepto.includes('presupuesto total autorizado')) {
-          // Registro informativo
+          // Informativo
         } else if (metodo.includes('Ingreso Presupuesto') || concepto.includes('ingreso presupuesto')) {
           ingresosTotal += monto;
         } else if (metodo.includes('Dotación Caja Chica')) {
           dotacionesCaja += monto;
-        } else if (!metodo.includes('Apertura') && !concepto.includes('total autorizado')) {
+        } else if (!metodo.includes('Apertura') && !concepto.includes('total autorizado') && !concepto.includes('abono inicial histórico')) {
           gastosTotal += monto;
 
           if (metodo.startsWith('Efectivo')) {
@@ -525,7 +531,7 @@ async function generarDatosCorteSemanal(obraBuscada) {
           }
         }
 
-        // Mapeo Universal de Contratistas
+        // Mapeo Único y Estricto de Contratistas
         CONTRATISTAS_VALIDOS.forEach(c => {
           if (concepto.includes(`contrato ${c}`) || concepto.includes(`total autorizado ${c}`) || concepto.includes(`contrato cerrado ${c}`)) {
             detalleContratistas[c].contrato += monto;
@@ -628,9 +634,10 @@ async function obtenerUltimosGastos(obraFiltro) {
       const obra = fila[2] || '';
       const monto = limpiarMonto(fila[5]);
       const concepto = fila[6] || '';
+      const categoria = fila[4] || '';
       const estatus = fila[8] || '';
 
-      if (!estatus.includes('CANCELADO') && !concepto.includes('Presupuesto Total Autorizado') && !concepto.includes('Total Autorizado') && !fila[3].includes('Apertura')) {
+      if (!estatus.includes('CANCELADO') && !categoria.includes('00)') && !fila[3].includes('Apertura')) {
         if (!obraFiltro || obra.toLowerCase() === obraFiltro.toLowerCase()) {
           ultimos.push({ filaIndex: i + 1, id, obra, concepto, monto });
         }
@@ -1208,7 +1215,7 @@ async function calcularReporteSaldos(obraBuscada) {
       const estatus = fila[8] || '';
 
       if (estatus.includes('CANCELADO')) continue;
-      if (metodo.includes('Apertura')) continue;
+      if (categoria.includes('00)')) continue;
 
       if (metodo.includes('Dotación Caja Chica')) {
         dotacionesCaja += monto;
@@ -1747,7 +1754,7 @@ app.post('/webhook', async (req, res) => {
           obra: 'Efectivo General',
           metodo: 'Dotación Caja Chica',
           subMetodo: '',
-          categoria: 'Fondo de Caja',
+          categoria: '00) FONDO CAJA',
           monto: montoCaja,
           concepto: 'Ingreso a Caja Chica Central (Efectivo)',
           usuario: nombreUsuario,
@@ -1806,7 +1813,7 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // ASISTENTE DE CARGA INICIAL (SINCRONIZADO CON HOJAS Y BANCOS)
+      // ASISTENTE DE CARGA INICIAL BLINDADO PARA EXCEL
       if (sesionActual && sesionActual.tipoAccion === 'CARGA_OBRA') {
         const montoNum = limpiarMonto(textBody);
 
@@ -1819,7 +1826,7 @@ app.post('/webhook', async (req, res) => {
             obra: sesionActual.obra,
             metodo: 'Ingreso Presupuesto',
             subMetodo: '',
-            categoria: '01) PREELIMINARES',
+            categoria: '00) CONTROL PRESUPUESTAL',
             monto: sesionActual.presupuestoTotal,
             concepto: 'Presupuesto Total Autorizado',
             usuario: nombreUsuario,
@@ -1849,7 +1856,7 @@ app.post('/webhook', async (req, res) => {
               obra: sesionActual.obra,
               metodo: 'Ingreso Presupuesto',
               subMetodo: '',
-              categoria: '30) HONORARIOS',
+              categoria: '00) INGRESO CLIENTE',
               monto: montoNum,
               concepto: 'Ingreso Presupuesto Inicial Recibido',
               usuario: nombreUsuario,
@@ -1904,7 +1911,7 @@ app.post('/webhook', async (req, res) => {
               obra: sesionActual.obra,
               metodo: 'Apertura Banamex Beto',
               subMetodo: 'Banamex Beto',
-              categoria: '20) VARIOS',
+              categoria: '00) APERTURA CUENTA',
               monto: montoNum,
               concepto: 'Fondo Inicial en Banamex Beto',
               usuario: nombreUsuario,
@@ -1929,7 +1936,7 @@ app.post('/webhook', async (req, res) => {
               obra: sesionActual.obra,
               metodo: 'Apertura BBVA Rigo',
               subMetodo: 'BBVA Rigo',
-              categoria: '20) VARIOS',
+              categoria: '00) APERTURA CUENTA',
               monto: montoNum,
               concepto: 'Fondo Inicial en BBVA Rigo',
               usuario: nombreUsuario,
@@ -1954,7 +1961,7 @@ app.post('/webhook', async (req, res) => {
               obra: sesionActual.obra,
               metodo: 'Apertura BBVA Beto',
               subMetodo: 'BBVA Beto',
-              categoria: '20) VARIOS',
+              categoria: '00) APERTURA CUENTA',
               monto: montoNum,
               concepto: 'Fondo Inicial en BBVA Beto',
               usuario: nombreUsuario,
@@ -1979,7 +1986,7 @@ app.post('/webhook', async (req, res) => {
               obra: sesionActual.obra,
               metodo: 'Apertura NU',
               subMetodo: 'NU',
-              categoria: '20) VARIOS',
+              categoria: '00) APERTURA CUENTA',
               monto: montoNum,
               concepto: 'Fondo Inicial en Tarjeta NU',
               usuario: nombreUsuario,
@@ -2004,7 +2011,7 @@ app.post('/webhook', async (req, res) => {
               obra: sesionActual.obra,
               metodo: 'Apertura DIDI',
               subMetodo: 'DIDI',
-              categoria: '20) VARIOS',
+              categoria: '00) APERTURA CUENTA',
               monto: montoNum,
               concepto: 'Fondo Inicial en Tarjeta DIDI',
               usuario: nombreUsuario,
@@ -2029,7 +2036,7 @@ app.post('/webhook', async (req, res) => {
               obra: sesionActual.obra,
               metodo: 'Apertura MercadoPago',
               subMetodo: 'MercadoPago',
-              categoria: '20) VARIOS',
+              categoria: '00) APERTURA CUENTA',
               monto: montoNum,
               concepto: 'Fondo Inicial en MercadoPago',
               usuario: nombreUsuario,
@@ -2054,7 +2061,7 @@ app.post('/webhook', async (req, res) => {
               obra: sesionActual.obra,
               metodo: 'Dotación Caja Chica',
               subMetodo: '',
-              categoria: 'Fondo de Caja',
+              categoria: '00) FONDO CAJA',
               monto: montoNum,
               concepto: 'Fondo Inicial Asignado a Caja Chica',
               usuario: nombreUsuario,
@@ -2089,7 +2096,7 @@ app.post('/webhook', async (req, res) => {
             obra: sesionActual.obra,
             metodo: 'Transferencia',
             subMetodo: '',
-            categoria: '20) VARIOS',
+            categoria: '00) CONTROL CONTRATOS',
             monto: sesionActual.montoContratoTemp,
             concepto: `Contrato ${sesionActual.especialidadTemp.toUpperCase()} Total Autorizado`,
             usuario: nombreUsuario,
@@ -2103,9 +2110,9 @@ app.post('/webhook', async (req, res) => {
               obra: sesionActual.obra,
               metodo: 'Transferencia',
               subMetodo: '',
-              categoria: '20) VARIOS',
+              categoria: '00) CONTROL CONTRATOS',
               monto: pagadoTemp,
-              concepto: `Abono ${sesionActual.especialidadTemp.toUpperCase()}`,
+              concepto: `Abono Inicial Histórico ${sesionActual.especialidadTemp.toUpperCase()}`,
               usuario: nombreUsuario,
               estatusFactura: 'No Requiere 🔴',
               linkFactura: 'N/A'
@@ -2496,7 +2503,7 @@ app.post('/webhook', async (req, res) => {
         const sesion = sesiones[from];
         if (sesion) {
           sesion.obra = obraMap[respuestaId] || 'Suc. Otro';
-          sesion.categoria = '20) VARIOS';
+          sesion.categoria = '00) CONTROL CONTRATOS';
           sesion.metodo = 'Transferencia';
           sesion.estatusFactura = 'No Requiere 🔴';
 
