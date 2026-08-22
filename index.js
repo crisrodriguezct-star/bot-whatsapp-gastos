@@ -65,7 +65,8 @@ const ETAPA_4_ADMIN = [
   { id: 'CAT_20', title: '20) VARIOS' },
   { id: 'CAT_26', title: '26) IMSS / ISN' },
   { id: 'CAT_27', title: '27) CONTABILIDAD' },
-  { id: 'CAT_28', title: '28) RESIDENCIA DE OBRA' }
+  { id: 'CAT_28', title: 'GASTO HISTORICO INICIAL' },
+  { id: 'CAT_29', title: '29) RESIDENCIA DE OBRA' }
 ];
 
 const CONTRATISTAS_VALIDOS = ['tablaroca', 'aluminio y vidrio', 'cortinas', 'pintura', 'cubiertas', 'herreria', 'carpinteria'];
@@ -407,8 +408,8 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
     doc.text(`• En Efectivo (Caja Chica): ${formatoMoneda(datos.saldoEfectivo)}`, 385, y + 16);
     doc.text(`• Total en Bancos: ${formatoMoneda(datos.saldoBanco)}`, 385, y + 28);
 
-    // FIRMA AUTÓGRAFA EXACTA Y PROPORCIONADA
-    y += 75;
+    // FIRMA AUTÓGRAFA PERFECTAMENTE ESPACIADA Y ALINEADA
+    y += 115;
     const xFirma = 350;
     const anchoFirma = 210;
 
@@ -421,7 +422,7 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
 
     let rutaFirmaEncontrada = rutasPosiblesFirma.find(r => fs.existsSync(r));
     if (rutaFirmaEncontrada) {
-      doc.image(rutaFirmaEncontrada, xFirma + 55, y - 48, { width: 95 });
+      doc.image(rutaFirmaEncontrada, xFirma + 55, y - 55, { width: 95 });
     }
 
     doc.moveTo(xFirma, y + 6).lineTo(xFirma + anchoFirma, y + 6).strokeColor('#000000').lineWidth(1).stroke();
@@ -641,7 +642,7 @@ async function obtenerUltimosGastos(obraFiltro) {
       const categoria = fila[4] || '';
       const estatus = fila[8] || '';
 
-      if (!estatus.includes('CANCELADO') && !categoria.includes('Control') && !fila[3].includes('Apertura') && !fila[3].includes('Ingreso Presupuesto')) {
+      if (!estatus.includes('CANCELADO') && !categoria.includes('Control') && !fila[3].includes('Apertura') && !fila[3].includes('Ingreso Presupuesto') && !fila[3].includes('Control Presupuestal')) {
         if (!obraFiltro || obra.toLowerCase() === obraFiltro.toLowerCase()) {
           ultimos.push({ filaIndex: i + 1, id, obra, concepto, monto });
         }
@@ -1891,7 +1892,7 @@ app.post('/webhook', async (req, res) => {
               obra: sesionActual.obra,
               metodo: 'Transferencia',
               subMetodo: '',
-              categoria: '20) VARIOS',
+              categoria: 'GASTO HISTORICO INICIAL',
               monto: montoNum,
               concepto: 'Gasto Consolidado Histórico Inicial de Obra',
               usuario: nombreUsuario,
@@ -3047,8 +3048,8 @@ app.post('/webhook', async (req, res) => {
 
         await enviarBotones(from, `👇 *Más Principales:*`, [
           { id: 'CAT_25', title: '25) DIESEL PLANTA' },
-          { id: 'CAT_29', title: '29) INDIRECTOS' },
-          { id: 'CAT_30', title: '30) HONORARIOS' }
+          { id: 'CAT_29', title: '29) RESIDENCIA DE OBRA' },
+          { id: 'CAT_30', title: '30) INDIRECTOS' }
         ]);
 
         await enviarBotones(from, `👇 *Otras Partidas:*`, [
@@ -3074,8 +3075,8 @@ app.post('/webhook', async (req, res) => {
           'CAT_9': '09) MATERIAL ESTRUCTURA METALICA',
           'CAT_12': '12) MATERIAL HERRERIA',
           'CAT_25': '25) DIESEL PLANTA',
-          'CAT_29': '29) INDIRECTOS',
-          'CAT_30': '30) HONORARIOS'
+          'CAT_29': '29) RESIDENCIA DE OBRA',
+          'CAT_30': '30) INDIRECTOS'
         };
 
         if (mapaDirecto[respuestaId]) {
@@ -3103,7 +3104,7 @@ app.post('/webhook', async (req, res) => {
           'HON_Casa': 'Casa'
         };
 
-        sesion.categoria = '30) HONORARIOS';
+        sesion.categoria = '31) HONORARIOS';
         sesion.concepto = `${sesion.concepto} (Honorarios a ${beneficiarioMap[respuestaId]})`;
 
         await desplegarFormasPago(from);
