@@ -408,7 +408,7 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
     doc.text(`• En Efectivo (Caja Chica): ${formatoMoneda(datos.saldoEfectivo)}`, 385, y + 16);
     doc.text(`• Total en Bancos: ${formatoMoneda(datos.saldoBanco)}`, 385, y + 28);
 
-    // FIRMA AUTÓGRAFA PERFECTAMENTE ESPACIADA Y ALINEADA
+    // FIRMA AUTÓGRAFA ESPACIADA Y ALINEADA SOBRE LA LÍNEA
     y += 115;
     const xFirma = 350;
     const anchoFirma = 210;
@@ -1259,7 +1259,7 @@ async function calcularReporteContratistas(obraBuscada) {
       const fila = filas[i];
       const obra = fila[2] || '';
       const concepto = (fila[6] || '').toLowerCase();
-      const categoria = (fila[4] || '').toLowerCase();
+      const categoria = (fila[4] || '').toUpperCase();
       const monto = limpiarMonto(fila[5]);
       const estatus = fila[8] || '';
 
@@ -1271,7 +1271,7 @@ async function calcularReporteContratistas(obraBuscada) {
 
         if (concepto.includes(`contrato ${c}`) || concepto.includes(`total autorizado ${c}`) || concepto.includes(`contrato cerrado ${c}`)) {
           resultado[c].totalContrato += monto;
-        } else if (concepto.includes(c) || categoria.includes(c)) {
+        } else if (concepto.includes(c) || categoria.includes(c.toUpperCase())) {
           if (!concepto.includes('total autorizado')) {
             resultado[c].pagado += monto;
           }
@@ -2097,14 +2097,17 @@ app.post('/webhook', async (req, res) => {
           const pagadoTemp = montoNum;
           delete sesionActual.esperandoPagadoContrato;
 
+          // GUARDAR CON CATEGORÍA EXACTA DE LA ESPECIALIDAD DEL CONTRATISTA
+          const especialidadUpper = sesionActual.especialidadTemp.toUpperCase();
+
           await guardarEnSheets({
             idMovimiento: 'CTR-' + Date.now().toString().slice(-6),
             obra: sesionActual.obra,
             metodo: 'Transferencia',
             subMetodo: '',
-            categoria: 'Control Contratos',
+            categoria: especialidadUpper,
             monto: sesionActual.montoContratoTemp,
-            concepto: `Contrato ${sesionActual.especialidadTemp.toUpperCase()} Total Autorizado`,
+            concepto: `Contrato ${especialidadUpper} Total Autorizado`,
             usuario: nombreUsuario,
             estatusFactura: 'No Requiere 🔴',
             linkFactura: 'N/A'
@@ -2116,9 +2119,9 @@ app.post('/webhook', async (req, res) => {
               obra: sesionActual.obra,
               metodo: 'Transferencia',
               subMetodo: '',
-              categoria: 'Control Contratos',
+              categoria: especialidadUpper,
               monto: pagadoTemp,
-              concepto: `Abono Inicial Histórico ${sesionActual.especialidadTemp.toUpperCase()}`,
+              concepto: `Abono Inicial Histórico ${especialidadUpper}`,
               usuario: nombreUsuario,
               estatusFactura: 'No Requiere 🔴',
               linkFactura: 'N/A'
@@ -2126,7 +2129,7 @@ app.post('/webhook', async (req, res) => {
           }
 
           const saldoPendiente = sesionActual.montoContratoTemp - pagadoTemp;
-          await enviarBotones(from, `✅ *Contratista (${sesionActual.especialidadTemp.toUpperCase()}) Registrado*\n• Contrato: ${formatoMoneda(sesionActual.montoContratoTemp)}\n• Pagado: ${formatoMoneda(pagadoTemp)}\n• Saldo Pendiente: ${formatoMoneda(saldoPendiente)}\n\n¿Deseas agregar otro contratista?`, [
+          await enviarBotones(from, `✅ *Contratista (${especialidadUpper}) Registrado*\n• Contrato: ${formatoMoneda(sesionActual.montoContratoTemp)}\n• Pagado: ${formatoMoneda(pagadoTemp)}\n• Saldo Pendiente: ${formatoMoneda(saldoPendiente)}\n\n¿Deseas agregar otro contratista?`, [
             { id: 'CARGACONTRATO_SI', title: '➕ Agregar Otro' },
             { id: 'CARGACONTRATO_FIN', title: '✅ Finalizar Obra' }
           ]);
@@ -2509,7 +2512,7 @@ app.post('/webhook', async (req, res) => {
         const sesion = sesiones[from];
         if (sesion) {
           sesion.obra = obraMap[respuestaId] || 'Suc. Otro';
-          sesion.categoria = 'Control Contratos';
+          sesion.categoria = sesion.especialidadTemp.toUpperCase();
           sesion.metodo = 'Transferencia';
           sesion.estatusFactura = 'No Requiere 🔴';
 
