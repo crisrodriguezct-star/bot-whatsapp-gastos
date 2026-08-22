@@ -249,14 +249,14 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
     const stream = fs.createWriteStream(rutaSalida);
     doc.pipe(stream);
 
-    const rutasPosibles = [
+    const rutasPosiblesLogo = [
       path.join(__dirname, 'logo.png'),
       path.join(__dirname, 'logo.PNG'),
       path.join(__dirname, 'Imagenes', 'logo.png'),
       path.join(__dirname, 'imagenes', 'logo.png')
     ];
 
-    let rutaLogoEncontrada = rutasPosibles.find(r => fs.existsSync(r));
+    let rutaLogoEncontrada = rutasPosiblesLogo.find(r => fs.existsSync(r));
     if (rutaLogoEncontrada) {
       doc.image(rutaLogoEncontrada, 35, 20, { width: 105 });
     }
@@ -407,17 +407,30 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
     doc.text(`• En Efectivo (Caja Chica): ${formatoMoneda(datos.saldoEfectivo)}`, 385, y + 16);
     doc.text(`• Total en Bancos: ${formatoMoneda(datos.saldoBanco)}`, 385, y + 28);
 
-    // FIRMA EJECUTIVA ELEGANTE Y ESPACIADA
-    y += 75;
-    const xFirma = 330;
-    const anchoFirma = 230;
+    // FIRMA AUTÓGRAFA EXACTA DE CGA CON IMAGEN O TRAZO
+    y += 65;
+    const xFirma = 340;
+    const anchoFirma = 220;
 
-    doc.font('Times-Italic').fontSize(15).fillColor('#0F172A')
-       .text('Constructive Gallery Architects', xFirma, y - 12, { width: anchoFirma, align: 'center' });
+    const rutasPosiblesFirma = [
+      path.join(__dirname, 'firma.png'),
+      path.join(__dirname, 'firma.PNG'),
+      path.join(__dirname, 'Imagenes', 'firma.png'),
+      path.join(__dirname, 'imagenes', 'firma.png'),
+      path.join(__dirname, 'Imagenes', 'firma.PNG')
+    ];
 
-    doc.moveTo(xFirma, y + 6).lineTo(xFirma + anchoFirma, y + 6).strokeColor('#000000').lineWidth(1).stroke();
+    let rutaFirmaEncontrada = rutasPosiblesFirma.find(r => fs.existsSync(r));
+    if (rutaFirmaEncontrada) {
+      doc.image(rutaFirmaEncontrada, xFirma + 15, y - 45, { width: 190 });
+    } else {
+      doc.font('Times-BoldItalic').fontSize(14).fillColor('#000000')
+         .text('Constructive Gallery Architects', xFirma, y - 10, { width: anchoFirma, align: 'center' });
+    }
+
+    doc.moveTo(xFirma, y + 10).lineTo(xFirma + anchoFirma, y + 10).strokeColor('#000000').lineWidth(1).stroke();
     
-    y += 10;
+    y += 14;
     doc.fontSize(8).font('Helvetica-Bold').fillColor('#0F172A')
        .text('Administración Constructive Gallery Architects', xFirma, y, { width: anchoFirma, align: 'center' });
     
@@ -489,7 +502,6 @@ async function generarDatosCorteSemanal(obraBuscada) {
         
         const esSemanaActual = !isNaN(fechaMov.getTime()) && fechaMov >= inicioLunes && fechaMov <= finDomingo;
 
-        // Aperturas de Cuentas
         if (metodo.includes('Apertura Banamex Beto')) cuentas.banamexBeto += monto;
         else if (metodo.includes('Apertura BBVA Rigo')) cuentas.bbvaRigo += monto;
         else if (metodo.includes('Apertura BBVA Beto')) cuentas.bbvaBeto += monto;
@@ -497,7 +509,6 @@ async function generarDatosCorteSemanal(obraBuscada) {
         else if (metodo.includes('Apertura DIDI')) cuentas.didi += monto;
         else if (metodo.includes('Apertura MercadoPago')) cuentas.mercadoPago += monto;
 
-        // Egresos por cuenta
         if (metodo.includes('Banamex Beto') && !metodo.includes('Apertura')) cuentas.banamexBeto -= monto;
         else if (metodo.includes('BBVA Rigo') && !metodo.includes('Apertura')) cuentas.bbvaRigo -= monto;
         else if (metodo.includes('BBVA Beto') && !metodo.includes('Apertura')) cuentas.bbvaBeto -= monto;
@@ -507,7 +518,7 @@ async function generarDatosCorteSemanal(obraBuscada) {
 
         if (concepto.includes('presupuesto total autorizado')) {
           // Informativo
-        } else if (metodo.includes('Ingreso Presupuesto') || concepto.includes('ingreso presupuesto') || categoria.includes('Ingreso Presupuesto')) {
+        } else if (metodo.includes('Ingreso Presupuesto') || concepto.includes('ingreso presupuesto')) {
           ingresosTotal += monto;
         } else if (metodo.includes('Dotación Caja Chica')) {
           dotacionesCaja += monto;
@@ -529,7 +540,6 @@ async function generarDatosCorteSemanal(obraBuscada) {
           }
         }
 
-        // Mapeo Estricto de Contratistas
         CONTRATISTAS_VALIDOS.forEach(c => {
           if (concepto.includes(`contrato ${c}`) || concepto.includes(`total autorizado ${c}`) || concepto.includes(`contrato cerrado ${c}`)) {
             detalleContratistas[c].contrato += monto;
@@ -1304,7 +1314,7 @@ async function calcularReportePresupuestos() {
       if (resultado[obra]) {
         if (concepto.includes('presupuesto total autorizado')) {
           resultado[obra].presupuestoTotal += monto;
-        } else if (metodo.includes('Ingreso Presupuesto') || concepto.includes('ingreso presupuesto') || categoria.includes('Ingreso Presupuesto')) {
+        } else if (metodo.includes('Ingreso Presupuesto') || concepto.includes('ingreso presupuesto')) {
           resultado[obra].liberado += monto;
         }
       }
@@ -1812,7 +1822,7 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // ASISTENTE DE CARGA INICIAL INTEGRADO CON EXCEL
+      // ASISTENTE DE CARGA DE OBRA INTEGRADO A EXCEL
       if (sesionActual && sesionActual.tipoAccion === 'CARGA_OBRA') {
         const montoNum = limpiarMonto(textBody);
 
@@ -1855,7 +1865,7 @@ app.post('/webhook', async (req, res) => {
               obra: sesionActual.obra,
               metodo: 'Ingreso Presupuesto',
               subMetodo: '',
-              categoria: 'Ingreso Presupuesto',
+              categoria: '01) PREELIMINARES',
               monto: montoNum,
               concepto: 'Ingreso Presupuesto Inicial Recibido',
               usuario: nombreUsuario,
@@ -1885,7 +1895,7 @@ app.post('/webhook', async (req, res) => {
               obra: sesionActual.obra,
               metodo: 'Transferencia',
               subMetodo: '',
-              categoria: 'Gasto Inicial Histórico',
+              categoria: '20) VARIOS',
               monto: montoNum,
               concepto: 'Gasto Consolidado Histórico Inicial de Obra',
               usuario: nombreUsuario,
