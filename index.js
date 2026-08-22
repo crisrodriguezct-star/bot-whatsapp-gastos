@@ -407,18 +407,27 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
     doc.text(`• En Efectivo (Caja Chica): ${formatoMoneda(datos.saldoEfectivo)}`, 385, y + 16);
     doc.text(`• Total en Bancos: ${formatoMoneda(datos.saldoBanco)}`, 385, y + 28);
 
-    // FIRMA AUTÓGRAFA Y ESTILIZADA EN CURSIVA
+    // FIRMA AUTÓGRAFA Y RÚBRICA VECTORIAL
     y += 62;
     const xFirma = 320;
     const anchoFirma = 240;
 
-    // Rúbrica en Cursiva Ejecutiva
-    doc.font('Times-Italic').fontSize(14).fillColor('#1E293B')
-       .text('Constructive Gallery Architects', xFirma, y - 10, { width: anchoFirma, align: 'center' });
+    // Trazo de rúbrica caligráfica profesional
+    doc.save();
+    doc.strokeColor('#1E3A8A').lineWidth(1.2);
+    doc.moveTo(xFirma + 35, y - 5)
+       .bezierCurveTo(xFirma + 50, y - 22, xFirma + 75, y + 5, xFirma + 95, y - 12)
+       .bezierCurveTo(xFirma + 120, y - 28, xFirma + 145, y + 8, xFirma + 170, y - 10)
+       .bezierCurveTo(xFirma + 190, y - 20, xFirma + 215, y - 2, xFirma + 225, y - 8)
+       .stroke();
+    doc.restore();
 
-    doc.moveTo(xFirma, y + 10).lineTo(xFirma + anchoFirma, y + 10).strokeColor('#000000').lineWidth(1).stroke();
+    doc.font('Times-BoldItalic').fontSize(12).fillColor('#0F172A')
+       .text('Constructive Gallery Architects', xFirma, y - 12, { width: anchoFirma, align: 'center' });
+
+    doc.moveTo(xFirma, y + 8).lineTo(xFirma + anchoFirma, y + 8).strokeColor('#000000').lineWidth(1).stroke();
     
-    y += 15;
+    y += 13;
     doc.fontSize(8).font('Helvetica-Bold').fillColor('#0F172A')
        .text('Administracion Constructive Gallery Architects', xFirma, y, { width: anchoFirma, align: 'center' });
     
@@ -480,7 +489,6 @@ async function generarDatosCorteSemanal(obraBuscada) {
       const estatus = fila[8] || '';
 
       if (estatus.includes('CANCELADO')) continue;
-      if (categoria.includes('00)')) continue; // Ignora registros de control para que no vicien gastos
 
       if (!obraBuscada || obra.toLowerCase() === obraBuscada.toLowerCase()) {
         let fechaMov = new Date(fechaStr);
@@ -509,11 +517,11 @@ async function generarDatosCorteSemanal(obraBuscada) {
 
         if (concepto.includes('presupuesto total autorizado')) {
           // Informativo
-        } else if (metodo.includes('Ingreso Presupuesto') || concepto.includes('ingreso presupuesto')) {
+        } else if (metodo.includes('Ingreso Presupuesto') || concepto.includes('ingreso presupuesto') || categoria.includes('INGRESO CLIENTE')) {
           ingresosTotal += monto;
         } else if (metodo.includes('Dotación Caja Chica')) {
           dotacionesCaja += monto;
-        } else if (!metodo.includes('Apertura') && !concepto.includes('total autorizado') && !concepto.includes('abono inicial histórico')) {
+        } else if (!metodo.includes('Apertura') && !categoria.includes('CONTROL') && !categoria.includes('APERTURA')) {
           gastosTotal += monto;
 
           if (metodo.startsWith('Efectivo')) {
@@ -531,7 +539,7 @@ async function generarDatosCorteSemanal(obraBuscada) {
           }
         }
 
-        // Mapeo Único y Estricto de Contratistas
+        // Mapeo Estricto de Contratistas
         CONTRATISTAS_VALIDOS.forEach(c => {
           if (concepto.includes(`contrato ${c}`) || concepto.includes(`total autorizado ${c}`) || concepto.includes(`contrato cerrado ${c}`)) {
             detalleContratistas[c].contrato += monto;
@@ -1215,9 +1223,9 @@ async function calcularReporteSaldos(obraBuscada) {
       const estatus = fila[8] || '';
 
       if (estatus.includes('CANCELADO')) continue;
-      if (categoria.includes('00)')) continue;
+      if (categoria.includes('00) APERTURA') || categoria.includes('00) CONTROL')) continue;
 
-      if (metodo.includes('Dotación Caja Chica')) {
+      if (metodo.includes('Dotación Caja Chica') || categoria.includes('00) FONDO CAJA')) {
         dotacionesCaja += monto;
       } else if (metodo.startsWith('Efectivo')) {
         if (!obraBuscada || obra.toLowerCase() === obraBuscada.toLowerCase()) {
@@ -1296,6 +1304,7 @@ async function calcularReportePresupuestos() {
       const fila = filas[i];
       const obra = fila[2] || '';
       const metodo = fila[3] || '';
+      const categoria = fila[4] || '';
       const concepto = (fila[6] || '').toLowerCase();
       const monto = limpiarMonto(fila[5]);
       const estatus = fila[8] || '';
@@ -1305,7 +1314,7 @@ async function calcularReportePresupuestos() {
       if (resultado[obra]) {
         if (concepto.includes('presupuesto total autorizado')) {
           resultado[obra].presupuestoTotal += monto;
-        } else if (metodo.includes('Ingreso Presupuesto') || concepto.includes('ingreso presupuesto')) {
+        } else if (metodo.includes('Ingreso Presupuesto') || concepto.includes('ingreso presupuesto') || categoria.includes('INGRESO CLIENTE')) {
           resultado[obra].liberado += monto;
         }
       }
@@ -1813,7 +1822,7 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // ASISTENTE DE CARGA INICIAL BLINDADO PARA EXCEL
+      // ASISTENTE DE CARGA INICIAL INTEGRADO
       if (sesionActual && sesionActual.tipoAccion === 'CARGA_OBRA') {
         const montoNum = limpiarMonto(textBody);
 
