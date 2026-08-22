@@ -407,33 +407,23 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
     doc.text(`• En Efectivo (Caja Chica): ${formatoMoneda(datos.saldoEfectivo)}`, 385, y + 16);
     doc.text(`• Total en Bancos: ${formatoMoneda(datos.saldoBanco)}`, 385, y + 28);
 
-    // FIRMA AUTÓGRAFA Y RÚBRICA VECTORIAL
-    y += 62;
-    const xFirma = 320;
-    const anchoFirma = 240;
+    // FIRMA EJECUTIVA ELEGANTE Y ESPACIADA
+    y += 75;
+    const xFirma = 330;
+    const anchoFirma = 230;
 
-    // Trazo de rúbrica caligráfica profesional
-    doc.save();
-    doc.strokeColor('#1E3A8A').lineWidth(1.2);
-    doc.moveTo(xFirma + 35, y - 5)
-       .bezierCurveTo(xFirma + 50, y - 22, xFirma + 75, y + 5, xFirma + 95, y - 12)
-       .bezierCurveTo(xFirma + 120, y - 28, xFirma + 145, y + 8, xFirma + 170, y - 10)
-       .bezierCurveTo(xFirma + 190, y - 20, xFirma + 215, y - 2, xFirma + 225, y - 8)
-       .stroke();
-    doc.restore();
-
-    doc.font('Times-BoldItalic').fontSize(12).fillColor('#0F172A')
+    doc.font('Times-Italic').fontSize(15).fillColor('#0F172A')
        .text('Constructive Gallery Architects', xFirma, y - 12, { width: anchoFirma, align: 'center' });
 
-    doc.moveTo(xFirma, y + 8).lineTo(xFirma + anchoFirma, y + 8).strokeColor('#000000').lineWidth(1).stroke();
+    doc.moveTo(xFirma, y + 6).lineTo(xFirma + anchoFirma, y + 6).strokeColor('#000000').lineWidth(1).stroke();
     
-    y += 13;
+    y += 10;
     doc.fontSize(8).font('Helvetica-Bold').fillColor('#0F172A')
-       .text('Administracion Constructive Gallery Architects', xFirma, y, { width: anchoFirma, align: 'center' });
+       .text('Administración Constructive Gallery Architects', xFirma, y, { width: anchoFirma, align: 'center' });
     
-    y += 11;
+    y += 10;
     doc.fontSize(6.5).font('Helvetica').fillColor('#64748B')
-       .text('Validacion y Firma Digital Autonoma', xFirma, y, { width: anchoFirma, align: 'center' });
+       .text('Validación y Firma Digital Autónoma', xFirma, y, { width: anchoFirma, align: 'center' });
 
     doc.end();
     stream.on('finish', () => resolve(rutaSalida));
@@ -517,11 +507,11 @@ async function generarDatosCorteSemanal(obraBuscada) {
 
         if (concepto.includes('presupuesto total autorizado')) {
           // Informativo
-        } else if (metodo.includes('Ingreso Presupuesto') || concepto.includes('ingreso presupuesto') || categoria.includes('INGRESO CLIENTE')) {
+        } else if (metodo.includes('Ingreso Presupuesto') || concepto.includes('ingreso presupuesto') || categoria.includes('Ingreso Presupuesto')) {
           ingresosTotal += monto;
         } else if (metodo.includes('Dotación Caja Chica')) {
           dotacionesCaja += monto;
-        } else if (!metodo.includes('Apertura') && !categoria.includes('CONTROL') && !categoria.includes('APERTURA')) {
+        } else if (!metodo.includes('Apertura') && !categoria.includes('Control') && !categoria.includes('Apertura')) {
           gastosTotal += monto;
 
           if (metodo.startsWith('Efectivo')) {
@@ -645,7 +635,7 @@ async function obtenerUltimosGastos(obraFiltro) {
       const categoria = fila[4] || '';
       const estatus = fila[8] || '';
 
-      if (!estatus.includes('CANCELADO') && !categoria.includes('00)') && !fila[3].includes('Apertura')) {
+      if (!estatus.includes('CANCELADO') && !categoria.includes('Control') && !fila[3].includes('Apertura')) {
         if (!obraFiltro || obra.toLowerCase() === obraFiltro.toLowerCase()) {
           ultimos.push({ filaIndex: i + 1, id, obra, concepto, monto });
         }
@@ -1223,9 +1213,9 @@ async function calcularReporteSaldos(obraBuscada) {
       const estatus = fila[8] || '';
 
       if (estatus.includes('CANCELADO')) continue;
-      if (categoria.includes('00) APERTURA') || categoria.includes('00) CONTROL')) continue;
+      if (categoria.includes('Apertura') || categoria.includes('Control')) continue;
 
-      if (metodo.includes('Dotación Caja Chica') || categoria.includes('00) FONDO CAJA')) {
+      if (metodo.includes('Dotación Caja Chica') || categoria.includes('Fondo Caja')) {
         dotacionesCaja += monto;
       } else if (metodo.startsWith('Efectivo')) {
         if (!obraBuscada || obra.toLowerCase() === obraBuscada.toLowerCase()) {
@@ -1314,7 +1304,7 @@ async function calcularReportePresupuestos() {
       if (resultado[obra]) {
         if (concepto.includes('presupuesto total autorizado')) {
           resultado[obra].presupuestoTotal += monto;
-        } else if (metodo.includes('Ingreso Presupuesto') || concepto.includes('ingreso presupuesto') || categoria.includes('INGRESO CLIENTE')) {
+        } else if (metodo.includes('Ingreso Presupuesto') || concepto.includes('ingreso presupuesto') || categoria.includes('Ingreso Presupuesto')) {
           resultado[obra].liberado += monto;
         }
       }
@@ -1763,7 +1753,7 @@ app.post('/webhook', async (req, res) => {
           obra: 'Efectivo General',
           metodo: 'Dotación Caja Chica',
           subMetodo: '',
-          categoria: '00) FONDO CAJA',
+          categoria: 'Fondo Caja',
           monto: montoCaja,
           concepto: 'Ingreso a Caja Chica Central (Efectivo)',
           usuario: nombreUsuario,
@@ -1822,7 +1812,7 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // ASISTENTE DE CARGA INICIAL INTEGRADO
+      // ASISTENTE DE CARGA INICIAL INTEGRADO CON EXCEL
       if (sesionActual && sesionActual.tipoAccion === 'CARGA_OBRA') {
         const montoNum = limpiarMonto(textBody);
 
@@ -1835,7 +1825,7 @@ app.post('/webhook', async (req, res) => {
             obra: sesionActual.obra,
             metodo: 'Ingreso Presupuesto',
             subMetodo: '',
-            categoria: '00) CONTROL PRESUPUESTAL',
+            categoria: 'Control Presupuestal',
             monto: sesionActual.presupuestoTotal,
             concepto: 'Presupuesto Total Autorizado',
             usuario: nombreUsuario,
@@ -1865,7 +1855,7 @@ app.post('/webhook', async (req, res) => {
               obra: sesionActual.obra,
               metodo: 'Ingreso Presupuesto',
               subMetodo: '',
-              categoria: '00) INGRESO CLIENTE',
+              categoria: 'Ingreso Presupuesto',
               monto: montoNum,
               concepto: 'Ingreso Presupuesto Inicial Recibido',
               usuario: nombreUsuario,
@@ -1895,7 +1885,7 @@ app.post('/webhook', async (req, res) => {
               obra: sesionActual.obra,
               metodo: 'Transferencia',
               subMetodo: '',
-              categoria: '29) INDIRECTOS',
+              categoria: 'Gasto Inicial Histórico',
               monto: montoNum,
               concepto: 'Gasto Consolidado Histórico Inicial de Obra',
               usuario: nombreUsuario,
@@ -1920,7 +1910,7 @@ app.post('/webhook', async (req, res) => {
               obra: sesionActual.obra,
               metodo: 'Apertura Banamex Beto',
               subMetodo: 'Banamex Beto',
-              categoria: '00) APERTURA CUENTA',
+              categoria: 'Apertura Cuenta',
               monto: montoNum,
               concepto: 'Fondo Inicial en Banamex Beto',
               usuario: nombreUsuario,
@@ -1945,7 +1935,7 @@ app.post('/webhook', async (req, res) => {
               obra: sesionActual.obra,
               metodo: 'Apertura BBVA Rigo',
               subMetodo: 'BBVA Rigo',
-              categoria: '00) APERTURA CUENTA',
+              categoria: 'Apertura Cuenta',
               monto: montoNum,
               concepto: 'Fondo Inicial en BBVA Rigo',
               usuario: nombreUsuario,
@@ -1970,7 +1960,7 @@ app.post('/webhook', async (req, res) => {
               obra: sesionActual.obra,
               metodo: 'Apertura BBVA Beto',
               subMetodo: 'BBVA Beto',
-              categoria: '00) APERTURA CUENTA',
+              categoria: 'Apertura Cuenta',
               monto: montoNum,
               concepto: 'Fondo Inicial en BBVA Beto',
               usuario: nombreUsuario,
@@ -1995,7 +1985,7 @@ app.post('/webhook', async (req, res) => {
               obra: sesionActual.obra,
               metodo: 'Apertura NU',
               subMetodo: 'NU',
-              categoria: '00) APERTURA CUENTA',
+              categoria: 'Apertura Cuenta',
               monto: montoNum,
               concepto: 'Fondo Inicial en Tarjeta NU',
               usuario: nombreUsuario,
@@ -2020,7 +2010,7 @@ app.post('/webhook', async (req, res) => {
               obra: sesionActual.obra,
               metodo: 'Apertura DIDI',
               subMetodo: 'DIDI',
-              categoria: '00) APERTURA CUENTA',
+              categoria: 'Apertura Cuenta',
               monto: montoNum,
               concepto: 'Fondo Inicial en Tarjeta DIDI',
               usuario: nombreUsuario,
@@ -2045,7 +2035,7 @@ app.post('/webhook', async (req, res) => {
               obra: sesionActual.obra,
               metodo: 'Apertura MercadoPago',
               subMetodo: 'MercadoPago',
-              categoria: '00) APERTURA CUENTA',
+              categoria: 'Apertura Cuenta',
               monto: montoNum,
               concepto: 'Fondo Inicial en MercadoPago',
               usuario: nombreUsuario,
@@ -2070,7 +2060,7 @@ app.post('/webhook', async (req, res) => {
               obra: sesionActual.obra,
               metodo: 'Dotación Caja Chica',
               subMetodo: '',
-              categoria: '00) FONDO CAJA',
+              categoria: 'Fondo Caja',
               monto: montoNum,
               concepto: 'Fondo Inicial Asignado a Caja Chica',
               usuario: nombreUsuario,
@@ -2105,7 +2095,7 @@ app.post('/webhook', async (req, res) => {
             obra: sesionActual.obra,
             metodo: 'Transferencia',
             subMetodo: '',
-            categoria: '00) CONTROL CONTRATOS',
+            categoria: 'Control Contratos',
             monto: sesionActual.montoContratoTemp,
             concepto: `Contrato ${sesionActual.especialidadTemp.toUpperCase()} Total Autorizado`,
             usuario: nombreUsuario,
@@ -2119,7 +2109,7 @@ app.post('/webhook', async (req, res) => {
               obra: sesionActual.obra,
               metodo: 'Transferencia',
               subMetodo: '',
-              categoria: '00) CONTROL CONTRATOS',
+              categoria: 'Control Contratos',
               monto: pagadoTemp,
               concepto: `Abono Inicial Histórico ${sesionActual.especialidadTemp.toUpperCase()}`,
               usuario: nombreUsuario,
@@ -2512,7 +2502,7 @@ app.post('/webhook', async (req, res) => {
         const sesion = sesiones[from];
         if (sesion) {
           sesion.obra = obraMap[respuestaId] || 'Suc. Otro';
-          sesion.categoria = '00) CONTROL CONTRATOS';
+          sesion.categoria = 'Control Contratos';
           sesion.metodo = 'Transferencia';
           sesion.estatusFactura = 'No Requiere 🔴';
 
