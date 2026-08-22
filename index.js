@@ -408,7 +408,7 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
     doc.text(`• En Efectivo (Caja Chica): ${formatoMoneda(datos.saldoEfectivo)}`, 385, y + 16);
     doc.text(`• Total en Bancos: ${formatoMoneda(datos.saldoBanco)}`, 385, y + 28);
 
-    // FIRMA AUTÓGRAFA ESPACIADA Y ALINEADA SOBRE LA LÍNEA
+    // FIRMA AUTÓGRAFA EXACTA Y TRANSPARENTE (.PNG)
     y += 115;
     const xFirma = 350;
     const anchoFirma = 210;
@@ -483,7 +483,7 @@ async function generarDatosCorteSemanal(obraBuscada) {
       const fechaStr = fila[1] || '';
       const obra = fila[2] || '';
       const metodo = fila[3] || '';
-      const categoria = fila[4] || '20) VARIOS';
+      const categoria = (fila[4] || '20) VARIOS').toUpperCase();
       const monto = limpiarMonto(fila[5]);
       const concepto = (fila[6] || '').toLowerCase();
       const estatus = fila[8] || '';
@@ -519,7 +519,13 @@ async function generarDatosCorteSemanal(obraBuscada) {
           ingresosTotal += monto;
         } else if (metodo.includes('Dotación Caja Chica')) {
           dotacionesCaja += monto;
-        } else if (!metodo.includes('Apertura') && !categoria.includes('Control') && !categoria.includes('Apertura')) {
+        } else if (concepto.includes('contrato')) {
+          // El contrato autorizado se acumula solo para control de contratistas, no como gasto operativo
+          const contratistaMatch = CONTRATISTAS_VALIDOS.find(c => concepto.includes(c) || categoria.includes(c.toUpperCase()));
+          if (contratistaMatch) {
+            detalleContratistas[contratistaMatch].contrato += monto;
+          }
+        } else if (!metodo.includes('Apertura') && !categoria.includes('CONTROL') && !categoria.includes('APERTURA')) {
           gastosTotal += monto;
 
           if (metodo.startsWith('Efectivo')) {
@@ -537,11 +543,10 @@ async function generarDatosCorteSemanal(obraBuscada) {
           }
         }
 
+        // Revisar abonos o pagos a contratistas
         CONTRATISTAS_VALIDOS.forEach(c => {
-          if (concepto.includes(`contrato ${c}`) || concepto.includes(`total autorizado ${c}`) || concepto.includes(`contrato cerrado ${c}`)) {
-            detalleContratistas[c].contrato += monto;
-          } else if (concepto.includes(c) || categoria.toLowerCase().includes(c)) {
-            if (!concepto.includes('total autorizado')) {
+          if (concepto.includes(c) || categoria.includes(c.toUpperCase())) {
+            if (!concepto.includes('contrato') && !concepto.includes('total autorizado')) {
               detalleContratistas[c].pagado += monto;
             }
           }
@@ -638,11 +643,11 @@ async function obtenerUltimosGastos(obraFiltro) {
       const id = fila[0] || '';
       const obra = fila[2] || '';
       const monto = limpiarMonto(fila[5]);
-      const concepto = fila[6] || '';
+      const concepto = (fila[6] || '').toLowerCase();
       const categoria = fila[4] || '';
       const estatus = fila[8] || '';
 
-      if (!estatus.includes('CANCELADO') && !categoria.includes('Control') && !fila[3].includes('Apertura') && !fila[3].includes('Ingreso Presupuesto') && !fila[3].includes('Control Presupuestal')) {
+      if (!estatus.includes('CANCELADO') && !categoria.includes('Control') && !fila[3].includes('Apertura') && !fila[3].includes('Ingreso Presupuesto') && !fila[3].includes('Control Presupuestal') && !concepto.includes('contrato')) {
         if (!obraFiltro || obra.toLowerCase() === obraFiltro.toLowerCase()) {
           ultimos.push({ filaIndex: i + 1, id, obra, concepto, monto });
         }
@@ -1272,7 +1277,7 @@ async function calcularReporteContratistas(obraBuscada) {
         if (concepto.includes(`contrato ${c}`) || concepto.includes(`total autorizado ${c}`) || concepto.includes(`contrato cerrado ${c}`)) {
           resultado[c].totalContrato += monto;
         } else if (concepto.includes(c) || categoria.includes(c.toUpperCase())) {
-          if (!concepto.includes('total autorizado')) {
+          if (!concepto.includes('contrato') && !concepto.includes('total autorizado')) {
             resultado[c].pagado += monto;
           }
         }
@@ -2097,9 +2102,9 @@ app.post('/webhook', async (req, res) => {
           const pagadoTemp = montoNum;
           delete sesionActual.esperandoPagadoContrato;
 
-          // GUARDAR CON CATEGORÍA EXACTA DE LA ESPECIALIDAD DEL CONTRATISTA
           const especialidadUpper = sesionActual.especialidadTemp.toUpperCase();
 
+          // 1. Guardar el Contrato Autorizado (Con método Transferencia y concepto Contrato Cerrado)
           await guardarEnSheets({
             idMovimiento: 'CTR-' + Date.now().toString().slice(-6),
             obra: sesionActual.obra,
@@ -2107,12 +2112,13 @@ app.post('/webhook', async (req, res) => {
             subMetodo: '',
             categoria: especialidadUpper,
             monto: sesionActual.montoContratoTemp,
-            concepto: `Contrato ${especialidadUpper} Total Autorizado`,
+            concepto: `Contrato Cerrado ${especialidadUpper} Total Autorizado`,
             usuario: nombreUsuario,
             estatusFactura: 'No Requiere 🔴',
             linkFactura: 'N/A'
           });
 
+          // 2. Si hubo abono, guardarlo como pago real de la obra
           if (pagadoTemp > 0) {
             await guardarEnSheets({
               idMovimiento: 'PAGCTR-' + Date.now().toString().slice(-6),
@@ -2121,7 +2127,7 @@ app.post('/webhook', async (req, res) => {
               subMetodo: '',
               categoria: especialidadUpper,
               monto: pagadoTemp,
-              concepto: `Abono Inicial Histórico ${especialidadUpper}`,
+              concepto: `Abono a Contratista ${especialidadUpper}`,
               usuario: nombreUsuario,
               estatusFactura: 'No Requiere 🔴',
               linkFactura: 'N/A'
