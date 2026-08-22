@@ -11,7 +11,6 @@ app.use(express.json());
 const PORT = process.env.PORT || 3000;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 
-// IDs de Google Sheets y Drive
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 const SPREADSHEET_PRECIOS_ID = process.env.SPREADSHEET_PRECIOS_ID || '1Cscdoi4k3BkHLWPSB9nSxrGyZsshRXMKEtx2jbBcIQ0';
 const SPREADSHEET_EXTRAS_ID = process.env.SPREADSHEET_EXTRAS_ID || '1uO9QMilrhjooFgsqF7Nu7GA4WYEV94QZRNjwQj2Jz5o';
@@ -23,10 +22,8 @@ const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 
 const sesiones = {};
 
-// Números con Nivel Dirección Autorizado
 const ROLES_DIRECCION = ['3314856080', '3314107902', '3313008395'];
 
-// Mapeo de Números a Nombres
 const DIRECTORIO_USUARIOS = {
   '3336673972': 'Paty',
   '3314107902': 'Rigo',
@@ -73,6 +70,13 @@ const ETAPA_4_ADMIN = [
 
 const CONTRATISTAS_VALIDOS = ['tablaroca', 'aluminio y vidrio', 'aluminio', 'cortinas', 'pintura', 'cubiertas', 'herreria', 'carpinteria'];
 
+function limpiarMonto(texto) {
+  if (!texto) return 0;
+  const limpio = texto.toString().replace('$', '').replace(/,/g, '').trim();
+  const res = parseFloat(limpio);
+  return isNaN(res) ? 0 : res;
+}
+
 function esDireccion(from) {
   if (!from) return false;
   const diez = from.replace(/\D/g, '').slice(-10);
@@ -108,17 +112,13 @@ try {
 
   sheets = google.sheets({ version: 'v4', auth: oauth2Client });
   drive = google.drive({ version: 'v3', auth: oauth2Client });
-  console.log('✅ Google OAuth2 configurado correctamente.');
 } catch (error) {
   console.error('❌ Error OAuth2 Google:', error.message);
 }
 
 function enviarPeticionMeta(payload) {
   return new Promise((resolve) => {
-    if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) {
-      console.error('❌ Falta WHATSAPP_TOKEN o PHONE_NUMBER_ID');
-      return resolve();
-    }
+    if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) return resolve();
 
     const data = JSON.stringify(payload);
     const options = {
@@ -139,11 +139,7 @@ function enviarPeticionMeta(payload) {
       res.on('end', () => resolve(body));
     });
 
-    req.on('error', (error) => {
-      console.error('❌ Error HTTPS Meta:', error.message);
-      resolve();
-    });
-
+    req.on('error', () => resolve());
     req.write(data);
     req.end();
   });
@@ -198,7 +194,6 @@ async function enviarLista(to, textoBody, tituloBoton, tituloSeccion, opciones) 
   });
 }
 
-// FUNCIONALIDAD PARA ENVIAR PDF DE CORTE A WHATSAPP
 async function enviarDocumentoWhatsApp(to, rutaArchivo, nombreArchivo, caption) {
   return new Promise((resolve) => {
     if (!fs.existsSync(rutaArchivo)) return resolve();
@@ -230,31 +225,19 @@ async function enviarDocumentoWhatsApp(to, rutaArchivo, nombreArchivo, caption) 
               messaging_product: 'whatsapp',
               to,
               type: 'document',
-              document: {
-                id: mediaId,
-                filename: nombreArchivo,
-                caption: caption
-              }
+              document: { id: mediaId, filename: nombreArchivo, caption: caption }
             });
           }
           resolve();
-        } catch (e) {
-          console.error('❌ Error enviando PDF en Meta:', e.message);
-          resolve();
-        }
+        } catch (e) { resolve(); }
       });
     });
 
-    reqMetaMedia.on('error', (err) => {
-      console.error('❌ Error subiendo media a Meta:', err.message);
-      resolve();
-    });
-
+    reqMetaMedia.on('error', () => resolve());
     form.pipe(reqMetaMedia);
   });
 }
 
-// GENERADOR DE PDF EJECUTIVO DE CORTE SEMANAL
 function generarPDFCorteSemanal(datos, rutaSalida) {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ margin: 35, size: 'LETTER' });
@@ -265,9 +248,7 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
       path.join(__dirname, 'logo.png'),
       path.join(__dirname, 'logo.PNG'),
       path.join(__dirname, 'Imagenes', 'logo.png'),
-      path.join(__dirname, 'imagenes', 'logo.png'),
-      path.join(__dirname, 'Imagenes', 'logo.PNG'),
-      path.join(__dirname, 'imagenes', 'logo.PNG')
+      path.join(__dirname, 'imagenes', 'logo.png')
     ];
 
     let rutaLogoEncontrada = rutasPosibles.find(r => fs.existsSync(r));
@@ -410,11 +391,9 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
     const anchoFirma = 240;
 
     doc.moveTo(xFirma, y).lineTo(xFirma + anchoFirma, y).strokeColor('#000000').lineWidth(1).stroke();
-    
     y += 5;
     doc.fontSize(8).font('Helvetica-Bold').fillColor('#0F172A')
        .text('Administracion Constructive Gallery Architects', xFirma, y, { width: anchoFirma, align: 'center' });
-    
     y += 11;
     doc.fontSize(6.5).font('Helvetica').fillColor('#64748B')
        .text('Validacion y Firma Digital Autonoma', xFirma, y, { width: anchoFirma, align: 'center' });
@@ -425,7 +404,6 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
   });
 }
 
-// CÁLCULO DE DATOS CORREGIDO DE LUNES A DOMINGO
 async function generarDatosCorteSemanal(obraBuscada) {
   if (!sheets || !SPREADSHEET_ID) return null;
   try {
@@ -460,12 +438,12 @@ async function generarDatosCorteSemanal(obraBuscada) {
       const obra = fila[2] || '';
       const metodo = fila[3] || '';
       const categoria = fila[4] || '20) VARIOS';
-      let montoStr = (fila[5] || '0').toString().replace('$', '').replace(/,/g, '').trim();
-      const monto = parseFloat(montoStr) || 0;
+      const monto = limpiarMonto(fila[5]);
       const concepto = (fila[6] || '').toLowerCase();
       const estatus = fila[8] || '';
 
       if (estatus.includes('CANCELADO')) continue;
+      if (categoria.includes('CONTROL PRESUPUESTAL')) continue;
 
       if (!obraBuscada || obra.toLowerCase() === obraBuscada.toLowerCase()) {
         let fechaMov = new Date(fechaStr);
@@ -476,7 +454,7 @@ async function generarDatosCorteSemanal(obraBuscada) {
         
         const esSemanaActual = !isNaN(fechaMov.getTime()) && fechaMov >= inicioLunes && fechaMov <= finDomingo;
 
-        if (metodo.includes('Ingreso Presupuesto')) {
+        if (metodo.includes('Ingreso Presupuesto') || categoria.includes('INGRESO CLIENTE')) {
           ingresosTotal += monto;
         } else if (metodo.includes('Dotación Caja Chica')) {
           dotacionesCaja += monto;
@@ -542,12 +520,10 @@ async function generarDatosCorteSemanal(obraBuscada) {
       saldoEfectivo: saldoEfectivo > 0 ? saldoEfectivo : 0
     };
   } catch (error) {
-    console.error('❌ Error calculando datos PDF:', error.message);
     return null;
   }
 }
 
-// SEMÁFORO DE SOBREGIRO DE CONTRATISTA
 async function verificarSobregiroContratista(obra, categoria, concepto, montoNuevo) {
   if (!sheets || !SPREADSHEET_ID) return null;
   try {
@@ -574,7 +550,6 @@ async function verificarSobregiroContratista(obra, categoria, concepto, montoNue
   }
 }
 
-// ÚLTIMOS GASTOS PARA CORRECCIÓN TÁCTIL
 async function obtenerUltimosGastos(obraFiltro) {
   if (!sheets || !SPREADSHEET_ID) return [];
   try {
@@ -589,7 +564,7 @@ async function obtenerUltimosGastos(obraFiltro) {
       const fila = filas[i];
       const id = fila[0] || '';
       const obra = fila[2] || '';
-      const monto = fila[5] || '0';
+      const monto = limpiarMonto(fila[5]);
       const concepto = fila[6] || '';
       const estatus = fila[8] || '';
 
@@ -636,7 +611,6 @@ async function anularGastoPorFila(filaIndex) {
   }
 }
 
-// DRIVE
 async function obtenerOcrearSubcarpetaObra(nombreObra) {
   if (!drive || !DRIVE_FOLDER_EXTRAS_ID) return DRIVE_FOLDER_EXTRAS_ID;
   try {
@@ -748,7 +722,6 @@ async function subirArchivoADrive(buffer, nombreArchivo, folderId, mimeType) {
   }
 }
 
-// PRIMERA FILA LIBRE
 async function obtenerSiguienteFilaDisponible(spreadsheetId, hojaYColumna) {
   try {
     const res = await sheets.spreadsheets.values.get({
@@ -762,7 +735,6 @@ async function obtenerSiguienteFilaDisponible(spreadsheetId, hojaYColumna) {
   }
 }
 
-// BUSCADOR DE TRABAJADORES ACTIVOS
 async function buscarTrabajadoresActivos(busqueda) {
   if (!sheets || !SPREADSHEET_PERSONAL_ID) return [];
   try {
@@ -792,7 +764,6 @@ async function buscarTrabajadoresActivos(busqueda) {
   }
 }
 
-// GOOGLE SHEETS
 async function guardarEnSheets(datos) {
   if (!sheets || !SPREADSHEET_ID) return;
   try {
@@ -1050,8 +1021,7 @@ async function buscarHistoricoPrecios(materialBuscado) {
       const obra = fila[2] || '';
       const mat = (fila[3] || '').toLowerCase();
       const unidad = fila[4] || '';
-      let precioStr = (fila[5] || '0').toString().replace('$', '').replace(/,/g, '').trim();
-      const precio = parseFloat(precioStr) || 0;
+      const precio = limpiarMonto(fila[5]);
       const proveedor = fila[6] || 'No especificado';
 
       if (mat.includes(materialBuscado.toLowerCase())) {
@@ -1171,11 +1141,12 @@ async function calcularReporteSaldos(obraBuscada) {
       const fila = filas[i];
       const obra = fila[2] || '';
       const metodo = fila[3] || '';
-      let montoStr = (fila[5] || '0').toString().replace('$', '').replace(/,/g, '').trim();
-      const monto = parseFloat(montoStr) || 0;
+      const categoria = fila[4] || '';
+      const monto = limpiarMonto(fila[5]);
       const estatus = fila[8] || '';
 
       if (estatus.includes('CANCELADO')) continue;
+      if (categoria.includes('CONTROL PRESUPUESTAL')) continue;
 
       if (metodo.includes('Dotación Caja Chica')) {
         dotacionesCaja += monto;
@@ -1215,12 +1186,10 @@ async function calcularReporteContratistas(obraBuscada) {
       const obra = fila[2] || '';
       const concepto = (fila[6] || '').toLowerCase();
       const categoria = (fila[4] || '').toLowerCase();
-      let montoStr = (fila[5] || '0').toString().replace('$', '').replace(/,/g, '').trim();
-      const monto = parseFloat(montoStr) || 0;
+      const monto = limpiarMonto(fila[5]);
       const estatus = fila[8] || '';
 
       if (estatus.includes('CANCELADO')) continue;
-
       if (obraBuscada && obra.toLowerCase() !== obraBuscada.toLowerCase()) continue;
 
       CONTRATISTAS_VALIDOS.forEach(c => {
@@ -1256,9 +1225,9 @@ async function calcularReportePresupuestos() {
       const fila = filas[i];
       const obra = fila[2] || '';
       const metodo = fila[3] || '';
+      const categoria = fila[4] || '';
       const concepto = (fila[6] || '').toLowerCase();
-      let montoStr = (fila[5] || '0').toString().replace('$', '').replace(/,/g, '').trim();
-      const monto = parseFloat(montoStr) || 0;
+      const monto = limpiarMonto(fila[5]);
       const estatus = fila[8] || '';
 
       if (estatus.includes('CANCELADO')) continue;
@@ -1266,7 +1235,7 @@ async function calcularReportePresupuestos() {
       if (resultado[obra]) {
         if (concepto.includes('presupuesto total autorizado')) {
           resultado[obra].presupuestoTotal += monto;
-        } else if (metodo.includes('Ingreso Presupuesto')) {
+        } else if (metodo.includes('Ingreso Presupuesto') || categoria.includes('INGRESO CLIENTE')) {
           resultado[obra].liberado += monto;
         }
       }
@@ -1277,13 +1246,12 @@ async function calcularReportePresupuestos() {
   }
 }
 
-// MENÚ PRINCIPAL DINÁMICO POR ROL
 async function desplegarMenuPrincipal(from) {
   const tieneAccesoDireccion = esDireccion(from);
 
   if (tieneAccesoDireccion) {
     const opciones = [
-      { id: 'MENU_CARGA_OBRA', title: '🚀 Configurar / Cargar Obra', description: 'Asistente de Presupuesto, Bancos y Contratos' },
+      { id: 'MENU_CARGA_OBRA', title: '🚀 Configurar / Cargar Obra', description: 'Presupuesto, Cuentas Bancarias y Contratos' },
       { id: 'MENU_REPORTES', title: '📊 Saldos y PDF de Corte', description: 'Caja chica, bancos y estado de cuenta oficial' },
       { id: 'MENU_CORREGIR', title: '✏️ Corregir Últimos Gastos', description: 'Modificar monto o anular gasto con un toque' },
       { id: 'MENU_CONTRATISTAS', title: '🤝 Contratistas / Destajos', description: 'Asignación de contratos y consulta de saldos' },
@@ -1377,7 +1345,6 @@ app.post('/webhook', async (req, res) => {
     const nombreUsuario = obtenerNombreUsuario(from);
     const tieneAccesoDireccion = esDireccion(from);
 
-    // IMÁGENES O VIDEOS
     if (msg.type === 'image' || msg.type === 'video') {
       const sesionActual = sesiones[from];
       if (sesionActual && sesionActual.esperandoFotosExtra) {
@@ -1421,7 +1388,6 @@ app.post('/webhook', async (req, res) => {
     if (msg.type === 'text') {
       const textBody = msg.text.body.trim();
 
-      // 1) MENÚ Y COMANDOS
       if (/^(menu|hola|inicio|ayuda)$/i.test(textBody)) {
         await desplegarMenuPrincipal(from);
         res.sendStatus(200);
@@ -1434,10 +1400,9 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // 2) CARGA / CONFIGURACIÓN GUIADA DE OBRA (SOLO DIRECCIÓN)
       if (/^(cargar obra|configurar obra|configurar|carga inicial)$/i.test(textBody)) {
         if (!tieneAccesoDireccion) {
-          await enviarTexto(from, '⚙️ *Módulo en consolidación administrativa.*\nEsta función se encuentra deshabilitada para este perfil. Si requieres configuraciones, consulta con administración central.');
+          await enviarTexto(from, '⚙️ *Módulo en consolidación administrativa.*\nEsta función se encuentra deshabilitada para este perfil.');
           res.sendStatus(200);
           return;
         }
@@ -1456,7 +1421,6 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // 3) CORREGIR GASTOS TÁCTIL (DIRECCIÓN)
       if (/^(corregir|editar|modificar|corregir gasto)$/i.test(textBody)) {
         if (!tieneAccesoDireccion) {
           await enviarTexto(from, '⚙️ *Módulo en consolidación administrativa.* Para cancelar el último gasto inmediato utiliza `cancelar`.');
@@ -1479,7 +1443,6 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // 4) CANCELAR ÚLTIMO REGISTRO
       if (/^(cancelar|borrar ultimo)$/i.test(textBody)) {
         const cancelado = await cancelarUltimoRegistro();
         if (cancelado) {
@@ -1491,10 +1454,9 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // 5) REPORTES Y CORTE PDF (PROTEGIDO)
       if (/^(saldo|corte|reporte|resumen)$/i.test(textBody)) {
         if (!tieneAccesoDireccion) {
-          await enviarTexto(from, '⚙️ *Módulo en consolidación administrativa.*\nEsta consulta de balance financiero se encuentra deshabilitada para este perfil. Si requieres un estado de cuenta, solicítalo con administración central.');
+          await enviarTexto(from, '⚙️ *Módulo en consolidación administrativa.*\nEsta consulta de balance financiero se encuentra deshabilitada para este perfil.');
           res.sendStatus(200);
           return;
         }
@@ -1514,7 +1476,7 @@ app.post('/webhook', async (req, res) => {
 
       if (/^(contratistas|destajos|contratos)$/i.test(textBody)) {
         if (!tieneAccesoDireccion) {
-          await enviarTexto(from, '⚙️ *Módulo en consolidación administrativa.*\nConsulta de contratistas disponible únicamente con administración central.');
+          await enviarTexto(from, '⚙️ *Módulo en consolidación administrativa.* Consulta con administración central.');
           res.sendStatus(200);
           return;
         }
@@ -1586,7 +1548,6 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // 6) COMANDOS OPERATIVOS
       const matchAltaTrabajador = textBody.match(/^alta\s+(.+)/i);
       if (matchAltaTrabajador) {
         const nombreTrabajador = matchAltaTrabajador[1].trim();
@@ -1622,7 +1583,7 @@ app.post('/webhook', async (req, res) => {
       const matchVisita = textBody.match(/^visita\s+(.+)\s+(\d+(\.\d+)?)/i);
       if (matchVisita) {
         const nombreTrabajador = matchVisita[1].trim();
-        const montoApoyo = parseFloat(matchVisita[2]);
+        const montoApoyo = limpiarMonto(matchVisita[2]);
 
         sesiones[from] = {
           tipoAccion: 'VISITA_FAMILIAR',
@@ -1668,7 +1629,7 @@ app.post('/webhook', async (req, res) => {
       const matchRegistroPrecio = textBody.match(/^precio\s+(.+)\s+(\d+(\.\d+)?)/i);
       if (matchRegistroPrecio) {
         const material = matchRegistroPrecio[1].trim();
-        const precio = parseFloat(matchRegistroPrecio[2]);
+        const precio = limpiarMonto(matchRegistroPrecio[2]);
 
         sesiones[from] = {
           tipoAccion: 'REGISTRO_PRECIO_HISTORICO',
@@ -1715,7 +1676,7 @@ app.post('/webhook', async (req, res) => {
 
       const matchCaja = textBody.match(/^(caja|efectivo|dotacion|fondo)\s+(\d+(\.\d+)?)/i);
       if (matchCaja) {
-        const montoCaja = parseFloat(matchCaja[2]);
+        const montoCaja = limpiarMonto(matchCaja[2]);
 
         await guardarEnSheets({
           idMovimiento: 'DOT-' + Date.now().toString().slice(-6),
@@ -1739,7 +1700,7 @@ app.post('/webhook', async (req, res) => {
       const matchContrato = textBody.match(/^contrato\s+(.+)\s+(\d+(\.\d+)?)/i);
       if (matchContrato) {
         const nombreContratista = matchContrato[1].trim();
-        const montoContrato = parseFloat(matchContrato[2]);
+        const montoContrato = limpiarMonto(matchContrato[2]);
 
         sesiones[from] = {
           tipoAccion: 'CONTRATO_CONTRATISTA',
@@ -1763,18 +1724,17 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // 7) FLUJOS CONVERSACIONALES ACTIVOS (EDICIÓN Y ASISTENTE)
+      // SESIONES Y ASISTENTES
       const sesionActual = sesiones[from];
 
-      // Flujo de edición de monto
       if (sesionActual && sesionActual.esperandoNuevoMontoGasto) {
-        const nuevoMonto = parseFloat(textBody) || 0;
+        const nuevoMonto = limpiarMonto(textBody);
         const ok = await actualizarMontoGasto(sesionActual.filaIndexEditar, nuevoMonto);
         delete sesionActual.esperandoNuevoMontoGasto;
         delete sesionActual.filaIndexEditar;
 
         if (ok) {
-          await enviarTexto(from, `✅ *Monto actualizado con éxito a:* $${nuevoMonto.toFixed(2)} MXN\n*Los balances y reportes se han recalculado.*`);
+          await enviarTexto(from, `✅ *Monto actualizado con éxito a:* $${nuevoMonto.toFixed(2)} MXN`);
         } else {
           await enviarTexto(from, '⚠️ No se pudo actualizar el monto.');
         }
@@ -1783,9 +1743,8 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // Flujo del Asistente de Carga de Obra
       if (sesionActual && sesionActual.tipoAccion === 'CARGA_OBRA') {
-        const montoNum = parseFloat(textBody) || 0;
+        const montoNum = limpiarMonto(textBody);
 
         if (sesionActual.esperandoPresupuestoTotal) {
           sesionActual.presupuestoTotal = montoNum;
@@ -1794,9 +1753,9 @@ app.post('/webhook', async (req, res) => {
           await guardarEnSheets({
             idMovimiento: 'INI-' + Date.now().toString().slice(-6),
             obra: sesionActual.obra,
-            metodo: 'Transferencia',
+            metodo: 'Registro Presupuesto',
             subMetodo: '',
-            categoria: '20) VARIOS',
+            categoria: '00) CONTROL PRESUPUESTAL',
             monto: sesionActual.presupuestoTotal,
             concepto: 'Presupuesto Total Autorizado',
             usuario: nombreUsuario,
@@ -1826,7 +1785,7 @@ app.post('/webhook', async (req, res) => {
               obra: sesionActual.obra,
               metodo: 'Ingreso Presupuesto',
               subMetodo: '',
-              categoria: '30) HONORARIOS',
+              categoria: '00) INGRESO CLIENTE',
               monto: montoNum,
               concepto: 'Ingreso Presupuesto Inicial Recibido',
               usuario: nombreUsuario,
@@ -1856,7 +1815,7 @@ app.post('/webhook', async (req, res) => {
               obra: sesionActual.obra,
               metodo: 'Transferencia',
               subMetodo: '',
-              categoria: '20) VARIOS',
+              categoria: '29) INDIRECTOS',
               monto: montoNum,
               concepto: 'Gasto Consolidado Histórico Inicial de Obra',
               usuario: nombreUsuario,
@@ -1871,7 +1830,6 @@ app.post('/webhook', async (req, res) => {
           return;
         }
 
-        // Cuestionario cuenta por cuenta
         if (sesionActual.esperandoSaldoBanamexBeto) {
           sesionActual.banamexBeto = montoNum;
           delete sesionActual.esperandoSaldoBanamexBeto;
@@ -1945,20 +1903,19 @@ app.post('/webhook', async (req, res) => {
             });
           }
 
-          await enviarBotones(from, `✅ *Datos Financieros de ${sesionActual.obra} guardados con éxito.*\n\n🤝 ¿Deseas dar de alta contratos de contratistas/destajistas para esta obra?`, [
-            { id: 'CARGACONTRATO_SI', title: '➕ Agregar Contratista' },
+          await enviarBotones(from, `✅ *Datos Financieros de ${sesionActual.obra} guardados con éxito.*\n\n🤝 ¿Deseas dar de alta contratos de contratistas para esta obra?`, [
+            { id: 'CARGACONTRATO_SI', title: '➕ Agregar Contrato' },
             { id: 'CARGACONTRATO_FIN', title: '✅ Finalizar Carga' }
           ]);
           res.sendStatus(200);
           return;
         }
 
-        // Bucle de contratistas en carga de obra
         if (sesionActual.esperandoMontoContrato) {
           sesionActual.montoContratoTemp = montoNum;
           delete sesionActual.esperandoMontoContrato;
           sesionActual.esperandoPagadoContrato = true;
-          await enviarTexto(from, `Monto de Contrato registrado: $${montoNum.toFixed(2)}\n\n¿Cuánto se le ha *pagado a la fecha* a este contratista? (Escribe el monto o 0 si no se ha pagado nada):`);
+          await enviarTexto(from, `Monto de Contrato: $${montoNum.toFixed(2)}\n\n¿Cuánto se le ha *pagado a la fecha* a este contratista? (Escribe el monto o 0):`);
           res.sendStatus(200);
           return;
         }
@@ -1970,9 +1927,9 @@ app.post('/webhook', async (req, res) => {
           await guardarEnSheets({
             idMovimiento: 'CTR-' + Date.now().toString().slice(-6),
             obra: sesionActual.obra,
-            metodo: 'Transferencia',
+            metodo: 'Registro Presupuesto',
             subMetodo: '',
-            categoria: '20) VARIOS',
+            categoria: '00) CONTROL PRESUPUESTAL',
             monto: sesionActual.montoContratoTemp,
             concepto: `Contrato ${sesionActual.especialidadTemp.toUpperCase()} Total Autorizado`,
             usuario: nombreUsuario,
@@ -1986,7 +1943,7 @@ app.post('/webhook', async (req, res) => {
               obra: sesionActual.obra,
               metodo: 'Transferencia',
               subMetodo: '',
-              categoria: '20) VARIOS',
+              categoria: '29) INDIRECTOS',
               monto: pagadoTemp,
               concepto: `Abono Histórico ${sesionActual.especialidadTemp.toUpperCase()}`,
               usuario: nombreUsuario,
@@ -2005,7 +1962,6 @@ app.post('/webhook', async (req, res) => {
         }
       }
 
-      // Otros flujos anteriores
       if (sesionActual && sesionActual.esperandoNombreTrabajadorBaja) {
         delete sesionActual.esperandoNombreTrabajadorBaja;
         await procesarBusquedaBaja(from, textBody.trim());
@@ -2032,7 +1988,7 @@ app.post('/webhook', async (req, res) => {
       }
 
       if (sesionActual && sesionActual.esperandoSueldoTrabajador) {
-        sesionActual.sueldo = parseFloat(textBody) || 0;
+        sesionActual.sueldo = limpiarMonto(textBody);
         delete sesionActual.esperandoSueldoTrabajador;
 
         await guardarTrabajador(sesionActual);
@@ -2053,7 +2009,7 @@ app.post('/webhook', async (req, res) => {
       }
 
       if (sesionActual && sesionActual.esperandoMontoVisita) {
-        sesionActual.monto = parseFloat(textBody) || 0;
+        sesionActual.monto = limpiarMonto(textBody);
         delete sesionActual.esperandoMontoVisita;
 
         await enviarBotones(from, `🚌 *Visita Familiar (${sesionActual.nombre}):* $${sesionActual.monto.toFixed(2)}\n\n🏗️ *¿A qué Obra/Sucursal se aplican estos viáticos?*`, [
@@ -2080,7 +2036,7 @@ app.post('/webhook', async (req, res) => {
       }
 
       if (sesionActual && sesionActual.esperandoMontoPrecio) {
-        sesionActual.precio = parseFloat(textBody) || 0;
+        sesionActual.precio = limpiarMonto(textBody);
         delete sesionActual.esperandoMontoPrecio;
 
         await enviarBotones(from, `🏷️ *Material:* ${sesionActual.material.toUpperCase()}\n💵 *Precio:* $${sesionActual.precio.toFixed(2)}\n\n📐 *Selecciona la Unidad de Medida:*`, [
@@ -2135,7 +2091,7 @@ app.post('/webhook', async (req, res) => {
       }
 
       if (sesionActual && sesionActual.esperandoMontoExtra) {
-        sesionActual.monto = parseFloat(textBody) || 0;
+        sesionActual.monto = limpiarMonto(textBody);
         delete sesionActual.esperandoMontoExtra;
         sesionActual.esperandoFotosExtra = true;
 
@@ -2182,13 +2138,12 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // 8) REGISTRO DEFAULT DE GASTO RÁPIDO
       const partes = textBody.split(/\s+/);
-      const posibleMonto = parseFloat(partes[partes.length - 1]);
+      const posibleMonto = limpiarMonto(partes[partes.length - 1]);
       let concepto = '';
       let monto = 0;
 
-      if (!isNaN(posibleMonto)) {
+      if (!isNaN(posibleMonto) && posibleMonto > 0) {
         concepto = partes.slice(0, -1).join(' ') || 'Gasto no especificado';
         monto = posibleMonto;
       } else {
@@ -2248,7 +2203,6 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // CORRECCIÓN TÁCTIL DE GASTOS
       if (respuestaId?.startsWith('EDITARGAS_')) {
         const filaIndex = parseInt(respuestaId.replace('EDITARGAS_', ''));
         sesiones[from] = { filaIndexEditar: filaIndex };
@@ -2286,7 +2240,6 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // MENÚ DE ASISTENTE DE CARGA DE OBRA
       if (respuestaId === 'MENU_CARGA_OBRA') {
         sesiones[from] = { tipoAccion: 'CARGA_OBRA', usuario: nombreUsuario };
         await enviarBotones(from, '🚀 *ASISTENTE DE CONFIGURACIÓN DE OBRA*\n\n🏗️ *¿Qué sucursal deseas configurar?*', [
@@ -2314,9 +2267,9 @@ app.post('/webhook', async (req, res) => {
         sesiones[from] = sesion;
         sesion.obra = obraMap[respuestaId] || 'Suc. Otro';
 
-        await enviarBotones(from, `🏗️ *Obra:* ${sesion.obra}\n\n📌 *Selecciona la modalidad de carga:*`, [
-          { id: 'MODOCARGA_Nueva', title: '🆕 Obra Nueva (Desde Cero)' },
-          { id: 'MODOCARGA_Avanzada', title: '🏗️ Obra Avanzada (En Marcha)' }
+        await enviarBotones(from, `🏗️ *Obra: ${sesion.obra}*\n\nSelecciona la modalidad:\n• *Obra Nueva:* Arranca desde cero.\n• *Obra Avanzada:* Ya tiene historial de gastos acumulados.`, [
+          { id: 'MODOCARGA_Nueva', title: '🆕 Obra Nueva' },
+          { id: 'MODOCARGA_Avanzada', title: '🏗️ Obra Avanzada' }
         ]);
         res.sendStatus(200);
         return;
@@ -2372,7 +2325,6 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // MANEJO DE CONTRATO AUTORIZADO DIRECTO
       if (respuestaId?.startsWith('CTROBRA_')) {
         const obraMap = {
           'CTROBRA_Pelicano': 'Suc. Pelicano',
@@ -2384,8 +2336,8 @@ app.post('/webhook', async (req, res) => {
         const sesion = sesiones[from];
         if (sesion) {
           sesion.obra = obraMap[respuestaId] || 'Suc. Otro';
-          sesion.categoria = '20) VARIOS';
-          sesion.metodo = 'Transferencia';
+          sesion.categoria = '00) CONTROL PRESUPUESTAL';
+          sesion.metodo = 'Registro Presupuesto';
           sesion.estatusFactura = 'No Requiere 🔴';
 
           await guardarEnSheets(sesion);
@@ -2397,7 +2349,6 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // SUBMENÚS GENERALES
       if (respuestaId === 'MENU_CORREGIR') {
         const ultimos = await obtenerUltimosGastos(null);
         if (ultimos.length === 0) {
@@ -2804,7 +2755,6 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // REPORTES Y PDF
       if (respuestaId?.startsWith('REP_')) {
         if (!tieneAccesoDireccion) {
           await enviarTexto(from, '⚙️ *Módulo en consolidación administrativa.* Consulta con administración central.');
@@ -3027,7 +2977,6 @@ app.post('/webhook', async (req, res) => {
           sesion.estatusFactura = 'No Requiere 🔴';
         }
 
-        // Verificación del semáforo de sobregiro
         const alerta = await verificarSobregiroContratista(sesion.obra, sesion.categoria, sesion.concepto, sesion.monto);
 
         await guardarEnSheets(sesion);
