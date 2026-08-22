@@ -364,26 +364,27 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
     doc.fillColor('#166534').text(`$${datos.contratistasPagado.toFixed(2)}`, 360, y + 3, { width: 100, align: 'right' });
     doc.fillColor('#991B1B').text(`$${datos.contratistasDeuda.toFixed(2)}`, 470, y + 3, { width: 100, align: 'right' });
 
+    // SECCIÓN 4 CORREGIDA: DISTRIBUCIÓN LIMPIA SIN ENCIMADOS
     y += 20;
     doc.rect(35, y, 540, 16).fill('#000000');
     doc.fillColor('#FFFFFF').fontSize(8.5).font('Helvetica-Bold').text('4. BALANCE FINANCIERO GENERAL Y DISPONIBILIDAD', 40, y + 4);
 
     y += 18;
     doc.fillColor('#000000').fontSize(7.5).font('Helvetica');
-    doc.text('(+) Total Presupuesto / Ingresos Recibidos:', 40, y);
-    doc.font('Helvetica-Bold').text(`$${datos.ingresosTotal.toFixed(2)}`, 200, y, { align: 'right' });
+    doc.text('(+) Total Presupuesto / Ingresos Recibidos:', 40, y, { width: 180 });
+    doc.font('Helvetica-Bold').text(`$${datos.ingresosTotal.toFixed(2)}`, 205, y, { width: 85, align: 'right' });
 
-    doc.font('Helvetica').fillColor('#991B1B').text('(-) Gastos Acumulados Totales de Obra:', 280, y);
-    doc.font('Helvetica-Bold').text(`$${datos.gastosTotal.toFixed(2)}`, 540, y, { align: 'right' });
+    doc.font('Helvetica').fillColor('#991B1B').text('(-) Gastos Acumulados Totales de Obra:', 305, y, { width: 175 });
+    doc.font('Helvetica-Bold').text(`$${datos.gastosTotal.toFixed(2)}`, 480, y, { width: 95, align: 'right' });
 
-    y += 12;
-    doc.fillColor('#166534').font('Helvetica-Bold').text('(=) SALDO TOTAL DISPONIBLE EN OBRA:', 40, y);
-    doc.text(`$${datos.saldoDisponible.toFixed(2)}`, 200, y, { align: 'right' });
+    y += 14;
+    doc.fillColor('#166534').font('Helvetica-Bold').text('(=) SALDO TOTAL DISPONIBLE EN OBRA:', 40, y, { width: 180 });
+    doc.text(`$${datos.saldoDisponible.toFixed(2)}`, 205, y, { width: 85, align: 'right' });
 
     y += 18;
     doc.rect(35, y, 540, 26).fillAndStroke('#F8FAFC', '#CBD5E1');
     doc.fillColor('#0F172A').fontSize(7.5).font('Helvetica-Bold').text('UBICACION Y DISPONIBILIDAD REAL DEL SALDO:', 42, y + 4);
-    doc.font('Helvetica').text(`• En Cuenta de Banco (Transferencias/Tarjeta): $${datos.saldoBanco.toFixed(2)}`, 50, y + 15);
+    doc.font('Helvetica').text(`• En Cuentas de Banco (Bancos/Tarjetas): $${datos.saldoBanco.toFixed(2)}`, 45, y + 15);
     doc.text(`• En Efectivo (Caja Chica y Campo): $${datos.saldoEfectivo.toFixed(2)}`, 320, y + 15);
 
     y += 45;
@@ -426,7 +427,7 @@ async function generarDatosCorteSemanal(obraBuscada) {
     finDomingo.setHours(23, 59, 59, 999);
 
     let semanaEfectivo = 0, semanaTarjeta = 0, semanaTransferencia = 0;
-    let gastosTotal = 0, ingresosTotal = 0, dotacionesCaja = 0;
+    let gastosTotal = 0, ingresosTotal = 0, dotacionesCaja = 0, egresosEfectivoTotal = 0;
 
     const mapaPartidas = {};
     const detalleContratistas = {};
@@ -461,6 +462,10 @@ async function generarDatosCorteSemanal(obraBuscada) {
         } else {
           gastosTotal += monto;
 
+          if (metodo.startsWith('Efectivo')) {
+            egresosEfectivoTotal += monto;
+          }
+
           if (!mapaPartidas[categoria]) mapaPartidas[categoria] = { semana: 0, acumulado: 0 };
           mapaPartidas[categoria].acumulado += monto;
 
@@ -473,7 +478,7 @@ async function generarDatosCorteSemanal(obraBuscada) {
         }
 
         CONTRATISTAS_VALIDOS.forEach(c => {
-          if (concepto.includes(`contrato ${c}`)) {
+          if (concepto.includes(`contrato ${c}`) || concepto.includes(`total autorizado ${c}`)) {
             detalleContratistas[c].contrato += monto;
           } else if (concepto.includes(c) || categoria.toLowerCase().includes(c)) {
             detalleContratistas[c].pagado += monto;
@@ -497,9 +502,12 @@ async function generarDatosCorteSemanal(obraBuscada) {
     const inicioStr = inicioLunes.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City' });
     const finStr = finDomingo.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City' });
 
-    const saldoEfectivo = dotacionesCaja - semanaEfectivo;
     const saldoDisponible = ingresosTotal - gastosTotal;
-    const saldoBanco = saldoDisponible - (saldoEfectivo > 0 ? saldoEfectivo : 0);
+    let saldoEfectivo = dotacionesCaja - egresosEfectivoTotal;
+    if (saldoEfectivo < 0) saldoEfectivo = 0;
+    if (saldoEfectivo > saldoDisponible && saldoDisponible > 0) saldoEfectivo = saldoDisponible;
+
+    const saldoBanco = saldoDisponible - saldoEfectivo;
 
     return {
       sucursal: obraBuscada || 'General Global',
@@ -1195,7 +1203,7 @@ async function calcularReporteContratistas(obraBuscada) {
       CONTRATISTAS_VALIDOS.forEach(c => {
         if (!resultado[c]) resultado[c] = { totalContrato: 0, pagado: 0 };
 
-        if (concepto.includes(`contrato ${c}`)) {
+        if (concepto.includes(`contrato ${c}`) || concepto.includes(`total autorizado ${c}`)) {
           resultado[c].totalContrato += monto;
         } else if (concepto.includes(c) || categoria.includes(c)) {
           resultado[c].pagado += monto;
@@ -1670,6 +1678,7 @@ app.post('/webhook', async (req, res) => {
           });
           await enviarTexto(from, msgTxt);
         }
+        delete sesiones[from];
         res.sendStatus(200);
         return;
       }
@@ -1724,7 +1733,6 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // SESIONES Y ASISTENTES
       const sesionActual = sesiones[from];
 
       if (sesionActual && sesionActual.esperandoNuevoMontoGasto) {
@@ -1753,7 +1761,7 @@ app.post('/webhook', async (req, res) => {
           await guardarEnSheets({
             idMovimiento: 'INI-' + Date.now().toString().slice(-6),
             obra: sesionActual.obra,
-            metodo: 'Registro Presupuesto',
+            metodo: 'Ingreso Presupuesto',
             subMetodo: '',
             categoria: '00) CONTROL PRESUPUESTAL',
             monto: sesionActual.presupuestoTotal,
@@ -1927,7 +1935,7 @@ app.post('/webhook', async (req, res) => {
           await guardarEnSheets({
             idMovimiento: 'CTR-' + Date.now().toString().slice(-6),
             obra: sesionActual.obra,
-            metodo: 'Registro Presupuesto',
+            metodo: 'Transferencia',
             subMetodo: '',
             categoria: '00) CONTROL PRESUPUESTAL',
             monto: sesionActual.montoContratoTemp,
@@ -2337,7 +2345,7 @@ app.post('/webhook', async (req, res) => {
         if (sesion) {
           sesion.obra = obraMap[respuestaId] || 'Suc. Otro';
           sesion.categoria = '00) CONTROL PRESUPUESTAL';
-          sesion.metodo = 'Registro Presupuesto';
+          sesion.metodo = 'Transferencia';
           sesion.estatusFactura = 'No Requiere 🔴';
 
           await guardarEnSheets(sesion);
