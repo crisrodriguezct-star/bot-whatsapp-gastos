@@ -70,6 +70,11 @@ const ETAPA_4_ADMIN = [
 
 const CONTRATISTAS_VALIDOS = ['tablaroca', 'aluminio y vidrio', 'aluminio', 'cortinas', 'pintura', 'cubiertas', 'herreria', 'carpinteria'];
 
+function formatoMoneda(monto) {
+  const num = parseFloat(monto) || 0;
+  return '$' + num.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 function limpiarMonto(texto) {
   if (!texto) return 0;
   const limpio = texto.toString().replace('$', '').replace(/,/g, '').trim();
@@ -265,6 +270,7 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
 
     doc.moveTo(35, 70).lineTo(575, 70).strokeColor('#000000').lineWidth(1.5).stroke();
 
+    // 1. FLUJO SEMANAL
     let y = 80;
     doc.rect(35, y, 540, 16).fill('#000000');
     doc.fillColor('#FFFFFF').fontSize(8.5).font('Helvetica-Bold').text('1. RESUMEN DE FLUJO SEMANAL (LUNES A DOMINGO)', 40, y + 4);
@@ -272,10 +278,10 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
     y += 20;
     const anchoCaja = 130;
     const cajas = [
-      { t: 'GASTOS EFECTIVO', v: `$${datos.semanaEfectivo.toFixed(2)}` },
-      { t: 'GASTOS TARJETA', v: `$${datos.semanaTarjeta.toFixed(2)}` },
-      { t: 'TRANSFERENCIAS', v: `$${datos.semanaTransferencia.toFixed(2)}` },
-      { t: 'TOTAL SEMANAL', v: `$${datos.semanaTotal.toFixed(2)}` }
+      { t: 'GASTOS EFECTIVO', v: formatoMoneda(datos.semanaEfectivo) },
+      { t: 'GASTOS TARJETA', v: formatoMoneda(datos.semanaTarjeta) },
+      { t: 'TRANSFERENCIAS', v: formatoMoneda(datos.semanaTransferencia) },
+      { t: 'TOTAL SEMANAL', v: formatoMoneda(datos.semanaTotal) }
     ];
 
     cajas.forEach((c, i) => {
@@ -285,6 +291,7 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
       doc.fillColor('#0F172A').fontSize(9.5).font('Helvetica-Bold').text(c.v, x + 5, y + 14, { width: anchoCaja - 10, align: 'center' });
     });
 
+    // 2. DESGLOSE DE GASTOS
     y += 36;
     doc.rect(35, y, 540, 16).fill('#000000');
     doc.fillColor('#FFFFFF').fontSize(8.5).font('Helvetica-Bold').text('2. DESGLOSE DE GASTOS SEMANALES VS ACUMULADO POR CATEGORÍA', 40, y + 4);
@@ -293,8 +300,8 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
     doc.rect(35, y, 540, 14).fill('#E2E8F0');
     doc.fillColor('#0F172A').fontSize(7.5).font('Helvetica-Bold');
     doc.text('Partida Presupuestal / Categoría', 40, y + 3);
-    doc.text('Gastado en la Semana', 300, y + 3, { width: 120, align: 'right' });
-    doc.text('Acumulado Histórico', 430, y + 3, { width: 140, align: 'right' });
+    doc.text('Gastado en la Semana', 280, y + 3, { width: 130, align: 'right' });
+    doc.text('Acumulado Histórico', 420, y + 3, { width: 150, align: 'right' });
 
     y += 15;
     doc.font('Helvetica').fontSize(7.5);
@@ -304,8 +311,8 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
       if (p.semana > 0 || p.acumulado > 0) {
         if (contadorFilas % 2 === 1) doc.rect(35, y - 2, 540, 12).fill('#F8FAFC');
         doc.fillColor('#1A1A1A').text(p.nombre, 40, y);
-        doc.text(`$${p.semana.toFixed(2)}`, 300, y, { width: 120, align: 'right' });
-        doc.text(`$${p.acumulado.toFixed(2)}`, 430, y, { width: 140, align: 'right' });
+        doc.text(formatoMoneda(p.semana), 280, y, { width: 130, align: 'right' });
+        doc.text(formatoMoneda(p.acumulado), 420, y, { width: 150, align: 'right' });
         y += 12;
         contadorFilas++;
       }
@@ -319,9 +326,10 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
     doc.rect(35, y, 540, 13).fill('#F1F5F9');
     doc.fillColor('#0F172A').font('Helvetica-Bold').fontSize(7.5);
     doc.text('TOTAL GENERAL ACUMULADO DE OBRA', 40, y + 3);
-    doc.text(`$${datos.semanaTotal.toFixed(2)}`, 300, y + 3, { width: 120, align: 'right' });
-    doc.text(`$${datos.gastosTotal.toFixed(2)}`, 430, y + 3, { width: 140, align: 'right' });
+    doc.text(formatoMoneda(datos.semanaTotal), 280, y + 3, { width: 130, align: 'right' });
+    doc.text(formatoMoneda(datos.gastosTotal), 420, y + 3, { width: 150, align: 'right' });
 
+    // 3. CONTRATISTAS
     y += 20;
     doc.rect(35, y, 540, 16).fill('#000000');
     doc.fillColor('#FFFFFF').fontSize(8.5).font('Helvetica-Bold').text('3. ESTADO DE CUENTA DETALLADO DE CONTRATISTAS', 40, y + 4);
@@ -330,9 +338,9 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
     doc.rect(35, y, 540, 14).fill('#E2E8F0');
     doc.fillColor('#0F172A').fontSize(7.5).font('Helvetica-Bold');
     doc.text('Especialidad / Contratista', 40, y + 3);
-    doc.text('Contrato Autorizado', 250, y + 3, { width: 100, align: 'right' });
-    doc.text('Pagado a la Fecha', 360, y + 3, { width: 100, align: 'right' });
-    doc.text('Saldo Pendiente', 470, y + 3, { width: 100, align: 'right' });
+    doc.text('Contrato Autorizado', 240, y + 3, { width: 105, align: 'right' });
+    doc.text('Pagado a la Fecha', 355, y + 3, { width: 105, align: 'right' });
+    doc.text('Saldo Pendiente', 465, y + 3, { width: 105, align: 'right' });
 
     y += 15;
     doc.font('Helvetica').fontSize(7.5);
@@ -344,9 +352,9 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
         if (cFilas % 2 === 1) doc.rect(35, y - 2, 540, 12).fill('#F8FAFC');
         const pendiente = c.contrato - c.pagado;
         doc.fillColor('#1A1A1A').text(esp.toUpperCase(), 40, y);
-        doc.text(`$${c.contrato.toFixed(2)}`, 250, y, { width: 100, align: 'right' });
-        doc.fillColor('#166534').text(`$${c.pagado.toFixed(2)}`, 360, y, { width: 100, align: 'right' });
-        doc.fillColor(pendiente > 0 ? '#991B1B' : '#0F172A').text(`$${pendiente.toFixed(2)}`, 470, y, { width: 100, align: 'right' });
+        doc.text(formatoMoneda(c.contrato), 240, y, { width: 105, align: 'right' });
+        doc.fillColor('#166534').text(formatoMoneda(c.pagado), 355, y, { width: 105, align: 'right' });
+        doc.fillColor(pendiente > 0 ? '#991B1B' : '#0F172A').text(formatoMoneda(pendiente), 465, y, { width: 105, align: 'right' });
         y += 12;
         cFilas++;
       }
@@ -360,11 +368,11 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
     doc.rect(35, y, 540, 13).fill('#F1F5F9');
     doc.fillColor('#0F172A').font('Helvetica-Bold').fontSize(7.5);
     doc.text('TOTAL CONTRATISTAS', 40, y + 3);
-    doc.text(`$${datos.contratistasContrato.toFixed(2)}`, 250, y + 3, { width: 100, align: 'right' });
-    doc.fillColor('#166534').text(`$${datos.contratistasPagado.toFixed(2)}`, 360, y + 3, { width: 100, align: 'right' });
-    doc.fillColor('#991B1B').text(`$${datos.contratistasDeuda.toFixed(2)}`, 470, y + 3, { width: 100, align: 'right' });
+    doc.text(formatoMoneda(datos.contratistasContrato), 240, y + 3, { width: 105, align: 'right' });
+    doc.fillColor('#166534').text(formatoMoneda(datos.contratistasPagado), 355, y + 3, { width: 105, align: 'right' });
+    doc.fillColor(datos.contratistasDeuda > 0 ? '#991B1B' : '#0F172A').text(formatoMoneda(datos.contratistasDeuda), 465, y + 3, { width: 105, align: 'right' });
 
-    // SECCIÓN 4 CORREGIDA: DISTRIBUCIÓN LIMPIA SIN ENCIMADOS
+    // 4. BALANCE FINANCIERO Y DESGLOSE CUENTA POR CUENTA
     y += 20;
     doc.rect(35, y, 540, 16).fill('#000000');
     doc.fillColor('#FFFFFF').fontSize(8.5).font('Helvetica-Bold').text('4. BALANCE FINANCIERO GENERAL Y DISPONIBILIDAD', 40, y + 4);
@@ -372,22 +380,35 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
     y += 18;
     doc.fillColor('#000000').fontSize(7.5).font('Helvetica');
     doc.text('(+) Total Presupuesto / Ingresos Recibidos:', 40, y, { width: 180 });
-    doc.font('Helvetica-Bold').text(`$${datos.ingresosTotal.toFixed(2)}`, 205, y, { width: 85, align: 'right' });
+    doc.font('Helvetica-Bold').text(formatoMoneda(datos.ingresosTotal), 205, y, { width: 90, align: 'right' });
 
     doc.font('Helvetica').fillColor('#991B1B').text('(-) Gastos Acumulados Totales de Obra:', 305, y, { width: 175 });
-    doc.font('Helvetica-Bold').text(`$${datos.gastosTotal.toFixed(2)}`, 480, y, { width: 95, align: 'right' });
+    doc.font('Helvetica-Bold').text(formatoMoneda(datos.gastosTotal), 480, y, { width: 95, align: 'right' });
 
     y += 14;
     doc.fillColor('#166534').font('Helvetica-Bold').text('(=) SALDO TOTAL DISPONIBLE EN OBRA:', 40, y, { width: 180 });
-    doc.text(`$${datos.saldoDisponible.toFixed(2)}`, 205, y, { width: 85, align: 'right' });
+    doc.text(formatoMoneda(datos.saldoDisponible), 205, y, { width: 90, align: 'right' });
 
+    // Caja con Desglose Cuenta por Cuenta
     y += 18;
-    doc.rect(35, y, 540, 26).fillAndStroke('#F8FAFC', '#CBD5E1');
-    doc.fillColor('#0F172A').fontSize(7.5).font('Helvetica-Bold').text('UBICACION Y DISPONIBILIDAD REAL DEL SALDO:', 42, y + 4);
-    doc.font('Helvetica').text(`• En Cuentas de Banco (Bancos/Tarjetas): $${datos.saldoBanco.toFixed(2)}`, 45, y + 15);
-    doc.text(`• En Efectivo (Caja Chica y Campo): $${datos.saldoEfectivo.toFixed(2)}`, 320, y + 15);
+    doc.rect(35, y, 540, 48).fillAndStroke('#F8FAFC', '#CBD5E1');
+    doc.fillColor('#0F172A').fontSize(7.5).font('Helvetica-Bold').text('DESGLOSE DETALLADO DE DISPONIBILIDAD EN CUENTAS:', 42, y + 4);
+    
+    doc.font('Helvetica').fontSize(7);
+    doc.text(`• Banamex Beto: ${formatoMoneda(datos.cuentas.banamexBeto)}`, 45, y + 16);
+    doc.text(`• BBVA Rigo: ${formatoMoneda(datos.cuentas.bbvaRigo)}`, 45, y + 26);
+    doc.text(`• BBVA Beto: ${formatoMoneda(datos.cuentas.bbvaBeto)}`, 45, y + 36);
 
-    y += 45;
+    doc.text(`• Tarjeta NU: ${formatoMoneda(datos.cuentas.nu)}`, 220, y + 16);
+    doc.text(`• Tarjeta DIDI: ${formatoMoneda(datos.cuentas.didi)}`, 220, y + 26);
+    doc.text(`• MercadoPago: ${formatoMoneda(datos.cuentas.mercadoPago)}`, 220, y + 36);
+
+    doc.fillColor('#166534').font('Helvetica-Bold');
+    doc.text(`• En Efectivo (Caja Chica): ${formatoMoneda(datos.saldoEfectivo)}`, 385, y + 16);
+    doc.text(`• Total en Bancos: ${formatoMoneda(datos.saldoBanco)}`, 385, y + 28);
+
+    // Firma
+    y += 65;
     const xFirma = 320;
     const anchoFirma = 240;
 
@@ -429,6 +450,15 @@ async function generarDatosCorteSemanal(obraBuscada) {
     let semanaEfectivo = 0, semanaTarjeta = 0, semanaTransferencia = 0;
     let gastosTotal = 0, ingresosTotal = 0, dotacionesCaja = 0, egresosEfectivoTotal = 0;
 
+    const cuentas = {
+      banamexBeto: 0,
+      bbvaRigo: 0,
+      bbvaBeto: 0,
+      nu: 0,
+      didi: 0,
+      mercadoPago: 0
+    };
+
     const mapaPartidas = {};
     const detalleContratistas = {};
     CONTRATISTAS_VALIDOS.forEach(c => detalleContratistas[c] = { contrato: 0, pagado: 0 });
@@ -444,7 +474,6 @@ async function generarDatosCorteSemanal(obraBuscada) {
       const estatus = fila[8] || '';
 
       if (estatus.includes('CANCELADO')) continue;
-      if (categoria.includes('CONTROL PRESUPUESTAL')) continue;
 
       if (!obraBuscada || obra.toLowerCase() === obraBuscada.toLowerCase()) {
         let fechaMov = new Date(fechaStr);
@@ -455,11 +484,30 @@ async function generarDatosCorteSemanal(obraBuscada) {
         
         const esSemanaActual = !isNaN(fechaMov.getTime()) && fechaMov >= inicioLunes && fechaMov <= finDomingo;
 
-        if (metodo.includes('Ingreso Presupuesto') || categoria.includes('INGRESO CLIENTE')) {
+        // Rastrear saldos de cuentas iniciales
+        if (metodo.includes('Apertura Banamex Beto')) cuentas.banamexBeto += monto;
+        else if (metodo.includes('Apertura BBVA Rigo')) cuentas.bbvaRigo += monto;
+        else if (metodo.includes('Apertura BBVA Beto')) cuentas.bbvaBeto += monto;
+        else if (metodo.includes('Apertura NU')) cuentas.nu += monto;
+        else if (metodo.includes('Apertura DIDI')) cuentas.didi += monto;
+        else if (metodo.includes('Apertura MercadoPago')) cuentas.mercadoPago += monto;
+
+        // Rastrear egresos por cuenta
+        if (metodo.includes('Banamex Beto') && !metodo.includes('Apertura')) cuentas.banamexBeto -= monto;
+        else if (metodo.includes('BBVA Rigo') && !metodo.includes('Apertura')) cuentas.bbvaRigo -= monto;
+        else if (metodo.includes('BBVA Beto') && !metodo.includes('Apertura')) cuentas.bbvaBeto -= monto;
+        else if (metodo.includes('NU') && !metodo.includes('Apertura')) cuentas.nu -= monto;
+        else if (metodo.includes('DIDI') && !metodo.includes('Apertura')) cuentas.didi -= monto;
+        else if (metodo.includes('MercadoPago') && !metodo.includes('Apertura')) cuentas.mercadoPago -= monto;
+
+        // Clasificación Presupuestos vs Gastos
+        if (concepto.includes('presupuesto total autorizado')) {
+          // Registro informativo
+        } else if (metodo.includes('Ingreso Presupuesto') || concepto.includes('ingreso presupuesto')) {
           ingresosTotal += monto;
         } else if (metodo.includes('Dotación Caja Chica')) {
           dotacionesCaja += monto;
-        } else {
+        } else if (!metodo.includes('Apertura') && !concepto.includes('total autorizado')) {
           gastosTotal += monto;
 
           if (metodo.startsWith('Efectivo')) {
@@ -477,11 +525,14 @@ async function generarDatosCorteSemanal(obraBuscada) {
           }
         }
 
+        // Mapeo Universal de Contratistas
         CONTRATISTAS_VALIDOS.forEach(c => {
-          if (concepto.includes(`contrato ${c}`) || concepto.includes(`total autorizado ${c}`)) {
+          if (concepto.includes(`contrato ${c}`) || concepto.includes(`total autorizado ${c}`) || concepto.includes(`contrato cerrado ${c}`)) {
             detalleContratistas[c].contrato += monto;
           } else if (concepto.includes(c) || categoria.toLowerCase().includes(c)) {
-            detalleContratistas[c].pagado += monto;
+            if (!concepto.includes('total autorizado')) {
+              detalleContratistas[c].pagado += monto;
+            }
           }
         });
       }
@@ -505,9 +556,11 @@ async function generarDatosCorteSemanal(obraBuscada) {
     const saldoDisponible = ingresosTotal - gastosTotal;
     let saldoEfectivo = dotacionesCaja - egresosEfectivoTotal;
     if (saldoEfectivo < 0) saldoEfectivo = 0;
-    if (saldoEfectivo > saldoDisponible && saldoDisponible > 0) saldoEfectivo = saldoDisponible;
 
-    const saldoBanco = saldoDisponible - saldoEfectivo;
+    let saldoBancoTotal = (cuentas.banamexBeto + cuentas.bbvaRigo + cuentas.bbvaBeto + cuentas.nu + cuentas.didi + cuentas.mercadoPago);
+    if (saldoBancoTotal <= 0 && saldoDisponible > saldoEfectivo) {
+      saldoBancoTotal = saldoDisponible - saldoEfectivo;
+    }
 
     return {
       sucursal: obraBuscada || 'General Global',
@@ -524,8 +577,9 @@ async function generarDatosCorteSemanal(obraBuscada) {
       ingresosTotal,
       gastosTotal,
       saldoDisponible,
-      saldoBanco: saldoBanco > 0 ? saldoBanco : 0,
-      saldoEfectivo: saldoEfectivo > 0 ? saldoEfectivo : 0
+      saldoBanco: saldoBancoTotal > 0 ? saldoBancoTotal : 0,
+      saldoEfectivo: saldoEfectivo > 0 ? saldoEfectivo : 0,
+      cuentas
     };
   } catch (error) {
     return null;
@@ -548,9 +602,9 @@ async function verificarSobregiroContratista(obra, categoria, concepto, montoNue
 
     if (porcentaje > 100) {
       const exceso = totalPagadoFuturo - datosC.totalContrato;
-      return `🚨 *ALERTA DE SOBREGIRO:* El contratista de *${contratista.toUpperCase()}* ha superado su contrato por $${exceso.toFixed(2)} (${porcentaje.toFixed(1)}% pagado).`;
+      return `🚨 *ALERTA DE SOBREGIRO:* El contratista de *${contratista.toUpperCase()}* ha superado su contrato por ${formatoMoneda(exceso)} (${porcentaje.toFixed(1)}% pagado).`;
     } else if (porcentaje >= 90) {
-      return `🟡 *AVISO PREVENTIVO:* El contratista de *${contratista.toUpperCase()}* está al ${porcentaje.toFixed(1)}% de su contrato ($${totalPagadoFuturo.toFixed(2)} de $${datosC.totalContrato.toFixed(2)}).`;
+      return `🟡 *AVISO PREVENTIVO:* El contratista de *${contratista.toUpperCase()}* está al ${porcentaje.toFixed(1)}% de su contrato (${formatoMoneda(totalPagadoFuturo)} de ${formatoMoneda(datosC.totalContrato)}).`;
     }
     return null;
   } catch (e) {
@@ -576,7 +630,7 @@ async function obtenerUltimosGastos(obraFiltro) {
       const concepto = fila[6] || '';
       const estatus = fila[8] || '';
 
-      if (!estatus.includes('CANCELADO') && !concepto.includes('Presupuesto Total Autorizado') && !concepto.includes('Total Autorizado')) {
+      if (!estatus.includes('CANCELADO') && !concepto.includes('Presupuesto Total Autorizado') && !concepto.includes('Total Autorizado') && !fila[3].includes('Apertura')) {
         if (!obraFiltro || obra.toLowerCase() === obraFiltro.toLowerCase()) {
           ultimos.push({ filaIndex: i + 1, id, obra, concepto, monto });
         }
@@ -1154,7 +1208,7 @@ async function calcularReporteSaldos(obraBuscada) {
       const estatus = fila[8] || '';
 
       if (estatus.includes('CANCELADO')) continue;
-      if (categoria.includes('CONTROL PRESUPUESTAL')) continue;
+      if (metodo.includes('Apertura')) continue;
 
       if (metodo.includes('Dotación Caja Chica')) {
         dotacionesCaja += monto;
@@ -1203,10 +1257,12 @@ async function calcularReporteContratistas(obraBuscada) {
       CONTRATISTAS_VALIDOS.forEach(c => {
         if (!resultado[c]) resultado[c] = { totalContrato: 0, pagado: 0 };
 
-        if (concepto.includes(`contrato ${c}`) || concepto.includes(`total autorizado ${c}`)) {
+        if (concepto.includes(`contrato ${c}`) || concepto.includes(`total autorizado ${c}`) || concepto.includes(`contrato cerrado ${c}`)) {
           resultado[c].totalContrato += monto;
         } else if (concepto.includes(c) || categoria.includes(c)) {
-          resultado[c].pagado += monto;
+          if (!concepto.includes('total autorizado')) {
+            resultado[c].pagado += monto;
+          }
         }
       });
     }
@@ -1233,7 +1289,6 @@ async function calcularReportePresupuestos() {
       const fila = filas[i];
       const obra = fila[2] || '';
       const metodo = fila[3] || '';
-      const categoria = fila[4] || '';
       const concepto = (fila[6] || '').toLowerCase();
       const monto = limpiarMonto(fila[5]);
       const estatus = fila[8] || '';
@@ -1243,7 +1298,7 @@ async function calcularReportePresupuestos() {
       if (resultado[obra]) {
         if (concepto.includes('presupuesto total autorizado')) {
           resultado[obra].presupuestoTotal += monto;
-        } else if (metodo.includes('Ingreso Presupuesto') || categoria.includes('INGRESO CLIENTE')) {
+        } else if (metodo.includes('Ingreso Presupuesto') || concepto.includes('ingreso presupuesto')) {
           resultado[obra].liberado += monto;
         }
       }
@@ -1442,7 +1497,7 @@ app.post('/webhook', async (req, res) => {
         } else {
           const opciones = ultimos.map(u => ({
             id: `EDITARGAS_${u.filaIndex}`,
-            title: `$${u.monto} - ${u.concepto.substring(0, 16)}`,
+            title: `${formatoMoneda(u.monto)} - ${u.concepto.substring(0, 14)}`,
             description: `${u.obra} (${u.id})`
           }));
           await enviarLista(from, '✏️ *CORRECCIÓN TÁCTIL DE GASTOS*\n\nToca el gasto que deseas modificar o anular:', 'Ver Gastos', 'Últimos Movimientos', opciones);
@@ -1515,9 +1570,9 @@ app.post('/webhook', async (req, res) => {
           const t = rep[o];
           const porCobrar = t.presupuestoTotal - t.liberado;
           msgTexto += `🏗️ *${o}*\n` +
-            `  • Presupuesto Autorizado: $${t.presupuestoTotal.toFixed(2)}\n` +
-            `  • Liberado a la Fecha: $${t.liberado.toFixed(2)}\n` +
-            `  • Pendiente por Liberar: $${porCobrar.toFixed(2)}\n\n`;
+            `  • Presupuesto Autorizado: ${formatoMoneda(t.presupuestoTotal)}\n` +
+            `  • Liberado a la Fecha: ${formatoMoneda(t.liberado)}\n` +
+            `  • Pendiente por Liberar: ${formatoMoneda(porCobrar)}\n\n`;
         });
         await enviarTexto(from, msgTexto);
         res.sendStatus(200);
@@ -1532,7 +1587,7 @@ app.post('/webhook', async (req, res) => {
           const opciones = pendientes.map(p => ({
             id: `RESOLVER_${p.id}`,
             title: p.concepto.substring(0, 24),
-            description: `${p.obra} | $${p.monto} (${p.id})`
+            description: `${p.obra} | ${formatoMoneda(p.monto)} (${p.id})`
           }));
           await enviarLista(from, '📋 *Gastos Pendientes de Factura:*', 'Ver Pendientes', 'Selecciona para resolver:', opciones);
         }
@@ -1548,7 +1603,7 @@ app.post('/webhook', async (req, res) => {
           const opciones = extras.map(e => ({
             id: `GESTIONEXT_${e.idExtra}`,
             title: e.descripcion.substring(0, 24),
-            description: `${e.obra} | $${e.monto} (${e.idExtra})`
+            description: `${e.obra} | ${formatoMoneda(e.monto)} (${e.idExtra})`
           }));
           await enviarLista(from, '🔨 *Trabajos Extras Pendientes:*', 'Ver Extras', 'Selecciona para actualizar:', opciones);
         }
@@ -1600,7 +1655,7 @@ app.post('/webhook', async (req, res) => {
           usuario: nombreUsuario
         };
 
-        await enviarBotones(from, `🚌 *Apoyo Pasajes Visita Familiar:* $${montoApoyo.toFixed(2)}\n👤 *Trabajador:* ${nombreTrabajador.toUpperCase()}\n\n🏗️ *¿A qué obra se aplica este gasto de viáticos?*`, [
+        await enviarBotones(from, `🚌 *Apoyo Pasajes Visita Familiar:* ${formatoMoneda(montoApoyo)}\n👤 *Trabajador:* ${nombreTrabajador.toUpperCase()}\n\n🏗️ *¿A qué obra se aplica este gasto de viáticos?*`, [
           { id: 'VISITAOBRA_Pelicano', title: 'Pelicano' },
           { id: 'VISITAOBRA_Caldera', title: 'Caldera' },
           { id: 'VISITAOBRA_Nativitas', title: 'Nativitas' }
@@ -1646,7 +1701,7 @@ app.post('/webhook', async (req, res) => {
           usuario: nombreUsuario
         };
 
-        await enviarBotones(from, `🏷️ *Material:* ${material.toUpperCase()}\n💵 *Precio:* $${precio.toFixed(2)}\n\n📐 *Selecciona la Unidad de Medida:*`, [
+        await enviarBotones(from, `🏷️ *Material:* ${material.toUpperCase()}\n💵 *Precio:* ${formatoMoneda(precio)}\n\n📐 *Selecciona la Unidad de Medida:*`, [
           { id: 'UNIDAD_Bulto', title: 'Bulto / Saco' },
           { id: 'UNIDAD_Tramo', title: 'Tramo / Pza' },
           { id: 'UNIDAD_M2', title: 'm² / m³ / Ton' }
@@ -1670,7 +1725,7 @@ app.post('/webhook', async (req, res) => {
           let msgTxt = `📊 *HISTÓRICO DE PRECIOS: "${materialBuscado.toUpperCase()}"*\n\n`;
           resultados.forEach((r, idx) => {
             const emoji = idx === 0 ? '🟢' : idx === 1 ? '🟡' : '🔴';
-            msgTxt += `${emoji} *$${r.precio.toFixed(2)}* / ${r.unidad}\n` +
+            msgTxt += `${emoji} *${formatoMoneda(r.precio)}* / ${r.unidad}\n` +
               `    📍 ${r.obra}\n` +
               `    🏢 Proveedor: ${r.proveedor}\n` +
               `    📝 Material: ${r.material}\n` +
@@ -1701,7 +1756,7 @@ app.post('/webhook', async (req, res) => {
         });
 
         const reporteCaja = await calcularReporteSaldos(null);
-        await enviarTexto(from, `💵 *Efectivo Ingresado a Caja Chica:* $${montoCaja.toFixed(2)}\n👤 *Registró:* ${nombreUsuario}\n\n💰 *Efectivo Disponible en Mano:* $${reporteCaja.cajaDisponible.toFixed(2)} MXN`);
+        await enviarTexto(from, `💵 *Efectivo Ingresado a Caja Chica:* ${formatoMoneda(montoCaja)}\n👤 *Registró:* ${nombreUsuario}\n\n💰 *Efectivo Disponible en Mano:* ${formatoMoneda(reporteCaja.cajaDisponible)} MXN`);
         res.sendStatus(200);
         return;
       }
@@ -1720,7 +1775,7 @@ app.post('/webhook', async (req, res) => {
           usuario: nombreUsuario
         };
 
-        await enviarBotones(from, `👷‍♂️ *Contrato ${nombreContratista.toUpperCase()}:* $${montoContrato.toFixed(2)}\n\n🏗️ *¿A qué sucursal pertenece este contrato?*`, [
+        await enviarBotones(from, `👷‍♂️ *Contrato ${nombreContratista.toUpperCase()}:* ${formatoMoneda(montoContrato)}\n\n🏗️ *¿A qué sucursal pertenece este contrato?*`, [
           { id: 'CTROBRA_Pelicano', title: 'Pelicano' },
           { id: 'CTROBRA_Caldera', title: 'Caldera' },
           { id: 'CTROBRA_Nativitas', title: 'Nativitas' }
@@ -1742,7 +1797,7 @@ app.post('/webhook', async (req, res) => {
         delete sesionActual.filaIndexEditar;
 
         if (ok) {
-          await enviarTexto(from, `✅ *Monto actualizado con éxito a:* $${nuevoMonto.toFixed(2)} MXN`);
+          await enviarTexto(from, `✅ *Monto actualizado con éxito a:* ${formatoMoneda(nuevoMonto)} MXN`);
         } else {
           await enviarTexto(from, '⚠️ No se pudo actualizar el monto.');
         }
@@ -1751,6 +1806,7 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
+      // ASISTENTE DE CARGA INICIAL (SINCRONIZADO CON HOJAS Y BANCOS)
       if (sesionActual && sesionActual.tipoAccion === 'CARGA_OBRA') {
         const montoNum = limpiarMonto(textBody);
 
@@ -1763,7 +1819,7 @@ app.post('/webhook', async (req, res) => {
             obra: sesionActual.obra,
             metodo: 'Ingreso Presupuesto',
             subMetodo: '',
-            categoria: '00) CONTROL PRESUPUESTAL',
+            categoria: '01) PREELIMINARES',
             monto: sesionActual.presupuestoTotal,
             concepto: 'Presupuesto Total Autorizado',
             usuario: nombreUsuario,
@@ -1773,10 +1829,10 @@ app.post('/webhook', async (req, res) => {
 
           if (sesionActual.modoCarga === 'AVANZADA') {
             sesionActual.esperandoCobradoCliente = true;
-            await enviarTexto(from, `💰 *Presupuesto registrado:* $${montoNum.toFixed(2)}\n\n¿Cuánto dinero ha *liberado/pagado el cliente* a la fecha? (Escribe el monto):`);
+            await enviarTexto(from, `💰 *Presupuesto registrado:* ${formatoMoneda(montoNum)}\n\n¿Cuánto dinero ha *liberado/pagado el cliente* a la fecha? (Escribe el monto):`);
           } else {
             sesionActual.esperandoAnticipo = true;
-            await enviarTexto(from, `💰 *Presupuesto registrado:* $${montoNum.toFixed(2)}\n\n¿Cuánto dinero entró de *anticipo inicial*? (Escribe el monto):`);
+            await enviarTexto(from, `💰 *Presupuesto registrado:* ${formatoMoneda(montoNum)}\n\n¿Cuánto dinero entró de *anticipo inicial*? (Escribe el monto):`);
           }
           res.sendStatus(200);
           return;
@@ -1793,7 +1849,7 @@ app.post('/webhook', async (req, res) => {
               obra: sesionActual.obra,
               metodo: 'Ingreso Presupuesto',
               subMetodo: '',
-              categoria: '00) INGRESO CLIENTE',
+              categoria: '30) HONORARIOS',
               monto: montoNum,
               concepto: 'Ingreso Presupuesto Inicial Recibido',
               usuario: nombreUsuario,
@@ -1804,7 +1860,7 @@ app.post('/webhook', async (req, res) => {
 
           if (sesionActual.modoCarga === 'AVANZADA') {
             sesionActual.esperandoGastadoAcumulado = true;
-            await enviarTexto(from, `💵 *Ingreso registrado:* $${montoNum.toFixed(2)}\n\n¿Cuánto se lleva *gastado en total acumulado* en esta obra a la fecha? (Escribe el monto o 0):`);
+            await enviarTexto(from, `💵 *Ingreso registrado:* ${formatoMoneda(montoNum)}\n\n¿Cuánto se lleva *gastado en total acumulado* en esta obra a la fecha? (Escribe el monto o 0):`);
           } else {
             sesionActual.esperandoSaldoBanamexBeto = true;
             await enviarTexto(from, `🏦 *Desglose de Cuentas:*\n\n¿Cuánto dinero hay en *Banamex Beto* para esta obra? (Escribe el monto o 0):`);
@@ -1841,6 +1897,22 @@ app.post('/webhook', async (req, res) => {
         if (sesionActual.esperandoSaldoBanamexBeto) {
           sesionActual.banamexBeto = montoNum;
           delete sesionActual.esperandoSaldoBanamexBeto;
+          
+          if (montoNum > 0) {
+            await guardarEnSheets({
+              idMovimiento: 'AP-BNX-' + Date.now().toString().slice(-6),
+              obra: sesionActual.obra,
+              metodo: 'Apertura Banamex Beto',
+              subMetodo: 'Banamex Beto',
+              categoria: '20) VARIOS',
+              monto: montoNum,
+              concepto: 'Fondo Inicial en Banamex Beto',
+              usuario: nombreUsuario,
+              estatusFactura: 'No Requiere 🔴',
+              linkFactura: 'N/A'
+            });
+          }
+
           sesionActual.esperandoSaldoBBVARigo = true;
           await enviarTexto(from, `¿Cuánto dinero hay en *BBVA Rigo*? (Escribe el monto o 0):`);
           res.sendStatus(200);
@@ -1850,6 +1922,22 @@ app.post('/webhook', async (req, res) => {
         if (sesionActual.esperandoSaldoBBVARigo) {
           sesionActual.bbvaRigo = montoNum;
           delete sesionActual.esperandoSaldoBBVARigo;
+
+          if (montoNum > 0) {
+            await guardarEnSheets({
+              idMovimiento: 'AP-BBVAR-' + Date.now().toString().slice(-6),
+              obra: sesionActual.obra,
+              metodo: 'Apertura BBVA Rigo',
+              subMetodo: 'BBVA Rigo',
+              categoria: '20) VARIOS',
+              monto: montoNum,
+              concepto: 'Fondo Inicial en BBVA Rigo',
+              usuario: nombreUsuario,
+              estatusFactura: 'No Requiere 🔴',
+              linkFactura: 'N/A'
+            });
+          }
+
           sesionActual.esperandoSaldoBBVABeto = true;
           await enviarTexto(from, `¿Cuánto dinero hay en *BBVA Beto*? (Escribe el monto o 0):`);
           res.sendStatus(200);
@@ -1859,6 +1947,22 @@ app.post('/webhook', async (req, res) => {
         if (sesionActual.esperandoSaldoBBVABeto) {
           sesionActual.bbvaBeto = montoNum;
           delete sesionActual.esperandoSaldoBBVABeto;
+
+          if (montoNum > 0) {
+            await guardarEnSheets({
+              idMovimiento: 'AP-BBVAB-' + Date.now().toString().slice(-6),
+              obra: sesionActual.obra,
+              metodo: 'Apertura BBVA Beto',
+              subMetodo: 'BBVA Beto',
+              categoria: '20) VARIOS',
+              monto: montoNum,
+              concepto: 'Fondo Inicial en BBVA Beto',
+              usuario: nombreUsuario,
+              estatusFactura: 'No Requiere 🔴',
+              linkFactura: 'N/A'
+            });
+          }
+
           sesionActual.esperandoSaldoNU = true;
           await enviarTexto(from, `¿Cuánto dinero hay en *Tarjeta NU*? (Escribe el monto o 0):`);
           res.sendStatus(200);
@@ -1868,6 +1972,22 @@ app.post('/webhook', async (req, res) => {
         if (sesionActual.esperandoSaldoNU) {
           sesionActual.nu = montoNum;
           delete sesionActual.esperandoSaldoNU;
+
+          if (montoNum > 0) {
+            await guardarEnSheets({
+              idMovimiento: 'AP-NU-' + Date.now().toString().slice(-6),
+              obra: sesionActual.obra,
+              metodo: 'Apertura NU',
+              subMetodo: 'NU',
+              categoria: '20) VARIOS',
+              monto: montoNum,
+              concepto: 'Fondo Inicial en Tarjeta NU',
+              usuario: nombreUsuario,
+              estatusFactura: 'No Requiere 🔴',
+              linkFactura: 'N/A'
+            });
+          }
+
           sesionActual.esperandoSaldoDIDI = true;
           await enviarTexto(from, `¿Cuánto dinero hay en *Tarjeta DIDI*? (Escribe el monto o 0):`);
           res.sendStatus(200);
@@ -1877,6 +1997,22 @@ app.post('/webhook', async (req, res) => {
         if (sesionActual.esperandoSaldoDIDI) {
           sesionActual.didi = montoNum;
           delete sesionActual.esperandoSaldoDIDI;
+
+          if (montoNum > 0) {
+            await guardarEnSheets({
+              idMovimiento: 'AP-DIDI-' + Date.now().toString().slice(-6),
+              obra: sesionActual.obra,
+              metodo: 'Apertura DIDI',
+              subMetodo: 'DIDI',
+              categoria: '20) VARIOS',
+              monto: montoNum,
+              concepto: 'Fondo Inicial en Tarjeta DIDI',
+              usuario: nombreUsuario,
+              estatusFactura: 'No Requiere 🔴',
+              linkFactura: 'N/A'
+            });
+          }
+
           sesionActual.esperandoSaldoMercadoPago = true;
           await enviarTexto(from, `¿Cuánto dinero hay en *MercadoPago*? (Escribe el monto o 0):`);
           res.sendStatus(200);
@@ -1886,6 +2022,22 @@ app.post('/webhook', async (req, res) => {
         if (sesionActual.esperandoSaldoMercadoPago) {
           sesionActual.mercadoPago = montoNum;
           delete sesionActual.esperandoSaldoMercadoPago;
+
+          if (montoNum > 0) {
+            await guardarEnSheets({
+              idMovimiento: 'AP-MP-' + Date.now().toString().slice(-6),
+              obra: sesionActual.obra,
+              metodo: 'Apertura MercadoPago',
+              subMetodo: 'MercadoPago',
+              categoria: '20) VARIOS',
+              monto: montoNum,
+              concepto: 'Fondo Inicial en MercadoPago',
+              usuario: nombreUsuario,
+              estatusFactura: 'No Requiere 🔴',
+              linkFactura: 'N/A'
+            });
+          }
+
           sesionActual.esperandoSaldoCajaChica = true;
           await enviarTexto(from, `💵 ¿Cuánto efectivo disponible hay en *Caja Chica / Campo* para esta obra? (Escribe el monto o 0):`);
           res.sendStatus(200);
@@ -1923,7 +2075,7 @@ app.post('/webhook', async (req, res) => {
           sesionActual.montoContratoTemp = montoNum;
           delete sesionActual.esperandoMontoContrato;
           sesionActual.esperandoPagadoContrato = true;
-          await enviarTexto(from, `Monto de Contrato: $${montoNum.toFixed(2)}\n\n¿Cuánto se le ha *pagado a la fecha* a este contratista? (Escribe el monto o 0):`);
+          await enviarTexto(from, `Monto de Contrato: ${formatoMoneda(montoNum)}\n\n¿Cuánto se le ha *pagado a la fecha* a este contratista? (Escribe el monto o 0):`);
           res.sendStatus(200);
           return;
         }
@@ -1937,7 +2089,7 @@ app.post('/webhook', async (req, res) => {
             obra: sesionActual.obra,
             metodo: 'Transferencia',
             subMetodo: '',
-            categoria: '00) CONTROL PRESUPUESTAL',
+            categoria: '20) VARIOS',
             monto: sesionActual.montoContratoTemp,
             concepto: `Contrato ${sesionActual.especialidadTemp.toUpperCase()} Total Autorizado`,
             usuario: nombreUsuario,
@@ -1951,9 +2103,9 @@ app.post('/webhook', async (req, res) => {
               obra: sesionActual.obra,
               metodo: 'Transferencia',
               subMetodo: '',
-              categoria: '29) INDIRECTOS',
+              categoria: '20) VARIOS',
               monto: pagadoTemp,
-              concepto: `Abono Histórico ${sesionActual.especialidadTemp.toUpperCase()}`,
+              concepto: `Abono ${sesionActual.especialidadTemp.toUpperCase()}`,
               usuario: nombreUsuario,
               estatusFactura: 'No Requiere 🔴',
               linkFactura: 'N/A'
@@ -1961,7 +2113,7 @@ app.post('/webhook', async (req, res) => {
           }
 
           const saldoPendiente = sesionActual.montoContratoTemp - pagadoTemp;
-          await enviarBotones(from, `✅ *Contratista (${sesionActual.especialidadTemp.toUpperCase()}) Registrado*\n• Contrato: $${sesionActual.montoContratoTemp.toFixed(2)}\n• Pagado: $${pagadoTemp.toFixed(2)}\n• Saldo Pendiente: $${saldoPendiente.toFixed(2)}\n\n¿Deseas agregar otro contratista?`, [
+          await enviarBotones(from, `✅ *Contratista (${sesionActual.especialidadTemp.toUpperCase()}) Registrado*\n• Contrato: ${formatoMoneda(sesionActual.montoContratoTemp)}\n• Pagado: ${formatoMoneda(pagadoTemp)}\n• Saldo Pendiente: ${formatoMoneda(saldoPendiente)}\n\n¿Deseas agregar otro contratista?`, [
             { id: 'CARGACONTRATO_SI', title: '➕ Agregar Otro' },
             { id: 'CARGACONTRATO_FIN', title: '✅ Finalizar Obra' }
           ]);
@@ -2000,7 +2152,7 @@ app.post('/webhook', async (req, res) => {
         delete sesionActual.esperandoSueldoTrabajador;
 
         await guardarTrabajador(sesionActual);
-        await enviarTexto(from, `✅ *Trabajador Registrado con Éxito*\n\n🆔 *ID:* ${sesionActual.idTrabajador}\n👤 *Nombre:* ${sesionActual.nombre}\n🏗️ *Obra:* ${sesionActual.obra}\n📌 *Tipo:* ${sesionActual.tipo}\n💵 *Sueldo Semanal:* $${sesionActual.sueldo.toFixed(2)}\n📌 *Estatus:* ACTIVO 🟢`);
+        await enviarTexto(from, `✅ *Trabajador Registrado con Éxito*\n\n🆔 *ID:* ${sesionActual.idTrabajador}\n👤 *Nombre:* ${sesionActual.nombre}\n🏗️ *Obra:* ${sesionActual.obra}\n📌 *Tipo:* ${sesionActual.tipo}\n💵 *Sueldo Semanal:* ${formatoMoneda(sesionActual.sueldo)}\n📌 *Estatus:* ACTIVO 🟢`);
         delete sesiones[from];
         res.sendStatus(200);
         return;
@@ -2020,7 +2172,7 @@ app.post('/webhook', async (req, res) => {
         sesionActual.monto = limpiarMonto(textBody);
         delete sesionActual.esperandoMontoVisita;
 
-        await enviarBotones(from, `🚌 *Visita Familiar (${sesionActual.nombre}):* $${sesionActual.monto.toFixed(2)}\n\n🏗️ *¿A qué Obra/Sucursal se aplican estos viáticos?*`, [
+        await enviarBotones(from, `🚌 *Visita Familiar (${sesionActual.nombre}):* ${formatoMoneda(sesionActual.monto)}\n\n🏗️ *¿A qué Obra/Sucursal se aplican estos viáticos?*`, [
           { id: 'VISITAOBRA_Pelicano', title: 'Pelicano' },
           { id: 'VISITAOBRA_Caldera', title: 'Caldera' },
           { id: 'VISITAOBRA_Nativitas', title: 'Nativitas' }
@@ -2047,7 +2199,7 @@ app.post('/webhook', async (req, res) => {
         sesionActual.precio = limpiarMonto(textBody);
         delete sesionActual.esperandoMontoPrecio;
 
-        await enviarBotones(from, `🏷️ *Material:* ${sesionActual.material.toUpperCase()}\n💵 *Precio:* $${sesionActual.precio.toFixed(2)}\n\n📐 *Selecciona la Unidad de Medida:*`, [
+        await enviarBotones(from, `🏷️ *Material:* ${sesionActual.material.toUpperCase()}\n💵 *Precio:* ${formatoMoneda(sesionActual.precio)}\n\n📐 *Selecciona la Unidad de Medida:*`, [
           { id: 'UNIDAD_Bulto', title: 'Bulto / Saco' },
           { id: 'UNIDAD_Tramo', title: 'Tramo / Pza' },
           { id: 'UNIDAD_M2', title: 'm² / m³ / Ton' }
@@ -2070,7 +2222,7 @@ app.post('/webhook', async (req, res) => {
           let msgTxt = `📊 *HISTÓRICO DE PRECIOS: "${textBody.toUpperCase()}"*\n\n`;
           resultados.forEach((r, idx) => {
             const emoji = idx === 0 ? '🟢' : idx === 1 ? '🟡' : '🔴';
-            msgTxt += `${emoji} *$${r.precio.toFixed(2)}* / ${r.unidad}\n` +
+            msgTxt += `${emoji} *${formatoMoneda(r.precio)}* / ${r.unidad}\n` +
               `    📍 ${r.obra}\n` +
               `    🏢 Proveedor: ${r.proveedor}\n` +
               `    📝 Material: ${r.material}\n` +
@@ -2103,7 +2255,7 @@ app.post('/webhook', async (req, res) => {
         delete sesionActual.esperandoMontoExtra;
         sesionActual.esperandoFotosExtra = true;
 
-        await enviarBotones(from, `📸 *Monto registrado:* $${sesionActual.monto.toFixed(2)}\n\n*Envía la primera FOTO o VIDEO de evidencia por WhatsApp, o presiona el botón:*`, [
+        await enviarBotones(from, `📸 *Monto registrado:* ${formatoMoneda(sesionActual.monto)}\n\n*Envía la primera FOTO o VIDEO de evidencia por WhatsApp, o presiona el botón:*`, [
           { id: 'EXTRAFOTO_OMITIR', title: '🚫 Sin Evidencia' }
         ]);
         res.sendStatus(200);
@@ -2114,7 +2266,7 @@ app.post('/webhook', async (req, res) => {
         sesionActual.unidad = textBody.toLowerCase();
         delete sesionActual.esperandoUnidadManual;
         
-        await enviarBotones(from, `🏷️ *Material:* ${sesionActual.material.toUpperCase()}\n💵 *Precio:* $${sesionActual.precio.toFixed(2)} / ${sesionActual.unidad}\n\n🏗️ *¿En qué Sucursal se cotizó/compró?*`, [
+        await enviarBotones(from, `🏷️ *Material:* ${sesionActual.material.toUpperCase()}\n💵 *Precio:* ${formatoMoneda(sesionActual.precio)} / ${sesionActual.unidad}\n\n🏗️ *¿En qué Sucursal se cotizó/compró?*`, [
           { id: 'PRECIOBRA_Pelicano', title: 'Pelicano' },
           { id: 'PRECIOBRA_Caldera', title: 'Caldera' },
           { id: 'PRECIOBRA_Nativitas', title: 'Nativitas' }
@@ -2140,7 +2292,7 @@ app.post('/webhook', async (req, res) => {
           usuario: sesionActual.usuario
         });
 
-        await enviarTexto(from, `✅ *Precio Histórico Guardado con Éxito*\n\n📍 *Obra:* ${sesionActual.obra}\n📝 *Material:* ${sesionActual.material.toUpperCase()}\n📐 *Unidad:* ${sesionActual.unidad}\n💵 *Precio:* $${sesionActual.precio.toFixed(2)}\n🏢 *Proveedor:* ${sesionActual.proveedor}\n👤 *Registró:* ${sesionActual.usuario}`);
+        await enviarTexto(from, `✅ *Precio Histórico Guardado con Éxito*\n\n📍 *Obra:* ${sesionActual.obra}\n📝 *Material:* ${sesionActual.material.toUpperCase()}\n📐 *Unidad:* ${sesionActual.unidad}\n💵 *Precio:* ${formatoMoneda(sesionActual.precio)}\n🏢 *Proveedor:* ${sesionActual.proveedor}\n👤 *Registró:* ${sesionActual.usuario}`);
         delete sesiones[from];
         res.sendStatus(200);
         return;
@@ -2172,7 +2324,7 @@ app.post('/webhook', async (req, res) => {
         usuario: nombreUsuario
       };
 
-      await enviarBotones(from, `📝 *Gasto:* ${concepto} ($${monto.toFixed(2)})\n\n🏗️ *Selecciona la Sucursal:*`, [
+      await enviarBotones(from, `📝 *Gasto:* ${concepto} (${formatoMoneda(monto)})\n\n🏗️ *Selecciona la Sucursal:*`, [
         { id: 'OBRA_Pelicano', title: 'Pelicano' },
         { id: 'OBRA_Caldera', title: 'Caldera' },
         { id: 'OBRA_Nativitas', title: 'Nativitas' }
@@ -2191,7 +2343,7 @@ app.post('/webhook', async (req, res) => {
           sesion.linksFotos = [];
           delete sesion.carpetaExtraLink;
           await guardarTrabajoExtra(sesion);
-          await enviarTexto(from, `✅ *Trabajo Extra Guardado con Éxito*\n\n🆔 *ID:* ${sesion.idExtra}\n🏗️ *Obra:* ${sesion.obra}\n📝 *Descripción:* ${sesion.descripcion}\n💵 *Monto Estimado:* $${sesion.monto.toFixed(2)}\n📷 *Evidencia:* Sin Evidencias\n👤 *Registró:* ${sesion.usuario}`);
+          await enviarTexto(from, `✅ *Trabajo Extra Guardado con Éxito*\n\n🆔 *ID:* ${sesion.idExtra}\n🏗️ *Obra:* ${sesion.obra}\n📝 *Descripción:* ${sesion.descripcion}\n💵 *Monto Estimado:* ${formatoMoneda(sesion.monto)}\n📷 *Evidencia:* Sin Evidencias\n👤 *Registró:* ${sesion.usuario}`);
           delete sesiones[from];
         }
         res.sendStatus(200);
@@ -2344,13 +2496,13 @@ app.post('/webhook', async (req, res) => {
         const sesion = sesiones[from];
         if (sesion) {
           sesion.obra = obraMap[respuestaId] || 'Suc. Otro';
-          sesion.categoria = '00) CONTROL PRESUPUESTAL';
+          sesion.categoria = '20) VARIOS';
           sesion.metodo = 'Transferencia';
           sesion.estatusFactura = 'No Requiere 🔴';
 
           await guardarEnSheets(sesion);
 
-          await enviarTexto(from, `✅ *Contrato Autorizado Guardado con Éxito*\n\n🆔 *ID:* ${sesion.idMovimiento}\n👷‍♂️ *Contratista:* ${sesion.contratista}\n🏗️ *Sucursal:* ${sesion.obra}\n💵 *Monto Total Contratado:* $${sesion.monto.toFixed(2)}\n👤 *Registró:* ${sesion.usuario}`);
+          await enviarTexto(from, `✅ *Contrato Autorizado Guardado con Éxito*\n\n🆔 *ID:* ${sesion.idMovimiento}\n👷‍♂️ *Contratista:* ${sesion.contratista}\n🏗️ *Sucursal:* ${sesion.obra}\n💵 *Monto Total Contratado:* ${formatoMoneda(sesion.monto)}\n👤 *Registró:* ${sesion.usuario}`);
           delete sesiones[from];
         }
         res.sendStatus(200);
@@ -2364,7 +2516,7 @@ app.post('/webhook', async (req, res) => {
         } else {
           const opciones = ultimos.map(u => ({
             id: `EDITARGAS_${u.filaIndex}`,
-            title: `$${u.monto} - ${u.concepto.substring(0, 16)}`,
+            title: `${formatoMoneda(u.monto)} - ${u.concepto.substring(0, 14)}`,
             description: `${u.obra} (${u.id})`
           }));
           await enviarLista(from, '✏️ *CORRECCIÓN TÁCTIL DE GASTOS*\n\nToca el gasto que deseas modificar o anular:', 'Ver Gastos', 'Últimos Movimientos', opciones);
@@ -2408,9 +2560,9 @@ app.post('/webhook', async (req, res) => {
           const t = rep[o];
           const porCobrar = t.presupuestoTotal - t.liberado;
           msgTexto += `🏗️ *${o}*\n` +
-            `  • Presupuesto Autorizado: $${t.presupuestoTotal.toFixed(2)}\n` +
-            `  • Liberado a la Fecha: $${t.liberado.toFixed(2)}\n` +
-            `  • Pendiente por Liberar: $${porCobrar.toFixed(2)}\n\n`;
+            `  • Presupuesto Autorizado: ${formatoMoneda(t.presupuestoTotal)}\n` +
+            `  • Liberado a la Fecha: ${formatoMoneda(t.liberado)}\n` +
+            `  • Pendiente por Liberar: ${formatoMoneda(porCobrar)}\n\n`;
         });
         await enviarTexto(from, msgTexto);
         res.sendStatus(200);
@@ -2454,7 +2606,7 @@ app.post('/webhook', async (req, res) => {
           const opciones = extras.map(e => ({
             id: `GESTIONEXT_${e.idExtra}`,
             title: e.descripcion.substring(0, 24),
-            description: `${e.obra} | $${e.monto} (${e.idExtra})`
+            description: `${e.obra} | ${formatoMoneda(e.monto)} (${e.idExtra})`
           }));
           await enviarLista(from, '🔨 *Trabajos Extras Pendientes:*', 'Ver Extras', 'Selecciona para actualizar:', opciones);
         }
@@ -2576,7 +2728,7 @@ app.post('/webhook', async (req, res) => {
           const opciones = pendientes.map(p => ({
             id: `RESOLVER_${p.id}`,
             title: p.concepto.substring(0, 24),
-            description: `${p.obra} | $${p.monto} (${p.id})`
+            description: `${p.obra} | ${formatoMoneda(p.monto)} (${p.id})`
           }));
           await enviarLista(from, '📋 *Gastos Pendientes de Factura:*', 'Ver Pendientes', 'Selecciona para resolver:', opciones);
         }
@@ -2606,7 +2758,7 @@ app.post('/webhook', async (req, res) => {
         const sesion = sesiones[from];
         if (sesion) {
           await guardarTrabajoExtra(sesion);
-          await enviarTexto(from, `✅ *Trabajo Extra Guardado con Éxito*\n\n🆔 *ID:* ${sesion.idExtra}\n🏗️ *Obra:* ${sesion.obra}\n📝 *Descripción:* ${sesion.descripcion}\n💵 *Monto Estimado:* $${sesion.monto.toFixed(2)}\n📷 *Archivos en Drive:* ${sesion.linksFotos.length} evidencia(s)\n👤 *Registró:* ${sesion.usuario}`);
+          await enviarTexto(from, `✅ *Trabajo Extra Guardado con Éxito*\n\n🆔 *ID:* ${sesion.idExtra}\n🏗️ *Obra:* ${sesion.obra}\n📝 *Descripción:* ${sesion.descripcion}\n💵 *Monto Estimado:* ${formatoMoneda(sesion.monto)}\n📷 *Archivos en Drive:* ${sesion.linksFotos.length} evidencia(s)\n👤 *Registró:* ${sesion.usuario}`);
           delete sesiones[from];
         }
         res.sendStatus(200);
@@ -2691,7 +2843,7 @@ app.post('/webhook', async (req, res) => {
 
           const fechaProxima = new Date(Date.now() + (45 * 24 * 60 * 60 * 1000)).toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City' });
 
-          await enviarTexto(from, `✅ *Visita Familiar Registrada con Éxito*\n\n👤 *Trabajador:* ${sesion.nombre}\n🏗️ *Obra Afectada:* ${sesion.obra}\n💵 *Monto Apoyo:* $${sesion.monto.toFixed(2)}\n📅 *Próxima Visita Sugerida (+45 días):* ${fechaProxima}`);
+          await enviarTexto(from, `✅ *Visita Familiar Registrada con Éxito*\n\n👤 *Trabajador:* ${sesion.nombre}\n🏗️ *Obra Afectada:* ${sesion.obra}\n💵 *Monto Apoyo:* ${formatoMoneda(sesion.monto)}\n📅 *Próxima Visita Sugerida (+45 días):* ${fechaProxima}`);
           delete sesiones[from];
         }
         res.sendStatus(200);
@@ -2731,7 +2883,7 @@ app.post('/webhook', async (req, res) => {
         };
         sesion.unidad = unidadMap[respuestaId] || 'pza';
 
-        await enviarBotones(from, `🏷️ *Material:* ${sesion.material.toUpperCase()}\n💵 *Precio:* $${sesion.precio.toFixed(2)} / ${sesion.unidad}\n\n🏗️ *¿En qué Sucursal se cotizó/compró?*`, [
+        await enviarBotones(from, `🏷️ *Material:* ${sesion.material.toUpperCase()}\n💵 *Precio:* ${formatoMoneda(sesion.precio)} / ${sesion.unidad}\n\n🏗️ *¿En qué Sucursal se cotizó/compró?*`, [
           { id: 'PRECIOBRA_Pelicano', title: 'Pelicano' },
           { id: 'PRECIOBRA_Caldera', title: 'Caldera' },
           { id: 'PRECIOBRA_Nativitas', title: 'Nativitas' }
@@ -2773,10 +2925,10 @@ app.post('/webhook', async (req, res) => {
         if (respuestaId === 'REP_GLOBAL') {
           const rep = await calcularReporteSaldos(null);
           let txt = `📊 *Corte de Caja Chica General (Efectivo)*\n\n` +
-            `💵 *Total Efectivo Ingresado:* $${rep.dotacionesCaja.toFixed(2)} MXN\n` +
-            `💸 *Egresos en Efectivo:* $${rep.egresosEfectivo.toFixed(2)} MXN\n` +
-            `💰 *Efectivo Disponible en Mano:* $${rep.cajaDisponible.toFixed(2)} MXN\n` +
-            `📄 *Total Facturado en Efectivo:* $${rep.facturadoEfectivo.toFixed(2)} MXN`;
+            `💵 *Total Efectivo Ingresado:* ${formatoMoneda(rep.dotacionesCaja)} MXN\n` +
+            `💸 *Egresos en Efectivo:* ${formatoMoneda(rep.egresosEfectivo)} MXN\n` +
+            `💰 *Efectivo Disponible en Mano:* ${formatoMoneda(rep.cajaDisponible)} MXN\n` +
+            `📄 *Total Facturado en Efectivo:* ${formatoMoneda(rep.facturadoEfectivo)} MXN`;
 
           await enviarTexto(from, txt);
           res.sendStatus(200);
@@ -2803,10 +2955,10 @@ app.post('/webhook', async (req, res) => {
 
           const captionTxt = `📄 *Corte Financiero Semanal — ${datosCorte.sucursal}*\n` +
             `📅 *Periodo:* ${datosCorte.periodo}\n\n` +
-            `💵 *Gastos de la Semana:* $${datosCorte.semanaTotal.toFixed(2)}\n` +
-            `💰 *Saldo Total Disponible:* $${datosCorte.saldoDisponible.toFixed(2)}\n` +
-            `  • Banco: $${datosCorte.saldoBanco.toFixed(2)}\n` +
-            `  • Efectivo: $${datosCorte.saldoEfectivo.toFixed(2)}\n\n` +
+            `💵 *Gastos de la Semana:* ${formatoMoneda(datosCorte.semanaTotal)}\n` +
+            `💰 *Saldo Total Disponible:* ${formatoMoneda(datosCorte.saldoDisponible)}\n` +
+            `  • Banco: ${formatoMoneda(datosCorte.saldoBanco)}\n` +
+            `  • Efectivo: ${formatoMoneda(datosCorte.saldoEfectivo)}\n\n` +
             `✍️ *Validado y Firmado por Constructive Gallery Architects.*`;
 
           await enviarDocumentoWhatsApp(from, rutaPdfLocal, nombreArchivoPdf, captionTxt);
@@ -2846,9 +2998,9 @@ app.post('/webhook', async (req, res) => {
             hayDatos = true;
             const pendiente = t.totalContrato - t.pagado;
             msgTexto += `📌 *${c.toUpperCase()}*\n` +
-              `  • Contrato Total: $${t.totalContrato.toFixed(2)}\n` +
-              `  • Pagado a la Fecha: $${t.pagado.toFixed(2)}\n` +
-              `  • Saldo Pendiente: $${pendiente.toFixed(2)}\n\n`;
+              `  • Contrato Total: ${formatoMoneda(t.totalContrato)}\n` +
+              `  • Pagado a la Fecha: ${formatoMoneda(t.pagado)}\n` +
+              `  • Saldo Pendiente: ${formatoMoneda(pendiente)}\n\n`;
           }
         });
 
@@ -2994,7 +3146,7 @@ app.post('/webhook', async (req, res) => {
           `🆔 *ID:* ${sesion.idMovimiento}\n` +
           `👤 *Registró:* ${sesion.usuario}\n` +
           `📌 *Categoría:* ${sesion.categoria}\n` +
-          `💵 *Monto:* $${sesion.monto.toFixed(2)}\n` +
+          `💵 *Monto:* ${formatoMoneda(sesion.monto)}\n` +
           `📝 *Concepto:* ${sesion.concepto}\n` +
           `🏗️ *Obra:* ${sesion.obra}\n` +
           `💳 *Pago:* ${metodoTexto}\n` +
