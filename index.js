@@ -407,30 +407,26 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
     doc.text(`• En Efectivo (Caja Chica): ${formatoMoneda(datos.saldoEfectivo)}`, 385, y + 16);
     doc.text(`• Total en Bancos: ${formatoMoneda(datos.saldoBanco)}`, 385, y + 28);
 
-    // FIRMA AUTÓGRAFA EXACTA DE CGA CON IMAGEN O TRAZO
-    y += 65;
-    const xFirma = 340;
-    const anchoFirma = 220;
+    // FIRMA AUTÓGRAFA EXACTA Y PROPORCIONADA
+    y += 75;
+    const xFirma = 350;
+    const anchoFirma = 210;
 
     const rutasPosiblesFirma = [
       path.join(__dirname, 'firma.png'),
       path.join(__dirname, 'firma.PNG'),
       path.join(__dirname, 'Imagenes', 'firma.png'),
-      path.join(__dirname, 'imagenes', 'firma.png'),
-      path.join(__dirname, 'Imagenes', 'firma.PNG')
+      path.join(__dirname, 'imagenes', 'firma.png')
     ];
 
     let rutaFirmaEncontrada = rutasPosiblesFirma.find(r => fs.existsSync(r));
     if (rutaFirmaEncontrada) {
-      doc.image(rutaFirmaEncontrada, xFirma + 15, y - 45, { width: 190 });
-    } else {
-      doc.font('Times-BoldItalic').fontSize(14).fillColor('#000000')
-         .text('Constructive Gallery Architects', xFirma, y - 10, { width: anchoFirma, align: 'center' });
+      doc.image(rutaFirmaEncontrada, xFirma + 55, y - 48, { width: 95 });
     }
 
-    doc.moveTo(xFirma, y + 10).lineTo(xFirma + anchoFirma, y + 10).strokeColor('#000000').lineWidth(1).stroke();
+    doc.moveTo(xFirma, y + 6).lineTo(xFirma + anchoFirma, y + 6).strokeColor('#000000').lineWidth(1).stroke();
     
-    y += 14;
+    y += 10;
     doc.fontSize(8).font('Helvetica-Bold').fillColor('#0F172A')
        .text('Administración Constructive Gallery Architects', xFirma, y, { width: anchoFirma, align: 'center' });
     
@@ -516,8 +512,8 @@ async function generarDatosCorteSemanal(obraBuscada) {
         else if (metodo.includes('DIDI') && !metodo.includes('Apertura')) cuentas.didi -= monto;
         else if (metodo.includes('MercadoPago') && !metodo.includes('Apertura')) cuentas.mercadoPago -= monto;
 
-        if (concepto.includes('presupuesto total autorizado')) {
-          // Informativo
+        if (concepto.includes('presupuesto total autorizado') || metodo.includes('Control Presupuestal')) {
+          // Informativo de presupuesto
         } else if (metodo.includes('Ingreso Presupuesto') || concepto.includes('ingreso presupuesto')) {
           ingresosTotal += monto;
         } else if (metodo.includes('Dotación Caja Chica')) {
@@ -645,7 +641,7 @@ async function obtenerUltimosGastos(obraFiltro) {
       const categoria = fila[4] || '';
       const estatus = fila[8] || '';
 
-      if (!estatus.includes('CANCELADO') && !categoria.includes('Control') && !fila[3].includes('Apertura')) {
+      if (!estatus.includes('CANCELADO') && !categoria.includes('Control') && !fila[3].includes('Apertura') && !fila[3].includes('Ingreso Presupuesto')) {
         if (!obraFiltro || obra.toLowerCase() === obraFiltro.toLowerCase()) {
           ultimos.push({ filaIndex: i + 1, id, obra, concepto, monto });
         }
@@ -1312,7 +1308,7 @@ async function calcularReportePresupuestos() {
       if (estatus.includes('CANCELADO')) continue;
 
       if (resultado[obra]) {
-        if (concepto.includes('presupuesto total autorizado')) {
+        if (concepto.includes('presupuesto total autorizado') || metodo.includes('Control Presupuestal')) {
           resultado[obra].presupuestoTotal += monto;
         } else if (metodo.includes('Ingreso Presupuesto') || concepto.includes('ingreso presupuesto')) {
           resultado[obra].liberado += monto;
@@ -1833,9 +1829,9 @@ app.post('/webhook', async (req, res) => {
           await guardarEnSheets({
             idMovimiento: 'INI-' + Date.now().toString().slice(-6),
             obra: sesionActual.obra,
-            metodo: 'Ingreso Presupuesto',
+            metodo: 'Control Presupuestal',
             subMetodo: '',
-            categoria: 'Control Presupuestal',
+            categoria: 'Presupuesto Contractual',
             monto: sesionActual.presupuestoTotal,
             concepto: 'Presupuesto Total Autorizado',
             usuario: nombreUsuario,
@@ -1865,7 +1861,7 @@ app.post('/webhook', async (req, res) => {
               obra: sesionActual.obra,
               metodo: 'Ingreso Presupuesto',
               subMetodo: '',
-              categoria: '01) PREELIMINARES',
+              categoria: 'Ingreso Presupuesto',
               monto: montoNum,
               concepto: 'Ingreso Presupuesto Inicial Recibido',
               usuario: nombreUsuario,
@@ -2230,7 +2226,7 @@ app.post('/webhook', async (req, res) => {
 
       if (sesionActual && sesionActual.esperandoBusquedaPrecio) {
         delete sesionActual.esperandoBusquedaPrecio;
-        const resultados = await buscarHistoricoPrecios(textBody.trim());
+        const resultados = await buscarHistoricoPrecios(materialBuscado);
 
         if (resultados.length === 0) {
           await enviarTexto(from, `⚠️ No se encontraron precios registrados para "${textBody}".`);
