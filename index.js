@@ -408,8 +408,8 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
     doc.text(`• En Efectivo (Caja Chica): ${formatoMoneda(datos.saldoEfectivo)}`, 385, y + 16);
     doc.text(`• Total en Bancos: ${formatoMoneda(datos.saldoBanco)}`, 385, y + 28);
 
-    // FIRMA AUTÓGRAFA BAJADA LIGERAMENTE MÁS (Y = 125) PARA QUEDAR PERFECTA SOBRE LA LÍNEA
-    y += 125;
+    // FIRMA SUBIDA MÁS CERCA DE LA LÍNEA (Y = 75)
+    y += 75;
     const xFirma = 350;
     const anchoFirma = 210;
 
@@ -488,7 +488,6 @@ async function generarDatosCorteSemanal(obraBuscada) {
       const concepto = (fila[6] || '').toLowerCase();
       const estatus = fila[8] || '';
 
-      // FILTRAR ESTRICTAMENTE LOS CANCELADOS PARA QUE JAMÁS AFECTEN NÚMEROS
       if (estatus.includes('CANCELADO') || monto === 0) continue;
 
       if (!obraBuscada || obra.toLowerCase() === obraBuscada.toLowerCase()) {
@@ -521,7 +520,6 @@ async function generarDatosCorteSemanal(obraBuscada) {
         } else if (metodo.includes('Dotación Caja Chica')) {
           dotacionesCaja += monto;
         } else if (concepto.includes('contrato')) {
-          // El contrato autorizado es solo para control, no gasta caja
           const contratistaMatch = CONTRATISTAS_VALIDOS.find(c => concepto.includes(c) || categoria.includes(c.toUpperCase()));
           if (contratistaMatch) {
             detalleContratistas[contratistaMatch].contrato += monto;
@@ -647,7 +645,7 @@ async function obtenerUltimosGastos(obraFiltro) {
       const categoria = fila[4] || '';
       const estatus = fila[8] || '';
 
-      if (!estatus.includes('CANCELADO') && !categoria.includes('Control') && !fila[3].includes('Apertura') && !fila[3].includes('Ingreso Presupuesto') && !fila[3].includes('Control Presupuestal') && !concepto.includes('contrato')) {
+      if (!estatus.includes('CANCELADO') && monto > 0 && !categoria.includes('Control') && !fila[3].includes('Apertura') && !fila[3].includes('Ingreso Presupuesto') && !fila[3].includes('Control Presupuestal') && !concepto.includes('contrato')) {
         if (!obraFiltro || obra.toLowerCase() === obraFiltro.toLowerCase()) {
           ultimos.push({ filaIndex: i + 1, id, obra, concepto, monto });
         }
@@ -1824,7 +1822,7 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // ASISTENTE DE CARGA DE OBRA OPTIMIZADO (CON SELECCIÓN MÚLTIPLE DE TARJETAS TIPO NU/DIDI/MP)
+      // ASISTENTE DE CARGA DE OBRA
       if (sesionActual && sesionActual.tipoAccion === 'CARGA_OBRA') {
         const montoNum = limpiarMonto(textBody);
 
@@ -1981,9 +1979,8 @@ app.post('/webhook', async (req, res) => {
             });
           }
 
-          // Preguntar por tarjetas de crédito / adicionales con botones dinámicos
           sesionActual.cuentasPendientes = ['NU', 'DIDI', 'MercadoPago'];
-          await enviarBotones(from, `💳 *Tarjetas / Cuentas Adicionales (NU, DiDi, MercadoPago):*\n\n¿Tiene saldo o fondendos alguna de estas tarjetas para esta obra?`, [
+          await enviarBotones(from, `💳 *Tarjetas / Cuentas Adicionales (NU, DiDi, MercadoPago):*\n\n¿Tiene saldo alguna de estas tarjetas para esta obra?`, [
             { id: 'ADDCRED_NU', title: 'Tarjeta NU' },
             { id: 'ADDCRED_DIDI', title: 'Tarjeta DiDi' },
             { id: 'ADDCRED_MP', title: 'MercadoPago' }
@@ -2016,7 +2013,6 @@ app.post('/webhook', async (req, res) => {
             });
           }
 
-          // Filtrar las cuentas que faltan por preguntar
           sesionActual.cuentasPendientes = sesionActual.cuentasPendientes.filter(c => c !== cuentaActual);
 
           if (sesionActual.cuentasPendientes.length > 0) {
@@ -2026,7 +2022,7 @@ app.post('/webhook', async (req, res) => {
             }));
             botonesSiguientes.push({ id: 'ADDCRED_FIN', title: '➡️ Continuar' });
 
-            await enviarBotones(from, `💳 ¿Deseas agregar saldo a otra de las tarjetas disponibles?`, botonesSiguientes.slice(0, 3));
+            await enviarBotones(from, `💳 ¿Deseas agregar saldo a otra tarjeta disponible?`, botonesSiguientes.slice(0, 3));
           } else {
             sesionActual.esperandoSaldoCajaChica = true;
             await enviarTexto(from, `💵 ¿Cuánto efectivo disponible hay en *Caja Chica / Campo* para esta obra? (Escribe el monto o 0):`);
@@ -3163,7 +3159,7 @@ app.post('/webhook', async (req, res) => {
           `💳 *Pago:* ${metodoTexto}\n` +
           `📄 *Factura:* ${sesion.estatusFactura}`;
 
-        if (lerta) {
+        if (alerta) {
           resumen += `\n\n${alerta}`;
         }
 
