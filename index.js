@@ -641,15 +641,15 @@ async function obtenerUltimosGastos(obraFiltro) {
       const obra = fila[2] || '';
       const monto = limpiarMonto(fila[5]);
       const concepto = (fila[6] || '').toLowerCase();
-      const categoria = fila[4] || '';
       const estatus = fila[8] || '';
 
-      if (!estatus.includes('CANCELADO') && monto > 0 && !categoria.includes('Control') && !fila[3].includes('Apertura') && !fila[3].includes('Ingreso Presupuesto') && !fila[3].includes('Control Presupuestal') && !concepto.includes('contrato')) {
+      // MODIFICACIÓN CLAVE: Ahora se incluyen TODOS los registros válidos (gastos, contratos, aperturas, etc.)
+      if (!estatus.includes('CANCELADO') && monto > 0) {
         if (!obraFiltro || obra.toLowerCase() === obraFiltro.toLowerCase()) {
           ultimos.push({ filaIndex: i + 1, id, obra, concepto, monto });
         }
       }
-      if (ultimos.length >= 8) break;
+      if (ultimos.length >= 10) break; // Mostramos hasta 10 opciones para editar/corregir
     }
     return ultimos;
   } catch (e) {
@@ -1515,7 +1515,7 @@ app.post('/webhook', async (req, res) => {
             title: `${formatoMoneda(u.monto)} - ${u.concepto.substring(0, 14)}`,
             description: `${u.obra} (${u.id})`
           }));
-          await enviarLista(from, '✏️ *CORRECCIÓN TÁCTIL DE GASTOS*\n\nToca el gasto que deseas modificar o anular:', 'Ver Gastos', 'Últimos Movimientos', opciones);
+          await enviarLista(from, '✏️ *CORRECCIÓN TÁCTIL DE GASTOS Y MOVIMIENTOS*\n\nToca el registro que deseas modificar o anular:', 'Ver Registros', 'Últimos Movimientos', opciones);
         }
         res.sendStatus(200);
         return;
@@ -2373,7 +2373,7 @@ app.post('/webhook', async (req, res) => {
         const filaIndex = parseInt(respuestaId.replace('EDITARGAS_', ''));
         sesiones[from] = { filaIndexEditar: filaIndex };
 
-        await enviarBotones(from, `✏️ *Opciones para el gasto seleccionado:*\n\n¿Qué acción deseas realizar?`, [
+        await enviarBotones(from, `✏️ *Opciones para el registro seleccionado:*\n\n¿Qué acción deseas realizar?`, [
           { id: 'ACCIONEDIT_MONTO', title: '💵 Cambiar Monto' },
           { id: 'ACCIONEDIT_ANULAR', title: '❌ Anular / Borrar' }
         ]);
@@ -2385,7 +2385,7 @@ app.post('/webhook', async (req, res) => {
         const sesion = sesiones[from];
         if (sesion && sesion.filaIndexEditar) {
           sesion.esperandoNuevoMontoGasto = true;
-          await enviarTexto(from, '💵 *Escribe el nuevo monto correcto para este gasto:*');
+          await enviarTexto(from, '💵 *Escribe el nuevo monto correcto para este registro:*');
         }
         res.sendStatus(200);
         return;
@@ -2396,9 +2396,9 @@ app.post('/webhook', async (req, res) => {
         if (sesion && sesion.filaIndexEditar) {
           const ok = await anularGastoPorFila(sesion.filaIndexEditar);
           if (ok) {
-            await enviarTexto(from, '❌ *Gasto anulado y ajustado a $0.00 en Sheets.*');
+            await enviarTexto(from, '❌ *Registro anulado y ajustado a $0.00 en Sheets.*');
           } else {
-            await enviarTexto(from, '⚠️ Error al anular el gasto.');
+            await enviarTexto(from, '⚠️ Error al anular el registro.');
           }
           delete sesiones[from];
         }
@@ -2518,14 +2518,14 @@ app.post('/webhook', async (req, res) => {
       if (respuestaId === 'MENU_CORREGIR') {
         const ultimos = await obtenerUltimosGastos(null);
         if (ultimos.length === 0) {
-          await enviarTexto(from, '⚠️ No hay gastos recientes para corregir.');
+          await enviarTexto(from, '⚠️ No hay registros recientes para corregir.');
         } else {
           const opciones = ultimos.map(u => ({
             id: `EDITARGAS_${u.filaIndex}`,
             title: `${formatoMoneda(u.monto)} - ${u.concepto.substring(0, 14)}`,
             description: `${u.obra} (${u.id})`
           }));
-          await enviarLista(from, '✏️ *CORRECCIÓN TÁCTIL DE GASTOS*\n\nToca el gasto que deseas modificar o anular:', 'Ver Gastos', 'Últimos Movimientos', opciones);
+          await enviarLista(from, '✏️ *CORRECCIÓN TÁCTIL DE REGISTROS*\n\nToca el registro que deseas modificar o anular:', 'Ver Registros', 'Últimos Movimientos', opciones);
         }
         res.sendStatus(200);
         return;
