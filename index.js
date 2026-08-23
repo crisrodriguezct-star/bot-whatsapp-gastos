@@ -408,8 +408,8 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
     doc.text(`• En Efectivo (Caja Chica): ${formatoMoneda(datos.saldoEfectivo)}`, 385, y + 16);
     doc.text(`• Total en Bancos: ${formatoMoneda(datos.saldoBanco)}`, 385, y + 28);
 
-    // FIRMA SUBIDA MÁS CERCA DE LA LÍNEA (Y = 75)
-    y += 75;
+    // FIRMA OPTIMIZADA (Y = 65) PARA QUEDAR PERFECTA SOBRE LA LÍNEA
+    y += 65;
     const xFirma = 350;
     const anchoFirma = 210;
 
@@ -519,11 +519,12 @@ async function generarDatosCorteSemanal(obraBuscada) {
           ingresosTotal += monto;
         } else if (metodo.includes('Dotación Caja Chica')) {
           dotacionesCaja += monto;
-        } else if (concepto.includes('contrato')) {
-          const contratistaMatch = CONTRATISTAS_VALIDOS.find(c => concepto.includes(c) || categoria.includes(c.toUpperCase()));
-          if (contratistaMatch) {
-            detalleContratistas[contratistaMatch].contrato += monto;
-          }
+        } else if (concepto.includes('contrato') || concepto.includes('cerrado')) {
+          CONTRATISTAS_VALIDOS.forEach(c => {
+            if (concepto.includes(c) || categoria.includes(c.toUpperCase())) {
+              detalleContratistas[c].contrato += monto;
+            }
+          });
         } else if (!metodo.includes('Apertura') && !categoria.includes('CONTROL') && !categoria.includes('APERTURA')) {
           gastosTotal += monto;
 
@@ -543,10 +544,8 @@ async function generarDatosCorteSemanal(obraBuscada) {
         }
 
         CONTRATISTAS_VALIDOS.forEach(c => {
-          if (concepto.includes(c) || categoria.includes(c.toUpperCase())) {
-            if (!concepto.includes('contrato') && !concepto.includes('total autorizado')) {
-              detalleContratistas[c].pagado += monto;
-            }
+          if ((concepto.includes(c) || categoria.includes(c.toUpperCase())) && !concepto.includes('contrato') && !concepto.includes('cerrado') && !concepto.includes('total autorizado')) {
+            detalleContratistas[c].pagado += monto;
           }
         });
       }
