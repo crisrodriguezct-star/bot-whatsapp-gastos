@@ -408,8 +408,8 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
     doc.text(`• En Efectivo (Caja Chica): ${formatoMoneda(datos.saldoEfectivo)}`, 385, y + 16);
     doc.text(`• Total en Bancos: ${formatoMoneda(datos.saldoBanco)}`, 385, y + 28);
 
-    // FIRMA AUTÓGRAFA EXACTA Y TRANSPARENTE (.PNG)
-    y += 115;
+    // FIRMA AUTÓGRAFA BAJADA LIGERAMENTE MÁS (Y = 125) PARA QUEDAR PERFECTA SOBRE LA LÍNEA
+    y += 125;
     const xFirma = 350;
     const anchoFirma = 210;
 
@@ -488,7 +488,8 @@ async function generarDatosCorteSemanal(obraBuscada) {
       const concepto = (fila[6] || '').toLowerCase();
       const estatus = fila[8] || '';
 
-      if (estatus.includes('CANCELADO')) continue;
+      // FILTRAR ESTRICTAMENTE LOS CANCELADOS PARA QUE JAMÁS AFECTEN NÚMEROS
+      if (estatus.includes('CANCELADO') || monto === 0) continue;
 
       if (!obraBuscada || obra.toLowerCase() === obraBuscada.toLowerCase()) {
         let fechaMov = new Date(fechaStr);
@@ -520,7 +521,7 @@ async function generarDatosCorteSemanal(obraBuscada) {
         } else if (metodo.includes('Dotación Caja Chica')) {
           dotacionesCaja += monto;
         } else if (concepto.includes('contrato')) {
-          // El contrato autorizado se acumula solo para control de contratistas, no como gasto operativo
+          // El contrato autorizado es solo para control, no gasta caja
           const contratistaMatch = CONTRATISTAS_VALIDOS.find(c => concepto.includes(c) || categoria.includes(c.toUpperCase()));
           if (contratistaMatch) {
             detalleContratistas[contratistaMatch].contrato += monto;
@@ -543,7 +544,6 @@ async function generarDatosCorteSemanal(obraBuscada) {
           }
         }
 
-        // Revisar abonos o pagos a contratistas
         CONTRATISTAS_VALIDOS.forEach(c => {
           if (concepto.includes(c) || categoria.includes(c.toUpperCase())) {
             if (!concepto.includes('contrato') && !concepto.includes('total autorizado')) {
@@ -1224,7 +1224,7 @@ async function calcularReporteSaldos(obraBuscada) {
       const monto = limpiarMonto(fila[5]);
       const estatus = fila[8] || '';
 
-      if (estatus.includes('CANCELADO')) continue;
+      if (estatus.includes('CANCELADO') || monto === 0) continue;
       if (categoria.includes('Apertura') || categoria.includes('Control')) continue;
 
       if (metodo.includes('Dotación Caja Chica') || categoria.includes('Fondo Caja')) {
@@ -1268,7 +1268,7 @@ async function calcularReporteContratistas(obraBuscada) {
       const monto = limpiarMonto(fila[5]);
       const estatus = fila[8] || '';
 
-      if (estatus.includes('CANCELADO')) continue;
+      if (estatus.includes('CANCELADO') || monto === 0) continue;
       if (obraBuscada && obra.toLowerCase() !== obraBuscada.toLowerCase()) continue;
 
       CONTRATISTAS_VALIDOS.forEach(c => {
@@ -1311,7 +1311,7 @@ async function calcularReportePresupuestos() {
       const monto = limpiarMonto(fila[5]);
       const estatus = fila[8] || '';
 
-      if (estatus.includes('CANCELADO')) continue;
+      if (estatus.includes('CANCELADO') || monto === 0) continue;
 
       if (resultado[obra]) {
         if (concepto.includes('presupuesto total autorizado') || metodo.includes('Control Presupuestal')) {
@@ -1824,7 +1824,7 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // ASISTENTE DE CARGA DE OBRA INTEGRADO A EXCEL
+      // ASISTENTE DE CARGA DE OBRA OPTIMIZADO (CON SELECCIÓN MÚLTIPLE DE TARJETAS TIPO NU/DIDI/MP)
       if (sesionActual && sesionActual.tipoAccion === 'CARGA_OBRA') {
         const montoNum = limpiarMonto(textBody);
 
@@ -1981,83 +1981,56 @@ app.post('/webhook', async (req, res) => {
             });
           }
 
-          sesionActual.esperandoSaldoNU = true;
-          await enviarTexto(from, `¿Cuánto dinero hay en *Tarjeta NU*? (Escribe el monto o 0):`);
+          // Preguntar por tarjetas de crédito / adicionales con botones dinámicos
+          sesionActual.cuentasPendientes = ['NU', 'DIDI', 'MercadoPago'];
+          await enviarBotones(from, `💳 *Tarjetas / Cuentas Adicionales (NU, DiDi, MercadoPago):*\n\n¿Tiene saldo o fondendos alguna de estas tarjetas para esta obra?`, [
+            { id: 'ADDCRED_NU', title: 'Tarjeta NU' },
+            { id: 'ADDCRED_DIDI', title: 'Tarjeta DiDi' },
+            { id: 'ADDCRED_MP', title: 'MercadoPago' }
+          ]);
+          await enviarBotones(from, '👇 *O continuar:*', [
+            { id: 'ADDCRED_FIN', title: '➡️ Sin más cuentas' }
+          ]);
           res.sendStatus(200);
           return;
         }
 
-        if (sesionActual.esperandoSaldoNU) {
-          sesionActual.nu = montoNum;
-          delete sesionActual.esperandoSaldoNU;
+        if (sesionActual.esperandoMontoCuentaAdicional) {
+          const cuentaActual = sesionActual.cuentaActualTemp;
+          const montoAdicional = montoNum;
+          delete sesionActual.esperandoMontoCuentaAdicional;
 
-          if (montoNum > 0) {
+          if (montoAdicional > 0) {
+            const metMap = { 'NU': 'Apertura NU', 'DIDI': 'Apertura DIDI', 'MercadoPago': 'Apertura MercadoPago' };
             await guardarEnSheets({
-              idMovimiento: 'AP-NU-' + Date.now().toString().slice(-6),
+              idMovimiento: 'AP-' + cuentaActual + '-' + Date.now().toString().slice(-6),
               obra: sesionActual.obra,
-              metodo: 'Apertura NU',
-              subMetodo: 'NU',
+              metodo: metMap[cuentaActual],
+              subMetodo: cuentaActual,
               categoria: 'Apertura Cuenta',
-              monto: montoNum,
-              concepto: 'Fondo Inicial en Tarjeta NU',
+              monto: montoAdicional,
+              concepto: `Fondo Inicial en Tarjeta ${cuentaActual}`,
               usuario: nombreUsuario,
               estatusFactura: 'No Requiere 🔴',
               linkFactura: 'N/A'
             });
           }
 
-          sesionActual.esperandoSaldoDIDI = true;
-          await enviarTexto(from, `¿Cuánto dinero hay en *Tarjeta DIDI*? (Escribe el monto o 0):`);
-          res.sendStatus(200);
-          return;
-        }
+          // Filtrar las cuentas que faltan por preguntar
+          sesionActual.cuentasPendientes = sesionActual.cuentasPendientes.filter(c => c !== cuentaActual);
 
-        if (sesionActual.esperandoSaldoDIDI) {
-          sesionActual.didi = montoNum;
-          delete sesionActual.esperandoSaldoDIDI;
+          if (sesionActual.cuentasPendientes.length > 0) {
+            const botonesSiguientes = sesionActual.cuentasPendientes.map(c => ({
+              id: `ADDCRED_${c === 'MercadoPago' ? 'MP' : c}`,
+              title: `Tarjeta ${c}`
+            }));
+            botonesSiguientes.push({ id: 'ADDCRED_FIN', title: '➡️ Continuar' });
 
-          if (montoNum > 0) {
-            await guardarEnSheets({
-              idMovimiento: 'AP-DIDI-' + Date.now().toString().slice(-6),
-              obra: sesionActual.obra,
-              metodo: 'Apertura DIDI',
-              subMetodo: 'DIDI',
-              categoria: 'Apertura Cuenta',
-              monto: montoNum,
-              concepto: 'Fondo Inicial en Tarjeta DIDI',
-              usuario: nombreUsuario,
-              estatusFactura: 'No Requiere 🔴',
-              linkFactura: 'N/A'
-            });
+            await enviarBotones(from, `💳 ¿Deseas agregar saldo a otra de las tarjetas disponibles?`, botonesSiguientes.slice(0, 3));
+          } else {
+            sesionActual.esperandoSaldoCajaChica = true;
+            await enviarTexto(from, `💵 ¿Cuánto efectivo disponible hay en *Caja Chica / Campo* para esta obra? (Escribe el monto o 0):`);
           }
-
-          sesionActual.esperandoSaldoMercadoPago = true;
-          await enviarTexto(from, `¿Cuánto dinero hay en *MercadoPago*? (Escribe el monto o 0):`);
-          res.sendStatus(200);
-          return;
-        }
-
-        if (sesionActual.esperandoSaldoMercadoPago) {
-          sesionActual.mercadoPago = montoNum;
-          delete sesionActual.esperandoSaldoMercadoPago;
-
-          if (montoNum > 0) {
-            await guardarEnSheets({
-              idMovimiento: 'AP-MP-' + Date.now().toString().slice(-6),
-              obra: sesionActual.obra,
-              metodo: 'Apertura MercadoPago',
-              subMetodo: 'MercadoPago',
-              categoria: 'Apertura Cuenta',
-              monto: montoNum,
-              concepto: 'Fondo Inicial en MercadoPago',
-              usuario: nombreUsuario,
-              estatusFactura: 'No Requiere 🔴',
-              linkFactura: 'N/A'
-            });
-          }
-
-          sesionActual.esperandoSaldoCajaChica = true;
-          await enviarTexto(from, `💵 ¿Cuánto efectivo disponible hay en *Caja Chica / Campo* para esta obra? (Escribe el monto o 0):`);
           res.sendStatus(200);
           return;
         }
@@ -2104,7 +2077,6 @@ app.post('/webhook', async (req, res) => {
 
           const especialidadUpper = sesionActual.especialidadTemp.toUpperCase();
 
-          // 1. Guardar el Contrato Autorizado (Con método Transferencia y concepto Contrato Cerrado)
           await guardarEnSheets({
             idMovimiento: 'CTR-' + Date.now().toString().slice(-6),
             obra: sesionActual.obra,
@@ -2118,7 +2090,6 @@ app.post('/webhook', async (req, res) => {
             linkFactura: 'N/A'
           });
 
-          // 2. Si hubo abono, guardarlo como pago real de la obra
           if (pagadoTemp > 0) {
             await guardarEnSheets({
               idMovimiento: 'PAGCTR-' + Date.now().toString().slice(-6),
@@ -2358,6 +2329,24 @@ app.post('/webhook', async (req, res) => {
 
     } else if (msg.type === 'interactive') {
       const respuestaId = msg.interactive.button_reply?.id || msg.interactive.list_reply?.id;
+
+      if (respuestaId?.startsWith('ADDCRED_')) {
+        const sesion = sesiones[from];
+        if (sesion) {
+          if (respuestaId === 'ADDCRED_FIN') {
+            sesion.esperandoSaldoCajaChica = true;
+            await enviarTexto(from, `💵 ¿Cuánto efectivo disponible hay en *Caja Chica / Campo* para esta obra? (Escribe el monto o 0):`);
+          } else {
+            const cuentaMapBtn = { 'ADDCRED_NU': 'NU', 'ADDCRED_DIDI': 'DIDI', 'ADDCRED_MP': 'MercadoPago' };
+            const cuentaSel = cuentaMapBtn[respuestaId];
+            sesion.cuentaActualTemp = cuentaSel;
+            sesion.esperandoMontoCuentaAdicional = true;
+            await enviarTexto(from, `💳 Escribe el saldo inicial en *Tarjeta ${cuentaSel}* (Escribe el monto):`);
+          }
+        }
+        res.sendStatus(200);
+        return;
+      }
 
       if (respuestaId === 'EXTRAFOTO_OMITIR') {
         const sesion = sesiones[from];
@@ -3174,7 +3163,7 @@ app.post('/webhook', async (req, res) => {
           `💳 *Pago:* ${metodoTexto}\n` +
           `📄 *Factura:* ${sesion.estatusFactura}`;
 
-        if (alerta) {
+        if (lerta) {
           resumen += `\n\n${alerta}`;
         }
 
