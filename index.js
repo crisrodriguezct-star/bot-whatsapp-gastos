@@ -530,37 +530,22 @@ async function generarDatosCorteSemanal(obraBuscada) {
         } else if (!metodo.includes('Apertura') && !categoria.includes('CONTROL') && !categoria.includes('APERTURA')) {
           
           // =========================================================================
-          // CORRECCIÓN MATEMÁTICA DEFINITIVA PARA EL GASTO HISTÓRICO:
-          // Si el renglón de la Hoja 1 dice "GASTO HISTORICO INICIAL" y trae los $300k,
-          // pero los $25k de abonos ya están registrados arriba en los contratistas, 
-          // ajustamos el acumulado restando esos $25k SOLO para el reporte PDF,
-          // de modo que el total real de obra quede en $300k exactos ($275k neto + $25k abonos).
+          // LÓGICA CONTABLE NATIVA (SUMA REAL DE LOS $300K Y DESGLOSE DE $275K + CONTRATISTAS)
           // =========================================================================
-          let montoEfectivoPartida = monto;
-          let categoriaEfectiva = categoria;
-
-          if (categoria.includes('GASTO HISTORICO INICIAL')) {
-            // Buscamos si en el sistema tenemos identificados abonos históricos para descontarlos del bruto
-            // O directamente aplicamos el neto de 275k para que cierre en 300k totales con los contratos.
-            // Para hacerlo 100% dinámico con tu regla: si la partida es el histórico, restamos los abonos de contratistas.
-            // O de forma directa y limpia: si la categoría es el histórico inicial, le descontamos los $25k de abonos de los contratistas.
-            montoEfectivoPartida = 275000.00; // Forzamos el neto correcto para que con los 25k de contratistas dé 300k netos
-          }
-
-          gastosTotal += montoEfectivoPartida;
+          gastosTotal += monto;
 
           if (metodo.startsWith('Efectivo')) {
-            egresosEfectivoTotal += montoEfectivoPartida;
+            egresosEfectivoTotal += monto;
           }
 
-          if (!mapaPartidas[categoriaEfectiva]) mapaPartidas[categoriaEfectiva] = { semana: 0, acumulado: 0 };
-          mapaPartidas[categoriaEfectiva].acumulado += montoEfectivoPartida;
+          if (!mapaPartidas[categoria]) mapaPartidas[categoria] = { semana: 0, acumulado: 0 };
+          mapaPartidas[categoria].acumulado += monto;
 
           if (esSemanaActual) {
-            mapaPartidas[categoriaEfectiva].semana += montoEfectivoPartida;
-            if (metodo.startsWith('Efectivo')) semanaEfectivo += montoEfectivoPartida;
-            else if (metodo.startsWith('Tarjeta')) semanaTarjeta += montoEfectivoPartida;
-            else if (metodo.startsWith('Transferencia')) semanaTransferencia += montoEfectivoPartida;
+            mapaPartidas[categoria].semana += monto;
+            if (metodo.startsWith('Efectivo')) semanaEfectivo += monto;
+            else if (metodo.startsWith('Tarjeta')) semanaTarjeta += monto;
+            else if (metodo.startsWith('Transferencia')) semanaTransferencia += monto;
           }
         }
 
@@ -3089,7 +3074,7 @@ app.post('/webhook', async (req, res) => {
           'CAT_12': '12) MATERIAL HERRERIA',
           'CAT_25': '25) DIESEL PLANTA',
           'CAT_29': '29) RESIDENCIA DE OBRA',
-          'CAT_30': '30) INDIRECTOS'
+          'CAT_30': '30/ INDIRECTOS'
         };
 
         if (mapaDirecto[respuestaId]) {
@@ -3191,7 +3176,7 @@ app.post('/webhook', async (req, res) => {
   } else {
     res.sendStatus(404);
   }
-});
+}
 
 async function desplegarFormasPago(from) {
   await enviarBotones(from, '💳 *¿Cómo pagaste este gasto?*', [
