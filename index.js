@@ -409,11 +409,9 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
     doc.text(`• Total en Bancos: ${formatoMoneda(datos.saldoBanco)}`, 385, y + 28);
 
     // ==========================================
-    // FIRMA ABSOLUTA SEGURA (COORDS FIJAS Y LIBRES DE CHOQUES)
+    // FIRMA ABSOLUTA PERFECTAMENTE RECORRIDA HACIA ABAJO (Y = 700)
     // ==========================================
-    // Fijamos la coordenada Y de la firma en 670, un punto seguro muy por debajo 
-    // del cuadro de cuentas bancarias y perfectamente separado.
-    const yFirmaSegura = 670; 
+    const yFirmaSegura = 700; 
     const xFirma = 350;
     const anchoFirma = 210;
 
