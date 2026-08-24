@@ -480,7 +480,7 @@ async function generarDatosCorteSemanal(obraBuscada) {
     const detalleContratistas = {};
     CONTRATISTAS_VALIDOS.forEach(c => detalleContratistas[c] = { contrato: 0, pagado: 0 });
 
-    // PASO 1: Primero calculamos el total pagado a contratistas para saber cuánto descontar del histórico bruto
+    // PASO 1: Calcular total pagado a contratistas para descontarlo del histórico bruto en el PDF
     let totalPagadoContratistasGlobal = 0;
     for (let i = 1; i < filas.length; i++) {
       const fila = filas[i];
@@ -500,7 +500,7 @@ async function generarDatosCorteSemanal(obraBuscada) {
       });
     }
 
-    // PASO 2: Recorremos los movimientos aplicando la resta limpia al GASTO HISTORICO INICIAL
+    // PASO 2: Recorrer movimientos aplicando el neto correcto al histórico en el PDF
     for (let i = 1; i < filas.length; i++) {
       const fila = filas[i];
       const fechaStr = fila[1] || '';
@@ -550,9 +550,6 @@ async function generarDatosCorteSemanal(obraBuscada) {
           });
         } else if (!metodo.includes('Apertura') && !categoria.includes('CONTROL') && !categoria.includes('APERTURA')) {
           
-          // =========================================================================
-          // CORRECCIÓN CONTABLE NATIVA: Descontar los abonos de contratistas del histórico
-          // =========================================================================
           if (categoria.includes('GASTO HISTORICO INICIAL')) {
             monto = monto - totalPagadoContratistasGlobal;
           }
@@ -2701,7 +2698,7 @@ app.post('/webhook', async (req, res) => {
           return;
         }
         await enviarBotones(from, '📊 *Saldos y Reportes:*', [
-          { id: 'REP_GLOBAL', title: '💰 Caja Chica (Efectivo)' },
+          { id: 'REP_GLOBAL', title: '💰 Caja Chica' },
           { id: 'OPC_VER_FAC', title: '📄 Facturas Pendientes' }
         ]);
         res.sendStatus(200);
