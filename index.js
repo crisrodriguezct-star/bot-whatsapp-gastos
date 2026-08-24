@@ -409,9 +409,13 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
     doc.text(`• Total en Bancos: ${formatoMoneda(datos.saldoBanco)}`, 385, y + 28);
 
     // ==========================================
-    // FIRMA FIJA EN PIE DE PÁGINA (POSICIÓN ABSOLUTA SEGURA)
+    // FIRMA DINÁMICA AUTOMÁTICA (SE ADAPTA AL TAMAÑO DE LA TABLA)
     // ==========================================
-    const yFirmaAbsoluta = 680; 
+    let yFirmaDinamica = y + 75; 
+    if (yFirmaDinamica > 690) {
+        yFirmaDinamica = 690; // Tope máximo seguro para que no se salga de la hoja
+    }
+
     const xFirma = 350;
     const anchoFirma = 210;
 
@@ -424,12 +428,12 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
 
     let rutaFirmaEncontrada = rutasPosiblesFirma.find(r => fs.existsSync(r));
     if (rutaFirmaEncontrada) {
-      doc.image(rutaFirmaEncontrada, xFirma + 55, yFirmaAbsoluta - 45, { width: 95 });
+      doc.image(rutaFirmaEncontrada, xFirma + 55, yFirmaDinamica - 48, { width: 95 });
     }
 
-    doc.moveTo(xFirma, yFirmaAbsoluta + 6).lineTo(xFirma + anchoFirma, yFirmaAbsoluta + 6).strokeColor('#000000').lineWidth(1).stroke();
+    doc.moveTo(xFirma, yFirmaDinamica + 6).lineTo(xFirma + anchoFirma, yFirmaDinamica + 6).strokeColor('#000000').lineWidth(1).stroke();
     
-    let yTextoFirma = yFirmaAbsoluta + 10;
+    let yTextoFirma = yFirmaDinamica + 10;
     doc.fontSize(8).font('Helvetica-Bold').fillColor('#0F172A')
         .text('Administración Constructive Gallery Architects', xFirma, yTextoFirma, { width: anchoFirma, align: 'center' });
     
