@@ -443,6 +443,36 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
   });
 }
 
+async function calcularGastosPreviosObra(obraBuscada) {
+  if (!sheets || !SPREADSHEET_ID) return 0;
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: 'Hoja 1!A:I'
+    });
+    const filas = res.data.values || [];
+    let acumuladoPrevio = 0;
+
+    for (let i = 1; i < filas.length; i++) {
+      const fila = filas[i];
+      const obra = fila[2] || '';
+      const categoria = (fila[4] || '').toUpperCase();
+      const monto = limpiarMonto(fila[5]);
+      const estatus = fila[8] || '';
+
+      if (estatus.includes('CANCELADO') || monto === 0) continue;
+      if (obra.toLowerCase() === obraBuscada.toLowerCase()) {
+        if (!categoria.includes('CONTROL') && !categoria.includes('APERTURA') && !categoria.includes('PRESUPUESTO')) {
+          acumuladoPrevio += monto;
+        }
+      }
+    }
+    return acumuladoPrevio;
+  } catch (e) {
+    return 0;
+  }
+}
+
 async function generarDatosCorteSemanal(obraBuscada) {
   if (!sheets || !SPREADSHEET_ID) return null;
   try {
@@ -1063,7 +1093,7 @@ async function darDeBajaTrabajadorPorFila(filaIndex) {
 async function guardarVisitaFamiliar(datos) {
   if (!sheets || !SPREADSHEET_PERSONAL_ID) return;
   try {
-    const fechaSalida = new Date();
+    const fechaSalida = new Date(datos.fechaPago || Date.now());
     const fechaSugerida = new Date(fechaSalida.getTime() + (45 * 24 * 60 * 60 * 1000));
 
     const fechaSalidaStr = fechaSalida.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City' });
@@ -1386,7 +1416,7 @@ async function procesarBusquedaCambioObra(from, busqueda) {
     const opciones = coincidencias.slice(0, 10).map(c => ({
       id: `EJECUTARCASO_${c.filaIndex}`,
       title: c.nombre.substring(0, 24),
-      description: `Actual en: ${c.obra} (Fila ${c.filaIndex})`
+      description: `Actual: ${c.obra} (Fila ${c.filaIndex})`
     }));
     await enviarLista(from, `🔍 *Se encontraron ${coincidencias.length} coincidencias:*`, 'Seleccionar', 'Trabajadores Activos', opciones);
   }
@@ -1744,17 +1774,14 @@ app.post('/webhook', async (req, res) => {
           tipoAccion: 'VISITA_FAMILIAR',
           nombre: nombreTrabajador.toUpperCase(),
           monto: montoApoyo,
+          esperandoFechaVisita: true,
           usuario: nombreUsuario
         };
 
-        await enviarBotones(from, `🚌 *Apoyo Pasajes Visita Familiar:* ${formatoMoneda(montoApoyo)}\n👤 *Trabajador:* ${nombreTrabajador.toUpperCase()}\n\n🏗️ *¿A qué obra se aplica este gasto de viáticos?*`, [
-          { id: 'VISITAOBRA_Pelicano', title: 'Pelicano' },
-          { id: 'VISITAOBRA_Caldera', title: 'Caldera' },
-          { id: 'VISITAOBRA_Nativitas', title: 'Nativitas' }
-        ]);
-        await enviarBotones(from, '👇 *Otras Opciones:*', [
-          { id: 'VISITAOBRA_Salud', title: 'Salud' },
-          { id: 'VISITAOBRA_Otro', title: 'Otro' }
+        await enviarBotones(from, `🚌 *Visita Familiar:* ${nombreTrabajador.toUpperCase()} (${formatoMoneda(montoApoyo)})\n\n📅 *¿Cuándo se realizó este pago?*`, [
+          { id: 'VISFECHA_Hoy', title: 'Hoy (Fecha actual)' },
+          { id: 'VISFECHA_Ayer', title: 'Ayer' },
+          { id: 'VISFECHA_Otra', title: '✏️ Otra fecha' }
         ]);
         res.sendStatus(200);
         return;
@@ -1882,6 +1909,24 @@ app.post('/webhook', async (req, res) => {
 
       const sesionActual = sesiones[from];
 
+      if (sesionActual && sesionActual.esperandoFechaVisitaManual) {
+        sesionActual.fechaPago = textBody;
+        delete sesionActual.esperandoFechaVisitaManual;
+        sesionActual.esperandoObraVisita = true;
+
+        await enviarBotones(from, `📅 *Fecha Registrada:* ${sesionActual.fechaPago}\n\n🏗️ *¿A qué Obra/Sucursal se aplica este viático?*`, [
+          { id: 'VISITAOBRA_Pelicano', title: 'Pelicano' },
+          { id: 'VISITAOBRA_Caldera', title: 'Caldera' },
+          { id: 'VISITAOBRA_Nativitas', title: 'Nativitas' }
+        ]);
+        await enviarBotones(from, '👇 *Otras Opciones:*', [
+          { id: 'VISITAOBRA_Salud', title: 'Salud' },
+          { id: 'VISITAOBRA_Otro', title: 'Otro' }
+        ]);
+        res.sendStatus(200);
+        return;
+      }
+
       if (sesionActual && sesionActual.esperandoNuevoMontoGasto) {
         const nuevoMonto = limpiarMonto(textBody);
         const ok = await actualizarMontoGasto(sesionActual.filaIndexEditar, nuevoMonto);
@@ -1898,7 +1943,7 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      // ASISTENTE DE CARGA DE OBRA
+      // ASISTENTE DE CARGA DE OBRA (CON GASTO HISTÓRICO INTELIGENTE)
       if (sesionActual && sesionActual.tipoAccion === 'CARGA_OBRA') {
         const montoNum = limpiarMonto(textBody);
 
@@ -1962,17 +2007,20 @@ app.post('/webhook', async (req, res) => {
         }
 
         if (sesionActual.esperandoGastadoAcumulado) {
-          sesionActual.gastadoAcumulado = montoNum;
+          // LÓGICA INTELIGENTE: Restar gastos previos de la Hoja 1 al histórico total ingresado
+          const gastosPreviosEnHoja = await calcularGastosPreviosObra(sesionActual.obra);
+          const historicoNetoReal = montoNum - gastosPreviosEnHoja;
+          sesionActual.gastadoAcumulado = historicoNetoReal > 0 ? historicoNetoReal : 0;
           delete sesionActual.esperandoGastadoAcumulado;
 
-          if (montoNum > 0) {
+          if (sesionActual.gastadoAcumulado > 0) {
             await guardarEnSheets({
               idMovimiento: 'GASINI-' + Date.now().toString().slice(-6),
               obra: sesionActual.obra,
               metodo: 'Transferencia',
               subMetodo: '',
               categoria: 'GASTO HISTORICO INICIAL',
-              monto: montoNum,
+              monto: sesionActual.gastadoAcumulado,
               concepto: 'Gasto Consolidado Histórico Inicial de Obra',
               usuario: nombreUsuario,
               estatusFactura: 'No Requiere 🔴',
@@ -2236,15 +2284,12 @@ app.post('/webhook', async (req, res) => {
       if (sesionActual && sesionActual.esperandoMontoVisita) {
         sesionActual.monto = limpiarMonto(textBody);
         delete sesionActual.esperandoMontoVisita;
+        sesionActual.esperandoFechaVisita = true;
 
-        await enviarBotones(from, `🚌 *Visita Familiar (${sesionActual.nombre}):* ${formatoMoneda(sesionActual.monto)}\n\n🏗️ *¿A qué Obra/Sucursal se aplican estos viáticos?*`, [
-          { id: 'VISITAOBRA_Pelicano', title: 'Pelicano' },
-          { id: 'VISITAOBRA_Caldera', title: 'Caldera' },
-          { id: 'VISITAOBRA_Nativitas', title: 'Nativitas' }
-        ]);
-        await enviarBotones(from, '👇 *Otras Opciones:*', [
-          { id: 'VISITAOBRA_Salud', title: 'Salud' },
-          { id: 'VISITAOBRA_Otro', title: 'Otro' }
+        await enviarBotones(from, `🚌 *Visita Familiar (${sesionActual.nombre}):* ${formatoMoneda(sesionActual.monto)}\n\n📅 *¿Cuándo se realizó este pago?*`, [
+          { id: 'VISFECHA_Hoy', title: 'Hoy (Fecha actual)' },
+          { id: 'VISFECHA_Ayer', title: 'Ayer' },
+          { id: 'VISFECHA_Otra', title: '✏️ Otra fecha' }
         ]);
         res.sendStatus(200);
         return;
@@ -2433,6 +2478,44 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
+      if (respuestaId?.startsWith('VISFECHA_')) {
+        const sesion = sesiones[from];
+        if (sesion && sesion.tipoAccion === 'VISITA_FAMILIAR') {
+          if (respuestaId === 'VISFECHA_Hoy') {
+            sesion.fechaPago = new Date().toLocaleDateString('es-MX');
+            sesion.esperandoObraVisita = true;
+            await enviarBotones(from, `📅 *Fecha:* Hoy\n\n🏗️ *¿A qué Obra/Sucursal se aplican estos viáticos?*`, [
+              { id: 'VISITAOBRA_Pelicano', title: 'Pelicano' },
+              { id: 'VISITAOBRA_Caldera', title: 'Caldera' },
+              { id: 'VISITAOBRA_Nativitas', title: 'Nativitas' }
+            ]);
+            await enviarBotones(from, '👇 *Otras Opciones:*', [
+              { id: 'VISITAOBRA_Salud', title: 'Salud' },
+              { id: 'VISITAOBRA_Otro', title: 'Otro' }
+            ]);
+          } else if (respuestaId === 'VISFECHA_Ayer') {
+            const ayer = new Date();
+            ayer.setDate(ayer.getDate() - 1);
+            sesion.fechaPago = ayer.toLocaleDateString('es-MX');
+            sesion.esperandoObraVisita = true;
+            await enviarBotones(from, `📅 *Fecha:* Ayer\n\n🏗️ *¿A qué Obra/Sucursal se aplican estos viáticos?*`, [
+              { id: 'VISITAOBRA_Pelicano', title: 'Pelicano' },
+              { id: 'VISITAOBRA_Caldera', title: 'Caldera' },
+              { id: 'VISITAOBRA_Nativitas', title: 'Nativitas' }
+            ]);
+            await enviarBotones(from, '👇 *Otras Opciones:*', [
+              { id: 'VISITAOBRA_Salud', title: 'Salud' },
+              { id: 'VISITAOBRA_Otro', title: 'Otro' }
+            ]);
+          } else {
+            sesion.esperandoFechaVisitaManual = true;
+            await enviarTexto(from, '✏️ *Escribe la fecha exacta del pago en formato DD/MM/AAAA:* (ej: 15/08/2026)');
+          }
+        }
+        res.sendStatus(200);
+        return;
+      }
+
       if (respuestaId?.startsWith('EJECUTARCASO_') || respuestaId?.startsWith('EJECUTARBAJA_')) {
         const esBaja = respuestaId.startsWith('EJECUTARBAJA_');
         const prefijo = esBaja ? 'EJECUTARBAJA_' : 'EJECUTARCASO_';
@@ -2446,7 +2529,6 @@ app.post('/webhook', async (req, res) => {
             await enviarTexto(from, '⚠️ Error ejecutando la baja.');
           }
         } else {
-          // Es selección de trabajador para cambio de obra
           const resPers = await sheets.spreadsheets.values.get({
             spreadsheetId: SPREADSHEET_PERSONAL_ID,
             range: `PLANTILLA_PERSONAL!C${filaIndex}:D${filaIndex}`
@@ -2993,9 +3075,10 @@ app.post('/webhook', async (req, res) => {
 
           await guardarVisitaFamiliar(sesion);
 
-          const fechaProxima = new Date(Date.now() + (45 * 24 * 60 * 60 * 1000)).toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City' });
+          const fechaSalidaReal = new Date(sesion.fechaPago || Date.now());
+          const fechaProxima = new Date(fechaSalidaReal.getTime() + (45 * 24 * 60 * 60 * 1000)).toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City' });
 
-          await enviarTexto(from, `✅ *Visita Familiar Registrada con Éxito*\n\n👤 *Trabajador:* ${sesion.nombre}\n🏗️ *Obra Afectada:* ${sesion.obra}\n💵 *Monto Apoyo:* ${formatoMoneda(sesion.monto)}\n📅 *Próxima Visita Sugerida (+45 días):* ${fechaProxima}`);
+          await enviarTexto(from, `✅ *Visita Familiar Registrada con Éxito*\n\n👤 *Trabajador:* ${sesion.nombre}\n🏗️ *Obra Afectada:* ${sesion.obra}\n💵 *Monto Apoyo:* ${formatoMoneda(sesion.monto)}\n📅 *Fecha de Pago:* ${sesion.fechaPago}\n⏳ *Próxima Visita Sugerida (+45 días):* ${fechaProxima}`);
           delete sesiones[from];
         }
         res.sendStatus(200);
