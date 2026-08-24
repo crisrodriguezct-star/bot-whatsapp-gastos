@@ -480,13 +480,34 @@ async function generarDatosCorteSemanal(obraBuscada) {
     const detalleContratistas = {};
     CONTRATISTAS_VALIDOS.forEach(c => detalleContratistas[c] = { contrato: 0, pagado: 0 });
 
+    // PASO 1: Primero calculamos el total pagado a contratistas para saber cuánto descontar del histórico bruto
+    let totalPagadoContratistasGlobal = 0;
+    for (let i = 1; i < filas.length; i++) {
+      const fila = filas[i];
+      const obra = fila[2] || '';
+      const concepto = (fila[6] || '').toLowerCase();
+      const categoria = (fila[4] || '').toUpperCase();
+      const monto = limpiarMonto(fila[5]);
+      const estatus = fila[8] || '';
+
+      if (estatus.includes('CANCELADO') || monto === 0) continue;
+      if (obraBuscada && obra.toLowerCase() !== obraBuscada.toLowerCase()) continue;
+
+      CONTRATISTAS_VALIDOS.forEach(c => {
+        if ((concepto.includes(c) || categoria.includes(c.toUpperCase())) && !concepto.includes('contrato') && !concepto.includes('cerrado') && !concepto.includes('total autorizado')) {
+          totalPagadoContratistasGlobal += monto;
+        }
+      });
+    }
+
+    // PASO 2: Recorremos los movimientos aplicando la resta limpia al GASTO HISTORICO INICIAL
     for (let i = 1; i < filas.length; i++) {
       const fila = filas[i];
       const fechaStr = fila[1] || '';
       const obra = fila[2] || '';
       const metodo = fila[3] || '';
       const categoria = (fila[4] || '20) VARIOS').toUpperCase();
-      const monto = limpiarMonto(fila[5]);
+      let monto = limpiarMonto(fila[5]);
       const concepto = (fila[6] || '').toLowerCase();
       const estatus = fila[8] || '';
 
@@ -530,8 +551,12 @@ async function generarDatosCorteSemanal(obraBuscada) {
         } else if (!metodo.includes('Apertura') && !categoria.includes('CONTROL') && !categoria.includes('APERTURA')) {
           
           // =========================================================================
-          // LÓGICA CONTABLE NATIVA (SUMA REAL DE LOS $300K Y DESGLOSE DE $275K + CONTRATISTAS)
+          // CORRECCIÓN CONTABLE NATIVA: Descontar los abonos de contratistas del histórico
           // =========================================================================
+          if (categoria.includes('GASTO HISTORICO INICIAL')) {
+            monto = monto - totalPagadoContratistasGlobal;
+          }
+
           gastosTotal += monto;
 
           if (metodo.startsWith('Efectivo')) {
@@ -1442,7 +1467,6 @@ app.post('/webhook', async (req, res) => {
 
         if (!sesionActual.subfolderId) {
           const extraFolder = await obtenerOcrearCarpetaTrabajoExtra(sesionActual.parentFolderId, sesionActual.idExtra, sesionActual.descripcion || 'EXTRA');
-          sesionExactaSubfolder = extraFolder.folderId;
           sesionActual.subfolderId = extraFolder.folderId;
           sesionActual.carpetaExtraLink = extraFolder.folderLink;
         }
