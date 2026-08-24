@@ -408,7 +408,7 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
     doc.text(`• En Efectivo (Caja Chica): ${formatoMoneda(datos.saldoEfectivo)}`, 385, y + 16);
     doc.text(`• Total en Bancos: ${formatoMoneda(datos.saldoBanco)}`, 385, y + 28);
 
-    // FIRMA OPTIMIZADA (Y = 65) PARA QUEDAR PERFECTA SOBRE LA LÍNEA
+    // FIRMA OPTIMIZADA Y REUBICADA (FUERA DE LA CAJA DE CUENTAS)
     y += 65;
     const xFirma = 350;
     const anchoFirma = 210;
@@ -422,18 +422,18 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
 
     let rutaFirmaEncontrada = rutasPosiblesFirma.find(r => fs.existsSync(r));
     if (rutaFirmaEncontrada) {
-      doc.image(rutaFirmaEncontrada, xFirma + 55, y - 55, { width: 95 });
+      doc.image(rutaFirmaEncontrada, xFirma + 55, y - 48, { width: 95 });
     }
 
     doc.moveTo(xFirma, y + 6).lineTo(xFirma + anchoFirma, y + 6).strokeColor('#000000').lineWidth(1).stroke();
     
     y += 10;
     doc.fontSize(8).font('Helvetica-Bold').fillColor('#0F172A')
-       .text('Administración Constructive Gallery Architects', xFirma, y, { width: anchoFirma, align: 'center' });
+        .text('Administración Constructive Gallery Architects', xFirma, y, { width: anchoFirma, align: 'center' });
     
     y += 10;
     doc.fontSize(6.5).font('Helvetica').fillColor('#64748B')
-       .text('Validación y Firma Digital Autónoma', xFirma, y, { width: anchoFirma, align: 'center' });
+        .text('Validación y Firma Digital Autónoma', xFirma, y, { width: anchoFirma, align: 'center' });
 
     doc.end();
     stream.on('finish', () => resolve(rutaSalida));
@@ -490,6 +490,9 @@ async function generarDatosCorteSemanal(obraBuscada) {
 
       if (estatus.includes('CANCELADO') || monto === 0) continue;
 
+      // FILTRO CRÍTICO: Ignorar abonos históricos para evitar duplicidad de montos en reportes
+      if (categoria.includes('ABONO HISTORICO') || concepto.includes('abono historico')) continue;
+
       if (!obraBuscada || obra.toLowerCase() === obraBuscada.toLowerCase()) {
         let fechaMov = new Date(fechaStr);
         const partes = fechaStr.split(',')[0].split('/');
@@ -544,7 +547,7 @@ async function generarDatosCorteSemanal(obraBuscada) {
         }
 
         CONTRATISTAS_VALIDOS.forEach(c => {
-          if ((concepto.includes(c) || categoria.includes(c.toUpperCase())) && !concepto.includes('contrato') && !concepto.includes('cerrado') && !concepto.includes('total autorizado')) {
+          if ((concepto.includes(c) || categoria.includes(c.toUpperCase())) && !concepto.includes('contrato') && !concepto.includes('cerrado') && !concepto.includes('total autorizado') && !concepto.includes('abono historico')) {
             detalleContratistas[c].pagado += monto;
           }
         });
@@ -643,13 +646,12 @@ async function obtenerUltimosGastos(obraFiltro) {
       const concepto = (fila[6] || '').toLowerCase();
       const estatus = fila[8] || '';
 
-      // MODIFICACIÓN CLAVE: Ahora se incluyen TODOS los registros válidos (gastos, contratos, aperturas, etc.)
       if (!estatus.includes('CANCELADO') && monto > 0) {
         if (!obraFiltro || obra.toLowerCase() === obraFiltro.toLowerCase()) {
           ultimos.push({ filaIndex: i + 1, id, obra, concepto, monto });
         }
       }
-      if (ultimos.length >= 10) break; // Mostramos hasta 10 opciones para editar/corregir
+      if (ultimos.length >= 10) break;
     }
     return ultimos;
   } catch (e) {
