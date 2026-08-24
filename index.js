@@ -1442,6 +1442,7 @@ app.post('/webhook', async (req, res) => {
 
         if (!sesionActual.subfolderId) {
           const extraFolder = await obtenerOcrearCarpetaTrabajoExtra(sesionActual.parentFolderId, sesionActual.idExtra, sesionActual.descripcion || 'EXTRA');
+          sesionExactaSubfolder = extraFolder.folderId;
           sesionActual.subfolderId = extraFolder.folderId;
           sesionActual.carpetaExtraLink = extraFolder.folderLink;
         }
@@ -3074,7 +3075,7 @@ app.post('/webhook', async (req, res) => {
           'CAT_12': '12) MATERIAL HERRERIA',
           'CAT_25': '25) DIESEL PLANTA',
           'CAT_29': '29) RESIDENCIA DE OBRA',
-          'CAT_30': '30/ INDIRECTOS'
+          'CAT_30': '30) INDIRECTOS'
         };
 
         if (mapaDirecto[respuestaId]) {
@@ -3176,7 +3177,7 @@ app.post('/webhook', async (req, res) => {
   } else {
     res.sendStatus(404);
   }
-}
+});
 
 async function desplegarFormasPago(from) {
   await enviarBotones(from, '💳 *¿Cómo pagaste este gasto?*', [
