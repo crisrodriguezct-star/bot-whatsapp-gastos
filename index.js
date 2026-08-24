@@ -409,13 +409,11 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
     doc.text(`• Total en Bancos: ${formatoMoneda(datos.saldoBanco)}`, 385, y + 28);
 
     // ==========================================
-    // FIRMA DINÁMICA AUTOMÁTICA (SE ADAPTA AL TAMAÑO DE LA TABLA)
+    // FIRMA ABSOLUTA SEGURA (COORDS FIJAS Y LIBRES DE CHOQUES)
     // ==========================================
-    let yFirmaDinamica = y + 75; 
-    if (yFirmaDinamica > 690) {
-        yFirmaDinamica = 690; // Tope máximo seguro para que no se salga de la hoja
-    }
-
+    // Fijamos la coordenada Y de la firma en 670, un punto seguro muy por debajo 
+    // del cuadro de cuentas bancarias y perfectamente separado.
+    const yFirmaSegura = 670; 
     const xFirma = 350;
     const anchoFirma = 210;
 
@@ -428,12 +426,12 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
 
     let rutaFirmaEncontrada = rutasPosiblesFirma.find(r => fs.existsSync(r));
     if (rutaFirmaEncontrada) {
-      doc.image(rutaFirmaEncontrada, xFirma + 55, yFirmaDinamica - 48, { width: 95 });
+      doc.image(rutaFirmaEncontrada, xFirma + 55, yFirmaSegura - 45, { width: 95 });
     }
 
-    doc.moveTo(xFirma, yFirmaDinamica + 6).lineTo(xFirma + anchoFirma, yFirmaDinamica + 6).strokeColor('#000000').lineWidth(1).stroke();
+    doc.moveTo(xFirma, yFirmaSegura + 6).lineTo(xFirma + anchoFirma, yFirmaSegura + 6).strokeColor('#000000').lineWidth(1).stroke();
     
-    let yTextoFirma = yFirmaDinamica + 10;
+    let yTextoFirma = yFirmaSegura + 10;
     doc.fontSize(8).font('Helvetica-Bold').fillColor('#0F172A')
         .text('Administración Constructive Gallery Architects', xFirma, yTextoFirma, { width: anchoFirma, align: 'center' });
     
