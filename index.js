@@ -408,8 +408,10 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
     doc.text(`• En Efectivo (Caja Chica): ${formatoMoneda(datos.saldoEfectivo)}`, 385, y + 16);
     doc.text(`• Total en Bancos: ${formatoMoneda(datos.saldoBanco)}`, 385, y + 28);
 
-    // FIRMA OPTIMIZADA Y REUBICADA (FUERA DE LA CAJA DE CUENTAS)
-    y += 65;
+    // ==========================================
+    // FIRMA FIJA EN PIE DE PÁGINA (POSICIÓN ABSOLUTA SEGURA)
+    // ==========================================
+    const yFirmaAbsoluta = 680; 
     const xFirma = 350;
     const anchoFirma = 210;
 
@@ -422,18 +424,18 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
 
     let rutaFirmaEncontrada = rutasPosiblesFirma.find(r => fs.existsSync(r));
     if (rutaFirmaEncontrada) {
-      doc.image(rutaFirmaEncontrada, xFirma + 55, y - 48, { width: 95 });
+      doc.image(rutaFirmaEncontrada, xFirma + 55, yFirmaAbsoluta - 45, { width: 95 });
     }
 
-    doc.moveTo(xFirma, y + 6).lineTo(xFirma + anchoFirma, y + 6).strokeColor('#000000').lineWidth(1).stroke();
+    doc.moveTo(xFirma, yFirmaAbsoluta + 6).lineTo(xFirma + anchoFirma, yFirmaAbsoluta + 6).strokeColor('#000000').lineWidth(1).stroke();
     
-    y += 10;
+    let yTextoFirma = yFirmaAbsoluta + 10;
     doc.fontSize(8).font('Helvetica-Bold').fillColor('#0F172A')
-        .text('Administración Constructive Gallery Architects', xFirma, y, { width: anchoFirma, align: 'center' });
+        .text('Administración Constructive Gallery Architects', xFirma, yTextoFirma, { width: anchoFirma, align: 'center' });
     
-    y += 10;
+    yTextoFirma += 10;
     doc.fontSize(6.5).font('Helvetica').fillColor('#64748B')
-        .text('Validación y Firma Digital Autónoma', xFirma, y, { width: anchoFirma, align: 'center' });
+        .text('Validación y Firma Digital Autónoma', xFirma, yTextoFirma, { width: anchoFirma, align: 'center' });
 
     doc.end();
     stream.on('finish', () => resolve(rutaSalida));
