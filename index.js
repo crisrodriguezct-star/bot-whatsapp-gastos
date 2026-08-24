@@ -409,7 +409,7 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
     doc.text(`• Total en Bancos: ${formatoMoneda(datos.saldoBanco)}`, 385, y + 28);
 
     // ==========================================
-    // FIRMA ABSOLUTA PERFECTAMENTE RECORRIDA HACIA ABAJO (Y = 700)
+    // FIRMA ABSOLUTA SEGURA (Y = 700)
     // ==========================================
     const yFirmaSegura = 700; 
     const xFirma = 350;
@@ -492,8 +492,13 @@ async function generarDatosCorteSemanal(obraBuscada) {
 
       if (estatus.includes('CANCELADO') || monto === 0) continue;
 
-      // FILTRO CRÍTICO: Ignorar abonos históricos para evitar duplicidad de montos en reportes
-      if (categoria.includes('ABONO HISTORICO') || concepto.includes('abono historico')) continue;
+      // =========================================================================
+      // REGLA DE ORO RESTAURADA: 
+      // El Gasto Histórico Inicial (275k) YA INCLUYE los $25k de abonos a contratistas.
+      // Por lo tanto, NO filtramos "ABONO HISTORICO" en el generador de PDF, 
+      // para que el acumulado global de la obra refleje correctamente los $300,000 netos 
+      // y el saldo disponible cierre exactamente en $200,000.
+      // =========================================================================
 
       if (!obraBuscada || obra.toLowerCase() === obraBuscada.toLowerCase()) {
         let fechaMov = new Date(fechaStr);
@@ -549,7 +554,7 @@ async function generarDatosCorteSemanal(obraBuscada) {
         }
 
         CONTRATISTAS_VALIDOS.forEach(c => {
-          if ((concepto.includes(c) || categoria.includes(c.toUpperCase())) && !concepto.includes('contrato') && !concepto.includes('cerrado') && !concepto.includes('total autorizado') && !concepto.includes('abono historico')) {
+          if ((concepto.includes(c) || categoria.includes(c.toUpperCase())) && !concepto.includes('contrato') && !concepto.includes('cerrado') && !concepto.includes('total autorizado')) {
             detalleContratistas[c].pagado += monto;
           }
         });
