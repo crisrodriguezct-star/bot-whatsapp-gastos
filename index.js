@@ -480,7 +480,6 @@ async function generarDatosCorteSemanal(obraBuscada) {
     const detalleContratistas = {};
     CONTRATISTAS_VALIDOS.forEach(c => detalleContratistas[c] = { contrato: 0, pagado: 0 });
 
-    // PASO 1: Calcular total pagado a contratistas para descontarlo del histórico bruto en el PDF
     let totalPagadoContratistasGlobal = 0;
     for (let i = 1; i < filas.length; i++) {
       const fila = filas[i];
@@ -500,7 +499,6 @@ async function generarDatosCorteSemanal(obraBuscada) {
       });
     }
 
-    // PASO 2: Recorrer movimientos aplicando el neto correcto al histórico en el PDF
     for (let i = 1; i < filas.length; i++) {
       const fila = filas[i];
       const fechaStr = fila[1] || '';
@@ -851,19 +849,35 @@ async function buscarTrabajadoresActivos(busqueda) {
 
     for (let i = 1; i < filas.length; i++) {
       const filaIndex = i + 1;
+      const idTrabajador = filas[i][1] || '';
       const nombre = filas[i][2] || '';
       const obra = filas[i][3] || '';
       const estatus = filas[i][6] || '';
 
       if (nombre && !estatus.includes('BAJA')) {
         if (!termino || nombre.toLowerCase().includes(termino)) {
-          coincidencia.push({ filaIndex, nombre, obra });
+          coincidencia.push({ filaIndex, idTrabajador, nombre, obra });
         }
       }
     }
     return coincidencia;
   } catch (e) {
     return [];
+  }
+}
+
+async function actualizarObraTrabajadorPorFila(filaIndex, nuevaObra) {
+  if (!sheets || !SPREADSHEET_PERSONAL_ID) return false;
+  try {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SPREADSHEET_PERSONAL_ID,
+      range: `PLANTILLA_PERSONAL!D${filaIndex}`,
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: [[nuevaObra]] }
+    });
+    return true;
+  } catch (e) {
+    return false;
   }
 }
 
@@ -1351,6 +1365,33 @@ async function calcularReportePresupuestos() {
   }
 }
 
+async function procesarBusquedaCambioObra(from, busqueda) {
+  const coincidencias = await buscarTrabajadoresActivos(busqueda);
+
+  if (coincidencias.length === 0) {
+    await enviarTexto(from, `⚠️ No se encontró a ningún trabajador activo registrado que coincida con "${busqueda || 'la consulta'}".`);
+  } else if (coincidencias.length === 1) {
+    const t = coincidencias[0];
+    sesiones[from] = { tipoAccion: 'CAMBIO_OBRA_SELECCION', filaIndex: t.filaIndex, nombre: t.nombre, obraActual: t.obra };
+    await enviarBotones(from, `👤 *Trabajador:* ${t.nombre}\n🏗️ *Obra Actual:* ${t.obra}\n\n¿A qué nueva Sucursal deseas moverlo?`, [
+      { id: 'CAMBIOBRA_Pelicano', title: 'Pelicano' },
+      { id: 'CAMBIOBRA_Caldera', title: 'Caldera' },
+      { id: 'CAMBIOBRA_Nativitas', title: 'Nativitas' }
+    ]);
+    await enviarBotones(from, '👇 *Otras Opciones:*', [
+      { id: 'CAMBIOBRA_Salud', title: 'Salud' },
+      { id: 'CAMBIOBRA_Otro', title: 'Otro' }
+    ]);
+  } else {
+    const opciones = coincidencias.slice(0, 10).map(c => ({
+      id: `EJECUTARCASO_${c.filaIndex}`,
+      title: c.nombre.substring(0, 24),
+      description: `Actual en: ${c.obra} (Fila ${c.filaIndex})`
+    }));
+    await enviarLista(from, `🔍 *Se encontraron ${coincidencias.length} coincidencias:*`, 'Seleccionar', 'Trabajadores Activos', opciones);
+  }
+}
+
 async function desplegarMenuPrincipal(from) {
   const tieneAccesoDireccion = esDireccion(from);
 
@@ -1361,14 +1402,14 @@ async function desplegarMenuPrincipal(from) {
       { id: 'MENU_CORREGIR', title: '✏️ Corregir Últimos Gastos', description: 'Modificar monto o anular gasto con un toque' },
       { id: 'MENU_CONTRATISTAS', title: '🤝 Contratistas / Destajos', description: 'Asignación de contratos y consulta de saldos' },
       { id: 'MENU_PRESU', title: '🏦 Avance de Presupuestos', description: 'Presupuesto autorizado y cobro a clientes' },
-      { id: 'MENU_PERSONAL', title: '👷‍♂️ Personal Propio', description: 'Altas, bajas y Visitas Familiares' },
+      { id: 'MENU_PERSONAL', title: '👷‍♂️ Personal Propio', description: 'Altas, bajas, cambio de obra y Visitas' },
       { id: 'MENU_EXTRAS', title: '🔨 Trabajos Extras', description: 'Registro de extras y evidencias a Drive' },
       { id: 'MENU_PRECIOS', title: '🏷️ Precios Materiales', description: 'Registrar precio y comparar histórico' }
     ];
     await enviarLista(from, '🏗️ *PANEL DE CONTROL CENTRAL (DIRECCIÓN)*\n\nSelecciona la gestión que deseas realizar:', 'Abrir Menú', 'Dirección de Obra', opciones);
   } else {
     const opciones = [
-      { id: 'MENU_PERSONAL', title: '👷‍♂️ Personal Propio', description: 'Altas, bajas y Visitas Familiares' },
+      { id: 'MENU_PERSONAL', title: '👷‍♂️ Personal Propio', description: 'Altas, bajas, cambio de obra y Visitas' },
       { id: 'MENU_EXTRAS', title: '🔨 Trabajos Extras', description: 'Registro de extras y evidencias con foto' },
       { id: 'MENU_PRECIOS', title: '🏷️ Precios Materiales', description: 'Registrar precio y comparar cotizaciones' }
     ];
@@ -1388,6 +1429,7 @@ async function desplegarGuiaComandos(from) {
       `• *Gasto Rápido:* \`[concepto] [monto]\` (ej: cemento 450)\n` +
       `• *Alta Trabajador:* \`alta [nombre]\`\n` +
       `• *Baja Trabajador:* \`baja\` o \`baja [nombre]\`\n` +
+      `• *Cambiar de Obra:* \`cambiar obra [nombre]\`\n` +
       `• *Visita Familiar:* \`visita [nombre] [monto]\`\n` +
       `• *Trabajos Extras:* \`extra\`\n` +
       `• *Dotar Caja Chica:* \`caja [monto]\`\n` +
@@ -1401,6 +1443,7 @@ async function desplegarGuiaComandos(from) {
       `• *Registrar Gasto:* \`[concepto] [monto]\` (ej: \`cemento 450\`)\n` +
       `• *Alta Trabajador:* \`alta [nombre]\` (ej: \`alta Pedro Gomez\`)\n` +
       `• *Baja Trabajador:* \`baja\` (Buscador táctil)\n` +
+      `• *Cambiar de Obra:* \`cambiar obra [nombre]\`\n` +
       `• *Visita Familiar:* \`visita [nombre] [monto]\`\n` +
       `• *Trabajo Extra:* \`extra\` (Sube fotos/videos)\n` +
       `• *Registrar Precio:* \`precio [mat] [monto]\`\n` +
@@ -1566,15 +1609,14 @@ app.post('/webhook', async (req, res) => {
           return;
         }
 
-        await enviarBotones(from, '📊 *¿De qué Sucursal deseas generar el Reporte PDF?*', [
-          { id: 'REP_Pelicano', title: 'Pelicano' },
-          { id: 'REP_Caldera', title: 'Caldera' },
-          { id: 'REP_Nativitas', title: 'Nativitas' }
-        ]);
-        await enviarBotones(from, '👇 *Otras Opciones:*', [
-          { id: 'REP_Salud', title: 'Salud' },
-          { id: 'REP_GLOBAL', title: '💰 Caja Chica (Efectivo)' }
-        ]);
+        const opcionesReporte = [
+          { id: 'REP_Pelicano', title: 'Sucursal Pelicano', description: 'Generar PDF de corte semanal' },
+          { id: 'REP_Caldera', title: 'Sucursal Caldera', description: 'Generar PDF de corte semanal' },
+          { id: 'REP_Nativitas', title: 'Sucursal Nativitas', description: 'Generar PDF de corte semanal' },
+          { id: 'REP_Salud', title: 'Sucursal Salud', description: 'Generar PDF de corte semanal' },
+          { id: 'REP_GLOBAL', title: 'Caja Chica General', description: 'Consultar saldo actual en efectivo' }
+        ];
+        await enviarLista(from, '📊 *Selecciona la opción de reporte que deseas generar:*', 'Ver Opciones', 'Reportes Financieros', opcionesReporte);
         res.sendStatus(200);
         return;
       }
@@ -1681,6 +1723,14 @@ app.post('/webhook', async (req, res) => {
       if (matchBajaGenerico) {
         const busqueda = matchBajaGenerico[2] ? matchBajaGenerico[2].trim() : '';
         await procesarBusquedaBaja(from, busqueda);
+        res.sendStatus(200);
+        return;
+      }
+
+      const matchCambioObra = textBody.match(/^(cambiar obra|mover obra|cambiar)\s+(.+)/i);
+      if (matchCambioObra) {
+        const busqueda = matchCambioObra[2].trim();
+        await procesarBusquedaCambioObra(from, busqueda);
         res.sendStatus(200);
         return;
       }
@@ -2383,14 +2433,61 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      if (respuestaId?.startsWith('EJECUTARBAJA_')) {
-        const filaIndex = parseInt(respuestaId.replace('EJECUTARBAJA_', ''));
-        const baja = await darDeBajaTrabajadorPorFila(filaIndex);
+      if (respuestaId?.startsWith('EJECUTARCASO_') || respuestaId?.startsWith('EJECUTARBAJA_')) {
+        const esBaja = respuestaId.startsWith('EJECUTARBAJA_');
+        const prefijo = esBaja ? 'EJECUTARBAJA_' : 'EJECUTARCASO_';
+        const filaIndex = parseInt(respuestaId.replace(prefijo, ''));
 
-        if (baja) {
-          await enviarTexto(from, `🔴 *Trabajador Dado de Baja Correctamente*\n\n👤 *Nombre:* ${baja.nombre}\n🏗️ *Obra:* ${baja.obra}\n📅 *Fecha de Baja:* ${baja.fechaBaja}\n📌 *Estatus:* BAJA 🔴`);
+        if (esBaja) {
+          const baja = await darDeBajaTrabajadorPorFila(filaIndex);
+          if (baja) {
+            await enviarTexto(from, `🔴 *Trabajador Dado de Baja Correctamente*\n\n👤 *Nombre:* ${baja.nombre}\n🏗️ *Obra:* ${baja.obra}\n📅 *Fecha de Baja:* ${baja.fechaBaja}\n📌 *Estatus:* BAJA 🔴`);
+          } else {
+            await enviarTexto(from, '⚠️ Error ejecutando la baja.');
+          }
         } else {
-          await enviarTexto(from, '⚠️ Error ejecutando la baja.');
+          // Es selección de trabajador para cambio de obra
+          const resPers = await sheets.spreadsheets.values.get({
+            spreadsheetId: SPREADSHEET_PERSONAL_ID,
+            range: `PLANTILLA_PERSONAL!C${filaIndex}:D${filaIndex}`
+          });
+          const nombreTrabajador = resPers.data.values?.[0]?.[0] || 'Trabajador';
+          const obraActual = resPers.data.values?.[0]?.[1] || 'N/A';
+
+          sesiones[from] = { tipoAccion: 'CAMBIO_OBRA_SELECCION', filaIndex, nombre: nombreTrabajador, obraActual };
+          await enviarBotones(from, `👤 *Trabajador:* ${nombreTrabajador}\n🏗️ *Obra Actual:* ${obraActual}\n\n¿A qué nueva Sucursal deseas moverlo?`, [
+            { id: 'CAMBIOBRA_Pelicano', title: 'Pelicano' },
+            { id: 'CAMBIOBRA_Caldera', title: 'Caldera' },
+            { id: 'CAMBIOBRA_Nativitas', title: 'Nativitas' }
+          ]);
+          await enviarBotones(from, '👇 *Otras Opciones:*', [
+            { id: 'CAMBIOBRA_Salud', title: 'Salud' },
+            { id: 'CAMBIOBRA_Otro', title: 'Otro' }
+          ]);
+        }
+        res.sendStatus(200);
+        return;
+      }
+
+      if (respuestaId?.startsWith('CAMBIOBRA_')) {
+        const obraMap = {
+          'CAMBIOBRA_Pelicano': 'Suc. Pelicano',
+          'CAMBIOBRA_Caldera': 'Suc. Caldera',
+          'CAMBIOBRA_Nativitas': 'Suc. Nativitas',
+          'CAMBIOBRA_Salud': 'Suc. Salud',
+          'CAMBIOBRA_Otro': 'Suc. Otro'
+        };
+        const sesion = sesiones[from];
+        if (sesion && sesion.tipoAccion === 'CAMBIO_OBRA_SELECCION') {
+          const nuevaObra = obraMap[respuestaId] || 'Suc. Otro';
+          const ok = await actualizarObraTrabajadorPorFila(sesion.filaIndex, nuevaObra);
+
+          if (ok) {
+            await enviarTexto(from, `✅ *Trabajador Reubicado con Éxito*\n\n👤 *Nombre:* ${sesion.nombre}\n🏢 *Obra Anterior:* ${sesion.obraActual}\n🏗️ *Nueva Obra:* ${nuevaObra}\n📌 *Estatus:* ACTIVO 🟢`);
+          } else {
+            await enviarTexto(from, '⚠️ Error actualizando la obra del trabajador.');
+          }
+          delete sesiones[from];
         }
         res.sendStatus(200);
         return;
@@ -2562,6 +2659,9 @@ app.post('/webhook', async (req, res) => {
         await enviarBotones(from, '👷‍♂️ *Gestión de Personal Propio:*', [
           { id: 'OPC_ALTA_EMP', title: '➕ Alta Trabajador' },
           { id: 'OPC_BAJA_EMP', title: '❌ Baja Trabajador' },
+          { id: 'OPC_CAMBIO_EMP', title: '🔄 Cambiar Obra' }
+        ]);
+        await enviarBotones(from, '👇 *Otras Opciones:*', [
           { id: 'OPC_VISITA_EMP', title: '🚌 Visita Familiar' }
         ]);
         res.sendStatus(200);
@@ -2697,10 +2797,14 @@ app.post('/webhook', async (req, res) => {
           res.sendStatus(200);
           return;
         }
-        await enviarBotones(from, '📊 *Saldos y Reportes:*', [
-          { id: 'REP_GLOBAL', title: '💰 Caja Chica' },
-          { id: 'OPC_VER_FAC', title: '📄 Facturas Pendientes' }
-        ]);
+        const opcionesReporte = [
+          { id: 'REP_Pelicano', title: 'Sucursal Pelicano', description: 'Generar PDF de corte semanal' },
+          { id: 'REP_Caldera', title: 'Sucursal Caldera', description: 'Generar PDF de corte semanal' },
+          { id: 'REP_Nativitas', title: 'Sucursal Nativitas', description: 'Generar PDF de corte semanal' },
+          { id: 'REP_Salud', title: 'Sucursal Salud', description: 'Generar PDF de corte semanal' },
+          { id: 'REP_GLOBAL', title: 'Caja Chica General', description: 'Consultar saldo actual en efectivo' }
+        ];
+        await enviarLista(from, '📊 *Selecciona la opción de reporte que deseas generar:*', 'Ver Opciones', 'Reportes Financieros', opcionesReporte);
         res.sendStatus(200);
         return;
       }
@@ -2720,6 +2824,21 @@ app.post('/webhook', async (req, res) => {
       if (respuestaId === 'OPC_BAJA_EMP') {
         sesiones[from] = { esperandoNombreTrabajadorBaja: true };
         await enviarTexto(from, '✏️ *Escribe el Nombre (o parte del nombre) del trabajador a dar de BAJA:*');
+        res.sendStatus(200);
+        return;
+      }
+
+      if (respuestaId === 'OPC_CAMBIO_EMP') {
+        sesiones[from] = { esperandoNombreTrabajadorCambio: true };
+        await enviarTexto(from, '✏️ *Escribe el Nombre (o parte del nombre) del trabajador al que deseas cambiar de obra:*');
+        res.sendStatus(200);
+        return;
+      }
+
+      if (sesionActual && sesionActual.esperandoNombreTrabajadorCambio) {
+        delete sesionActual.esperandoNombreTrabajadorCambio;
+        await procesarBusquedaCambioObra(from, textBody.trim());
+        delete sesiones[from];
         res.sendStatus(200);
         return;
       }
