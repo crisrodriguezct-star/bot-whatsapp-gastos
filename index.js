@@ -1639,14 +1639,15 @@ app.post('/webhook', async (req, res) => {
           return;
         }
 
-        const opcionesReporte = [
-          { id: 'REP_Pelicano', title: 'Sucursal Pelicano', description: 'Generar PDF de corte semanal' },
-          { id: 'REP_Caldera', title: 'Sucursal Caldera', description: 'Generar PDF de corte semanal' },
-          { id: 'REP_Nativitas', title: 'Sucursal Nativitas', description: 'Generar PDF de corte semanal' },
-          { id: 'REP_Salud', title: 'Sucursal Salud', description: 'Generar PDF de corte semanal' },
-          { id: 'REP_GLOBAL', title: 'Caja Chica General', description: 'Consultar saldo actual en efectivo' }
-        ];
-        await enviarLista(from, '📊 *Selecciona la opción de reporte que deseas generar:*', 'Ver Opciones', 'Reportes Financieros', opcionesReporte);
+        await enviarBotones(from, '📊 *¿De qué Sucursal deseas generar el Reporte PDF?*', [
+          { id: 'REP_Pelicano', title: 'Pelicano' },
+          { id: 'REP_Caldera', title: 'Caldera' },
+          { id: 'REP_Nativitas', title: 'Nativitas' }
+        ]);
+        await enviarBotones(from, '👇 *Otras Opciones:*', [
+          { id: 'REP_Salud', title: 'Salud' },
+          { id: 'REP_GLOBAL', title: 'Caja Chica' }
+        ]);
         res.sendStatus(200);
         return;
       }
@@ -2007,7 +2008,6 @@ app.post('/webhook', async (req, res) => {
         }
 
         if (sesionActual.esperandoGastadoAcumulado) {
-          // LÓGICA INTELIGENTE: Restar gastos previos de la Hoja 1 al histórico total ingresado
           const gastosPreviosEnHoja = await calcularGastosPreviosObra(sesionActual.obra);
           const historicoNetoReal = montoNum - gastosPreviosEnHoja;
           sesionActual.gastadoAcumulado = historicoNetoReal > 0 ? historicoNetoReal : 0;
@@ -2526,7 +2526,7 @@ app.post('/webhook', async (req, res) => {
           if (baja) {
             await enviarTexto(from, `🔴 *Trabajador Dado de Baja Correctamente*\n\n👤 *Nombre:* ${baja.nombre}\n🏗️ *Obra:* ${baja.obra}\n📅 *Fecha de Baja:* ${baja.fechaBaja}\n📌 *Estatus:* BAJA 🔴`);
           } else {
-            await enviarTexto(from, '⚠️ Error ejecutando la baja.');
+            await enviarTexto(from, '⚠️ Error procesando la baja.');
           }
         } else {
           const resPers = await sheets.spreadsheets.values.get({
@@ -2879,14 +2879,15 @@ app.post('/webhook', async (req, res) => {
           res.sendStatus(200);
           return;
         }
-        const opcionesReporte = [
-          { id: 'REP_Pelicano', title: 'Sucursal Pelicano', description: 'Generar PDF de corte semanal' },
-          { id: 'REP_Caldera', title: 'Sucursal Caldera', description: 'Generar PDF de corte semanal' },
-          { id: 'REP_Nativitas', title: 'Sucursal Nativitas', description: 'Generar PDF de corte semanal' },
-          { id: 'REP_Salud', title: 'Sucursal Salud', description: 'Generar PDF de corte semanal' },
-          { id: 'REP_GLOBAL', title: 'Caja Chica General', description: 'Consultar saldo actual en efectivo' }
-        ];
-        await enviarLista(from, '📊 *Selecciona la opción de reporte que deseas generar:*', 'Ver Opciones', 'Reportes Financieros', opcionesReporte);
+        await enviarBotones(from, '📊 *¿De qué Sucursal deseas generar el Reporte PDF?*', [
+          { id: 'REP_Pelicano', title: 'Pelicano' },
+          { id: 'REP_Caldera', title: 'Caldera' },
+          { id: 'REP_Nativitas', title: 'Nativitas' }
+        ]);
+        await enviarBotones(from, '👇 *Otras Opciones:*', [
+          { id: 'REP_Salud', title: 'Salud' },
+          { id: 'REP_GLOBAL', title: 'Caja Chica' }
+        ]);
         res.sendStatus(200);
         return;
       }
