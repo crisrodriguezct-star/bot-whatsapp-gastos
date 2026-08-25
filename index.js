@@ -1522,9 +1522,9 @@ app.post('/webhook', async (req, res) => {
     const from = msg.from;
     const nombreUsuario = obtenerNombreUsuario(from);
     const tieneAccesoDireccion = esDireccion(from);
+    const sesionActual = sesiones[from];
 
     if (msg.type === 'image' || msg.type === 'video') {
-      const sesionActual = sesiones[from];
       if (sesionActual && sesionActual.esperandoFotosExtra) {
         const mediaId = msg.type === 'image' ? msg.image.id : msg.video.id;
         const mimeType = msg.type === 'image' ? 'image/jpeg' : 'video/mp4';
@@ -1586,7 +1586,7 @@ app.post('/webhook', async (req, res) => {
         }
 
         sesiones[from] = { tipoAccion: 'CARGA_OBRA', usuario: nombreUsuario };
-        await enviarBotones(from, '🚀 *ASISTENTE DE CONFIGURACIÓN DE OBRA*\n\n🏗️ *¿Qué sucursal deseas configurar/cargar?*', [
+        await enviarBotones(from, '🚀 *ASISTENTE DE CONFIGURACIÓN DE OBRA*\n\n🏗️ *¿Qué sucursal deseas configurar/cargar?*r', [
           { id: 'CARGAOBRA_Pelicano', title: 'Pelicano' },
           { id: 'CARGAOBRA_Caldera', title: 'Caldera' },
           { id: 'CARGAOBRA_Nativitas', title: 'Nativitas' }
@@ -1908,8 +1908,6 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
-      const sesionActual = sesiones[from];
-
       if (sesionActual && sesionActual.esperandoFechaVisitaManual) {
         sesionActual.fechaPago = textBody;
         delete sesionActual.esperandoFechaVisitaManual;
@@ -1939,6 +1937,14 @@ app.post('/webhook', async (req, res) => {
         } else {
           await enviarTexto(from, '⚠️ No se pudo actualizar el monto.');
         }
+        delete sesiones[from];
+        res.sendStatus(200);
+        return;
+      }
+
+      if (sesionActual && sesionActual.esperandoNombreTrabajadorCambio) {
+        delete sesionActual.esperandoNombreTrabajadorCambio;
+        await procesarBusquedaCambioObra(from, textBody.trim());
         delete sesiones[from];
         res.sendStatus(200);
         return;
@@ -2526,7 +2532,7 @@ app.post('/webhook', async (req, res) => {
           if (baja) {
             await enviarTexto(from, `🔴 *Trabajador Dado de Baja Correctamente*\n\n👤 *Nombre:* ${baja.nombre}\n🏗️ *Obra:* ${baja.obra}\n📅 *Fecha de Baja:* ${baja.fechaBaja}\n📌 *Estatus:* BAJA 🔴`);
           } else {
-            await enviarTexto(from, '⚠️ Error ejecutando la baja.');
+            await enviarTexto(from, '⚠️ Error procesando la baja.');
           }
         } else {
           const resPers = await sheets.spreadsheets.values.get({
@@ -2892,6 +2898,68 @@ app.post('/webhook', async (req, res) => {
         return;
       }
 
+      if (respuestaId === 'REP_GLOBAL') {
+        if (!tieneAccesoDireccion) {
+          await enviarTexto(from, '⚙️ *Módulo en consolidación administrativa.* Consulta con administración central.');
+          res.sendStatus(200);
+          return;
+        }
+        const rep = await calcularReporteSaldos(null);
+        let txt = `📊 *Corte de Caja Chica General (Efectivo)*\n\n` +
+          `💵 *Total Efectivo Ingresado:* ${formatoMoneda(rep.dotacionesCaja)} MXN\n` +
+          `💸 *Egresos en Efectivo:* ${formatoMoneda(rep.egresosEfectivo)} MXN\n` +
+          `💰 *Efectivo Disponible en Mano:* ${formatoMoneda(rep.cajaDisponible)} MXN\n` +
+          `📄 *Total Facturado en Efectivo:* ${formatoMoneda(rep.facturadoEfectivo)} MXN`;
+
+        await enviarTexto(from, txt);
+        res.sendStatus(200);
+        return;
+      }
+
+      if (respuestaId?.startsWith('REP_')) {
+        if (!tieneAccesoDireccion) {
+          await enviarTexto(from, '⚙️ *Módulo en consolidación administrativa.* Consulta con administración central.');
+          res.sendStatus(200);
+          return;
+        }
+
+        const obraMap = {
+          'REP_Pelicano': 'Suc. Pelicano',
+          'REP_Caldera': 'Suc. Caldera',
+          'REP_Nativitas': 'Suc. Nativitas',
+          'REP_Salud': 'Suc. Salud'
+        };
+        const obraSel = obraMap[respuestaId];
+
+        await enviarTexto(from, `⏳ *Generando Estado de Cuenta y Corte Semanal (Lunes a Domingo) en PDF...*`);
+
+        const datosCorte = await generarDatosCorteSemanal(obraSel);
+
+        if (datosCorte) {
+          const nombreArchivoPdf = `Corte_${(obraSel || 'General').replace(/\s+/g, '_')}_${Date.now()}.pdf`;
+          const rutaPdfLocal = path.join(__dirname, nombreArchivoPdf);
+
+          await generarPDFCorteSemanal(datosCorte, rutaPdfLocal);
+
+          const captionTxt = `📄 *Corte Financiero Semanal — ${datosCorte.sucursal}*\n` +
+            `📅 *Periodo:* ${datosCorte.periodo}\n\n` +
+            `💵 *Gastos de la Semana:* ${formatoMoneda(datosCorte.semanaTotal)}\n` +
+            `💰 *Saldo Total Disponible:* ${formatoMoneda(datosCorte.saldoDisponible)}\n` +
+            `  • Banco: ${formatoMoneda(datosCorte.saldoBanco)}\n` +
+            `  • Efectivo: ${formatoMoneda(datosCorte.saldoEfectivo)}\n\n` +
+            `✍️ *Validado y Firmado por Constructive Gallery Architects.*`;
+
+          await enviarDocumentoWhatsApp(from, rutaPdfLocal, nombreArchivoPdf, captionTxt);
+
+          if (fs.existsSync(rutaPdfLocal)) fs.unlinkSync(rutaPdfLocal);
+        } else {
+          await enviarTexto(from, '⚠️ No se pudieron obtener los datos para generar el reporte.');
+        }
+
+        res.sendStatus(200);
+        return;
+      }
+
       if (respuestaId === 'OPC_ALTA_EMP') {
         sesiones[from] = {
           tipoAccion: 'ALTA_TRABAJADOR',
@@ -2914,14 +2982,6 @@ app.post('/webhook', async (req, res) => {
       if (respuestaId === 'OPC_CAMBIO_EMP') {
         sesiones[from] = { esperandoNombreTrabajadorCambio: true };
         await enviarTexto(from, '✏️ *Escribe el Nombre (o parte del nombre) del trabajador al que deseas cambiar de obra:*');
-        res.sendStatus(200);
-        return;
-      }
-
-      if (sesionActual && sesionActual.esperandoNombreTrabajadorCambio) {
-        delete sesionActual.esperandoNombreTrabajadorCambio;
-        await procesarBusquedaCambioObra(from, textBody.trim());
-        delete sesiones[from];
         res.sendStatus(200);
         return;
       }
@@ -3147,63 +3207,6 @@ app.post('/webhook', async (req, res) => {
           sesion.esperandoProveedor = true;
           await enviarTexto(from, '🏢 *¿En qué Proveedor o Ferretería se cotizó/compró?*\n*(Escribe el nombre del proveedor o ferretería)*');
         }
-        res.sendStatus(200);
-        return;
-      }
-
-      if (respuestaId?.startsWith('REP_')) {
-        if (!tieneAccesoDireccion) {
-          await enviarTexto(from, '⚙️ *Módulo en consolidación administrativa.* Consulta con administración central.');
-          res.sendStatus(200);
-          return;
-        }
-
-        if (respuestaId === 'REP_GLOBAL') {
-          const rep = await calcularReporteSaldos(null);
-          let txt = `📊 *Corte de Caja Chica General (Efectivo)*\n\n` +
-            `💵 *Total Efectivo Ingresado:* ${formatoMoneda(rep.dotacionesCaja)} MXN\n` +
-            `💸 *Egresos en Efectivo:* ${formatoMoneda(rep.egresosEfectivo)} MXN\n` +
-            `💰 *Efectivo Disponible en Mano:* ${formatoMoneda(rep.cajaDisponible)} MXN\n` +
-            `📄 *Total Facturado en Efectivo:* ${formatoMoneda(rep.facturadoEfectivo)} MXN`;
-
-          await enviarTexto(from, txt);
-          res.sendStatus(200);
-          return;
-        }
-
-        const obraMap = {
-          'REP_Pelicano': 'Suc. Pelicano',
-          'REP_Caldera': 'Suc. Caldera',
-          'REP_Nativitas': 'Suc. Nativitas',
-          'REP_Salud': 'Suc. Salud'
-        };
-        const obraSel = obraMap[respuestaId];
-
-        await enviarTexto(from, `⏳ *Generando Estado de Cuenta y Corte Semanal (Lunes a Domingo) en PDF...*`);
-
-        const datosCorte = await generarDatosCorteSemanal(obraSel);
-
-        if (datosCorte) {
-          const nombreArchivoPdf = `Corte_${(obraSel || 'General').replace(/\s+/g, '_')}_${Date.now()}.pdf`;
-          const rutaPdfLocal = path.join(__dirname, nombreArchivoPdf);
-
-          await generarPDFCorteSemanal(datosCorte, rutaPdfLocal);
-
-          const captionTxt = `📄 *Corte Financiero Semanal — ${datosCorte.sucursal}*\n` +
-            `📅 *Periodo:* ${datosCorte.periodo}\n\n` +
-            `💵 *Gastos de la Semana:* ${formatoMoneda(datosCorte.semanaTotal)}\n` +
-            `💰 *Saldo Total Disponible:* ${formatoMoneda(datosCorte.saldoDisponible)}\n` +
-            `  • Banco: ${formatoMoneda(datosCorte.saldoBanco)}\n` +
-            `  • Efectivo: ${formatoMoneda(datosCorte.saldoEfectivo)}\n\n` +
-            `✍️ *Validado y Firmado por Constructive Gallery Architects.*`;
-
-          await enviarDocumentoWhatsApp(from, rutaPdfLocal, nombreArchivoPdf, captionTxt);
-
-          if (fs.existsSync(rutaPdfLocal)) fs.unlinkSync(rutaPdfLocal);
-        } else {
-          await enviarTexto(from, '⚠️ No se pudieron obtener los datos para generar el reporte.');
-        }
-
         res.sendStatus(200);
         return;
       }
