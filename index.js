@@ -2526,7 +2526,7 @@ app.post('/webhook', async (req, res) => {
           if (baja) {
             await enviarTexto(from, `🔴 *Trabajador Dado de Baja Correctamente*\n\n👤 *Nombre:* ${baja.nombre}\n🏗️ *Obra:* ${baja.obra}\n📅 *Fecha de Baja:* ${baja.fechaBaja}\n📌 *Estatus:* BAJA 🔴`);
           } else {
-            await enviarTexto(from, '⚠️ Error procesando la baja.');
+            await enviarTexto(from, '⚠️ Error ejecutando la baja.');
           }
         } else {
           const resPers = await sheets.spreadsheets.values.get({
