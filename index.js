@@ -244,6 +244,92 @@ async function enviarDocumentoWhatsApp(to, rutaArchivo, nombreArchivo, caption) 
   });
 }
 
+function generarPDFCorteMicke(datos, rutaSalida) {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ margin: 35, size: 'LETTER' });
+    const stream = fs.createWriteStream(rutaSalida);
+    doc.pipe(stream);
+
+    const rutasPosiblesLogo = [
+      path.join(__dirname, 'logo.png'),
+      path.join(__dirname, 'logo.PNG'),
+      path.join(__dirname, 'Imagenes', 'logo.png'),
+      path.join(__dirname, 'imagenes', 'logo.png')
+    ];
+
+    let rutaLogoEncontrada = rutasPosiblesLogo.find(r => fs.existsSync(r));
+    if (rutaLogoEncontrada) {
+      doc.image(rutaLogoEncontrada, 35, 20, { width: 105 });
+    }
+
+    doc.fillColor('#000000').fontSize(11).font('Helvetica-Bold')
+       .text('CONSTRUCTIVE GALLERY ARCHITECTS', 180, 25, { align: 'right' });
+    doc.fontSize(9).fillColor('#4A5568')
+       .text('CORTE DE CAJA OPERATIVO — MICKE (MIGUELONCHES)', 180, 40, { align: 'right' });
+    doc.fontSize(8).fillColor('#718096')
+       .text(`FECHA CONSULTADA: ${datos.fechaStr}`, 180, 53, { align: 'right' });
+
+    doc.moveTo(35, 70).lineTo(575, 70).strokeColor('#000000').lineWidth(1.5).stroke();
+
+    let y = 85;
+    doc.rect(35, y, 540, 16).fill('#000000');
+    doc.fillColor('#FFFFFF').fontSize(8.5).font('Helvetica-Bold').text('RESUMEN DE CUADRATURA DE EFECTIVO', 40, y + 4);
+
+    y += 24;
+    const filasReporte = [
+      { t: 'TENIA EN CARTERA', v: formatoMoneda(datos.teniaEnCartera) },
+      { t: 'BETO ME DIO O AGARRE EFECTIVO', v: formatoMoneda(datos.betoDioOAgarre) },
+      { t: 'SUMA AGARRE + LO QUE TENIA EN CARTERA', v: formatoMoneda(datos.sumaAgarreMasCartera) },
+      { t: 'TOTAL GASTADO', v: formatoMoneda(datos.totalGastado) },
+      { t: 'DIFERENCIA', v: formatoMoneda(datos.diferencia) }
+    ];
+
+    filasReporte.forEach((f, idx) => {
+      if (idx % 2 === 1) doc.rect(35, y - 2, 540, 16).fill('#F8FAFC');
+      doc.fillColor('#0F172A').fontSize(8).font('Helvetica-Bold').text(f.t, 45, y);
+      doc.font('Helvetica-Bold').text(f.v, 430, y, { width: 130, align: 'right' });
+      y += 18;
+    });
+
+    y += 10;
+    doc.rect(35, y, 540, 42).fillAndStroke('#F1F5F9', '#CBD5E1');
+    doc.fillColor('#0F172A').fontSize(7.5).font('Helvetica-Bold').text('CONTROL DE CARTERA ACTUAL:', 42, y + 6);
+    doc.font('Helvetica').fontSize(7.5);
+    doc.text(`• LO QUE TENGO EN CARTERA ACTUAL: ${formatoMoneda(datos.carteraActual)}`, 45, y + 18);
+    doc.text(`• VALIDACIÓN / CUADRATURA: ${formatoMoneda(datos.cuadraturaFinal)}`, 45, y + 28);
+
+    const yFirmaSegura = 680; 
+    const xFirma = 350;
+    const anchoFirma = 210;
+
+    const rutasPosiblesFirma = [
+      path.join(__dirname, 'firma.png'),
+      path.join(__dirname, 'firma.PNG'),
+      path.join(__dirname, 'Imagenes', 'firma.png'),
+      path.join(__dirname, 'imagenes', 'firma.png')
+    ];
+
+    let rutaFirmaEncontrada = rutasPosiblesFirma.find(r => fs.existsSync(r));
+    if (rutaFirmaEncontrada) {
+      doc.image(rutaFirmaEncontrada, xFirma + 55, yFirmaSegura - 45, { width: 95 });
+    }
+
+    doc.moveTo(xFirma, yFirmaSegura + 6).lineTo(xFirma + anchoFirma, yFirmaSegura + 6).strokeColor('#000000').lineWidth(1).stroke();
+    
+    let yTextoFirma = yFirmaSegura + 10;
+    doc.fontSize(8).font('Helvetica-Bold').fillColor('#0F172A')
+        .text('Firma Operativa — Miguelonches', xFirma, yTextoFirma, { width: anchoFirma, align: 'center' });
+    
+    yTextoFirma += 10;
+    doc.fontSize(6.5).font('Helvetica').fillColor('#64748B')
+        .text('Validación de Cuadratura Diaria', xFirma, yTextoFirma, { width: anchoFirma, align: 'center' });
+
+    doc.end();
+    stream.on('finish', () => resolve(rutaSalida));
+    stream.on('error', reject);
+  });
+}
+
 function generarPDFCorteSemanal(datos, rutaSalida) {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ margin: 35, size: 'LETTER' });
@@ -462,6 +548,67 @@ async function calcularGastosPreviosObra(obraBuscada) {
     return acumuladoPrevio;
   } catch (e) {
     return 0;
+  }
+}
+
+async function calcularDatosCorteMicke(fechaObjetivo, nombreUsuarioFiltro) {
+  if (!sheets || !SPREADSHEET_ID) return null;
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: 'Hoja 1!A:J'
+    });
+    const filas = res.data.values || [];
+
+    let totalGastado = 0;
+    let efectivoRecibido = 0;
+
+    const fechaBusquedaStr = fechaObjetivo.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City' });
+
+    for (let i = 1; i < filas.length; i++) {
+      const fila = filas[i];
+      const fechaStr = (fila[1] || '').split(',')[0].trim();
+      const usuarioReg = (fila[7] || '').trim();
+      const metodo = (fila[3] || '').toLowerCase();
+      const monto = limpiarMonto(fila[5]);
+      const estatus = fila[8] || '';
+
+      if (estatus.includes('CANCELADO') || monto === 0) continue;
+
+      if (fechaStr === fechaBusquedaStr) {
+        if (usuarioReg.toLowerCase() === nombreUsuarioFiltro.toLowerCase()) {
+          if (metodo.includes('dotación caja chica') || metodo.includes('efectivo micke') || metodo.includes('efectivo')) {
+            if (metodo.includes('ingreso') || metodo.includes('dotación') || metodo.includes('efectivo micke')) {
+              efectivoRecibido += monto;
+            } else {
+              totalGastado += monto;
+            }
+          } else {
+            totalGastado += monto;
+          }
+        }
+      }
+    }
+
+    const teniaEnCartera = 0; 
+    const betoDioOAgarre = efectivoRecibido;
+    const sumaAgarreMasCartera = teniaEnCartera + betoDioOAgarre;
+    const diferencia = sumaAgarreMasCartera - totalGastado;
+    const carteraActual = diferencia; 
+    const cuadraturaFinal = (carteraActual + totalGastado) - betoDioOAgarre;
+
+    return {
+      fechaStr: fechaBusquedaStr,
+      teniaEnCartera,
+      betoDioOAgarre,
+      sumaAgarreMasCartera,
+      totalGastado,
+      diferencia,
+      carteraActual,
+      cuadraturaFinal
+    };
+  } catch (e) {
+    return null;
   }
 }
 
@@ -1416,6 +1563,7 @@ async function procesarBusquedaCambioObra(from, busqueda) {
 
 async function desplegarMenuPrincipal(from) {
   const tieneAccesoDireccion = esDireccion(from);
+  const esMicke = from.replace(/\D/g, '').slice(-10) === '3331747434';
 
   if (tieneAccesoDireccion) {
     const opciones = [
@@ -1428,7 +1576,18 @@ async function desplegarMenuPrincipal(from) {
       { id: 'MENU_EXTRAS', title: '🔨 Trabajos Extras', description: 'Registro de extras y evidencias a Drive' },
       { id: 'MENU_PRECIOS', title: '🏷️ Precios Materiales', description: 'Registrar precio y comparar histórico' }
     ];
+    if (esMicke) {
+      opciones.push({ id: 'MENU_MICKE_CORTE', title: '📋 Corte Micke (PDF)', description: 'Cuadratura de caja y gastos personales' });
+    }
     await enviarLista(from, '🏗️ *PANEL DE CONTROL CENTRAL (DIRECCIÓN)*\n\nSelecciona la gestión que deseas realizar:', 'Abrir Menú', 'Dirección de Obra', opciones);
+  } else if (esMicke) {
+    const opciones = [
+      { id: 'MENU_PERSONAL', title: '👷‍♂️ Personal Propio', description: 'Altas, bajas, cambio de obra y Visitas' },
+      { id: 'MENU_EXTRAS', title: '🔨 Trabajos Extras', description: 'Registro de extras y evidencias con foto' },
+      { id: 'MENU_PRECIOS', title: '🏷️ Precios Materiales', description: 'Registrar precio y comparar cotizaciones' },
+      { id: 'MENU_MICKE_CORTE', title: '📋 Corte Micke (PDF)', description: 'Cuadratura de caja y gastos personales' }
+    ];
+    await enviarLista(from, '🏗️ *MENÚ OPERATIVO DE MIGUELONCHES*\n\nPara registrar un gasto rápido, escribe el concepto y monto (ej: `cemento 450`).', 'Abrir Menú', 'Operación Campo', opciones);
   } else {
     const opciones = [
       { id: 'MENU_PERSONAL', title: '👷‍♂️ Personal Propio', description: 'Altas, bajas, cambio de obra y Visitas' },
@@ -1441,38 +1600,20 @@ async function desplegarMenuPrincipal(from) {
 
 async function desplegarGuiaComandos(from) {
   const tieneAccesoDireccion = esDireccion(from);
+  const esMicke = from.replace(/\D/g, '').slice(-10) === '3331747434';
 
-  if (tieneAccesoDireccion) {
-    const guia = `📝 *COMANDOS Y ACCESOS (DIRECCIÓN):*\n\n` +
-      `• *Menú Completo:* \`menu\`, \`hola\`, \`inicio\` o \`ayuda\`\n` +
-      `• *Cargar/Configurar Obra:* \`cargar obra\` o \`configurar\`\n` +
-      `• *Generar PDF Corte:* \`corte\` o \`saldo\`\n` +
-      `• *Corregir Gasto:* \`corregir\` o \`editar\` (Táctil)\n` +
-      `• *Gasto Rápido:* \`[concepto] [monto]\` (ej: cemento 450)\n` +
-      `• *Alta Trabajador:* \`alta [nombre]\`\n` +
-      `• *Baja Trabajador:* \`baja\` o \`baja [nombre]\`\n` +
-      `• *Cambiar de Obra:* \`cambiar obra [nombre]\`\n` +
-      `• *Visita Familiar:* \`visita [nombre] [monto]\`\n` +
-      `• *Trabajos Extras:* \`extra\`\n` +
-      `• *Dotar Caja Chica:* \`caja [monto]\`\n` +
-      `• *Ver Contratistas:* \`contratistas\`\n` +
-      `• *Precios Materiales:* \`precio [mat] [monto]\`\n` +
-      `• *Comparar Precios:* \`comparar [mat]\`\n` +
-      `• *Cancelar Último:* \`cancelar\``;
-    await enviarTexto(from, guia);
-  } else {
-    const guia = `📝 *GUÍA DE REGISTRO RÁPIDO DE CAMPO:*\n\n` +
-      `• *Registrar Gasto:* \`[concepto] [monto]\` (ej: \`cemento 450\`)\n` +
-      `• *Alta Trabajador:* \`alta [nombre]\` (ej: \`alta Pedro Gomez\`)\n` +
-      `• *Baja Trabajador:* \`baja\` (Buscador táctil)\n` +
-      `• *Cambiar de Obra:* \`cambiar obra [nombre]\`\n` +
-      `• *Visita Familiar:* \`visita [nombre] [monto]\`\n` +
-      `• *Trabajo Extra:* \`extra\` (Sube fotos/videos)\n` +
-      `• *Registrar Precio:* \`precio [mat] [monto]\`\n` +
-      `• *Comparar Precios:* \`comparar [mat]\`\n` +
-      `• *Cancelar Último:* \`cancelar\``;
-    await enviarTexto(from, guia);
+  let guia = `📝 *GUÍA DE COMANDOS:*\n\n` +
+    `• \`[concepto] [monto]\` - Registrar Gasto Rápido\n` +
+    `• \`comparar [mat]\` - Buscar Historial Precios\n` +
+    `• \`cancelar\` - Anular último registro\n`;
+
+  if (esMicke) {
+    opcionesMicke = `• \`efectivo micke [monto]\` - Registrar efectivo recibido\n` +
+                    `• \`corte micke\` - Generar PDF de cuadratura de caja\n`;
+    guia += opcionesMicke;
   }
+
+  await enviarTexto(from, guia);
 }
 
 async function procesarBusquedaBaja(from, busqueda) {
@@ -1567,6 +1708,39 @@ app.post('/webhook', async (req, res) => {
 
         if (/^(comandos)$/i.test(textBody)) {
           await desplegarGuiaComandos(from);
+          res.sendStatus(200);
+          return;
+        }
+
+        const matchEfectivoMicke = textBody.match(/^efectivo\s+micke\s+(\d+(\.\d+)?)/i);
+        if (matchEfectivoMicke) {
+          const montoEfectivo = limpiarMonto(matchEfectivoMicke[1]);
+          sesiones[from] = {
+            tipoAccion: 'EFECTIVO_MICKE',
+            monto: montoEfectivo,
+            usuario: nombreUsuario
+          };
+
+          await enviarBotones(from, `💵 *Efectivo Micke:* ${formatoMoneda(montoEfectivo)}\n\n🏗️ *¿De qué obra proviene este efectivo?*`, [
+            { id: 'MICKEBRA_Pelicano', title: 'Pelicano' },
+            { id: 'MICKEBRA_Caldera', title: 'Caldera' },
+            { id: 'MICKEBRA_PedroLoza', title: 'Pedro Loza' }
+          ]);
+          await enviarBotones(from, '👇 *Otras Opciones:*', [
+            { id: 'MICKEBRA_Salud', title: 'Salud' },
+            { id: 'MICKEBRA_Otro', title: 'Otro' }
+          ]);
+          res.sendStatus(200);
+          return;
+        }
+
+        if (/^(corte\s+micke|micke\s+corte)$/i.test(textBody)) {
+          sesiones[from] = { tipoAccion: 'CORTE_MICKE' };
+          await enviarBotones(from, '📋 *Corte de Caja (Micke)*\n\n📅 *¿De qué día deseas generar el reporte?*', [
+            { id: 'MICKEFECHA_Hoy', title: 'Hoy' },
+            { id: 'MICKEFECHA_Ayer', title: 'Ayer' },
+            { id: 'MICKEFECHA_Antier', title: 'Antier' }
+          ]);
           res.sendStatus(200);
           return;
         }
@@ -1789,7 +1963,7 @@ app.post('/webhook', async (req, res) => {
             usuario: nombreUsuario
           };
 
-          await enviarBotones(from, '🔨 *Registro de Trabajo Extra*\n\n🏗️ *¿De qué Sucursal/Obra es el trabajo extra?*', [
+          await enviarBotones(from, '🔨 *Registro de Trabajo Extra*\n\n🏗️ *¿De qué Sucursal/Obra es el trabajo extra?*[cite: 1]', [
             { id: 'EXTRAOBRA_Pelicano', title: 'Pelicano' },
             { id: 'EXTRAOBRA_Caldera', title: 'Caldera' },
             { id: 'EXTRAOBRA_PedroLoza', title: 'Pedro Loza' }
@@ -2449,6 +2623,90 @@ app.post('/webhook', async (req, res) => {
       } else if (msg.type === 'interactive') {
         const respuestaId = msg.interactive.button_reply?.id || msg.interactive.list_reply?.id;
 
+        if (respuestaId?.startsWith('MICKEBRA_')) {
+          const obraMap = {
+            'MICKEBRA_Pelicano': 'Suc. Pelicano',
+            'MICKEBRA_Caldera': 'Suc. Caldera',
+            'MICKEBRA_PedroLoza': 'Demolición Pedro Loza',
+            'MICKEBRA_Salud': 'Suc. Salud',
+            'MICKEBRA_Otro': 'Suc. Otro'
+          };
+          const sesion = sesiones[from];
+          if (sesion && sesion.tipoAccion === 'EFECTIVO_MICKE') {
+            const obraSeleccionada = obraMap[respuestaId] || 'Suc. Otro';
+            
+            await guardarEnSheets({
+              idMovimiento: 'MICKE-' + Date.now().toString().slice(-6),
+              obra: obraSeleccionada,
+              metodo: 'Efectivo Micke',
+              subMetodo: '',
+              categoria: 'Fondo Caja',
+              monto: sesion.monto,
+              concepto: 'Efectivo entregado a Miguelonches',
+              usuario: sesion.usuario,
+              estatusFactura: 'No Requiere 🔴',
+              linkFactura: 'N/A'
+            });
+
+            await enviarTexto(from, `✅ *Efectivo Registrado Correctamente*\n\n💵 *Monto:* ${formatoMoneda(sesion.monto)}\n🏗️ *Obra:* ${obraSeleccionada}\n👤 *Recibió:* ${sesion.usuario}`);
+            delete sesiones[from];
+          }
+          res.sendStatus(200);
+          return;
+        }
+
+        if (respuestaId?.startsWith('MICKEFECHA_')) {
+          const sesion = sesiones[from];
+          if (sesion && sesion.tipoAccion === 'CORTE_MICKE') {
+            const fechaObjetivo = new Date();
+            if (respuestaId === 'MICKEFECHA_Ayer') {
+              fechaObjetivo.setDate(fechaObjetivo.getDate() - 1);
+            } else if (respuestaId === 'MICKEFECHA_Antier') {
+              fechaObjetivo.setDate(fechaObjetivo.getDate() - 2);
+            }
+
+            await enviarTexto(from, `⏳ *Generando Corte y Cuadratura para Miguelonches...*`);
+
+            const datosCorte = await calcularDatosCorteMicke(fechaObjetivo, 'Miguelonches');
+
+            if (datosCorte) {
+              const nombreArchivoPdf = `Corte_Micke_${Date.now()}.pdf`;
+              const rutaPdfLocal = path.join(__dirname, nombreArchivoPdf);
+
+              await generarPDFCorteMicke(datosCorte, rutaPdfLocal);
+
+              const captionTxt = `📋 *Corte Operativo — Miguelonches*\n` +
+                `📅 *Fecha:* ${datosCorte.fechaStr}\n\n` +
+                `• TENIA EN CARTERA: ${formatoMoneda(datosCorte.teniaEnCartera)}\n` +
+                `• BETO ME DIO O AGARRE EFECTIVO: ${formatoMoneda(datosCorte.betoDioOAgarre)}\n` +
+                `• SUMA AGARRE + LO QUE TENIA EN CARTERA: ${formatoMoneda(datosCorte.sumaAgarreMasCartera)}\n` +
+                `• TOTAL GASTADO: ${formatoMoneda(datosCorte.totalGastado)}\n` +
+                `• DIFERENCIA: ${formatoMoneda(datosCorte.diferencia)}\n` +
+                `• LO QUE TENGO EN CARTERA ACTUAL: ${formatoMoneda(datosCorte.carteraActual)}\n`;
+
+              await enviarDocumentoWhatsApp(from, rutaPdfLocal, nombreArchivoPdf, captionTxt);
+
+              if (fs.existsSync(rutaPdfLocal)) fs.unlinkSync(rutaPdfLocal);
+            } else {
+              await enviarTexto(from, '⚠️ No se pudieron procesar los datos para el reporte de Micke.');
+            }
+            delete sesiones[from];
+          }
+          res.sendStatus(200);
+          return;
+        }
+
+        if (respuestaId === 'MENU_MICKE_CORTE') {
+          sesiones[from] = { tipoAccion: 'CORTE_MICKE' };
+          await enviarBotones(from, '📋 *Corte de Caja (Micke)*\n\n📅 *¿De qué día deseas generar el reporte?*', [
+            { id: 'MICKEFECHA_Hoy', title: 'Hoy' },
+            { id: 'MICKEFECHA_Ayer', title: 'Ayer' },
+            { id: 'MICKEFECHA_Antier', title: 'Antier' }
+          ]);
+          res.sendStatus(200);
+          return;
+        }
+
         if (respuestaId?.startsWith('ADDCRED_')) {
           const sesion = sesiones[from];
           if (sesion) {
@@ -2802,7 +3060,7 @@ app.post('/webhook', async (req, res) => {
             linksFotos: [],
             usuario: nombreUsuario
           };
-          await enviarBotones(from, '🔨 *Registro de Trabajo Extra*\n\n🏗️ *¿De qué Sucursal/Obra es el trabajo extra?*', [
+          await enviarBotones(from, '🔨 *Registro de Trabajo Extra*\n\n🏗️ *¿De qué Sucursal/Obra es el trabajo extra?*[cite: 1]', [
             { id: 'EXTRAOBRA_Pelicano', title: 'Pelicano' },
             { id: 'EXTRAOBRA_Caldera', title: 'Caldera' },
             { id: 'EXTRAOBRA_PedroLoza', title: 'Pedro Loza' }
