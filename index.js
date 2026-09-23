@@ -1357,7 +1357,7 @@ async function calcularReportePresupuestos() {
       range: 'Hoja 1!A:I'
     });
     const filas = res.data.values || [];
-    const obras = ['Suc. Pelicano', 'Suc. Caldera', 'Suc. Nativitas', 'Suc. Salud', 'Suc. Otro'];
+    const obras = ['Suc. Pelicano', 'Suc. Caldera', 'Demolición Pedro Loza', 'Suc. Salud', 'Suc. Otro'];
     const resultado = {};
 
     obras.forEach(o => resultado[o] = { presupuestoTotal: 0, liberado: 0 });
@@ -1398,7 +1398,7 @@ async function procesarBusquedaCambioObra(from, busqueda) {
     await enviarBotones(from, `👤 *Trabajador:* ${t.nombre}\n🏗️ *Obra Actual:* ${t.obra}\n\n¿A qué nueva Sucursal deseas moverlo?`, [
       { id: 'CAMBIOBRA_Pelicano', title: 'Pelicano' },
       { id: 'CAMBIOBRA_Caldera', title: 'Caldera' },
-      { id: 'CAMBIOBRA_Nativitas', title: 'Nativitas' }
+      { id: 'CAMBIOBRA_PedroLoza', title: 'Pedro Loza' }
     ]);
     await enviarBotones(from, '👇 *Otras Opciones:*', [
       { id: 'CAMBIOBRA_Salud', title: 'Salud' },
@@ -1582,7 +1582,7 @@ app.post('/webhook', async (req, res) => {
           await enviarBotones(from, '🚀 *ASISTENTE DE CONFIGURACIÓN DE OBRA*\n\n🏗️ *¿Qué sucursal deseas configurar/cargar?*', [
             { id: 'CARGAOBRA_Pelicano', title: 'Pelicano' },
             { id: 'CARGAOBRA_Caldera', title: 'Caldera' },
-            { id: 'CARGAOBRA_Nativitas', title: 'Nativitas' }
+            { id: 'CARGAOBRA_PedroLoza', title: 'Pedro Loza' }
           ]);
           await enviarBotones(from, '👇 *Otras Opciones:*', [
             { id: 'CARGAOBRA_Salud', title: 'Salud' },
@@ -1635,7 +1635,7 @@ app.post('/webhook', async (req, res) => {
           await enviarBotones(from, '📊 *¿De qué Sucursal deseas generar el Reporte PDF?*', [
             { id: 'REP_Pelicano', title: 'Pelicano' },
             { id: 'REP_Caldera', title: 'Caldera' },
-            { id: 'REP_Nativitas', title: 'Nativitas' }
+            { id: 'REP_PedroLoza', title: 'Pedro Loza' }
           ]);
           await enviarBotones(from, '👇 *Otras Opciones:*', [
             { id: 'REP_Salud', title: 'Salud' },
@@ -1655,7 +1655,7 @@ app.post('/webhook', async (req, res) => {
           await enviarBotones(from, '👷‍♂️ *¿De qué Sucursal deseas ver los Contratistas?*', [
             { id: 'REPCONTRATISTAS_Pelicano', title: 'Pelicano' },
             { id: 'REPCONTRATISTAS_Caldera', title: 'Caldera' },
-            { id: 'REPCONTRATISTAS_Nativitas', title: 'Nativitas' }
+            { id: 'REPCONTRATISTAS_PedroLoza', title: 'Pedro Loza' }
           ]);
           await enviarBotones(from, '👇 *Otras Opciones:*', [
             { id: 'REPCONTRATISTAS_Salud', title: 'Salud' },
@@ -1733,7 +1733,7 @@ app.post('/webhook', async (req, res) => {
           await enviarBotones(from, `👷‍♂️ *Alta de Trabajador:* ${nombreTrabajador.toUpperCase()}\n\n🏗️ *¿A qué obra pertenece?*`, [
             { id: 'EMPOBRA_Pelicano', title: 'Pelicano' },
             { id: 'EMPOBRA_Caldera', title: 'Caldera' },
-            { id: 'EMPOBRA_Nativitas', title: 'Nativitas' }
+            { id: 'EMPOBRA_PedroLoza', title: 'Pedro Loza' }
           ]);
           await enviarBotones(from, '👇 *Otras Opciones:*', [
             { id: 'EMPOBRA_Salud', title: 'Salud' },
@@ -1792,7 +1792,7 @@ app.post('/webhook', async (req, res) => {
           await enviarBotones(from, '🔨 *Registro de Trabajo Extra*\n\n🏗️ *¿De qué Sucursal/Obra es el trabajo extra?*', [
             { id: 'EXTRAOBRA_Pelicano', title: 'Pelicano' },
             { id: 'EXTRAOBRA_Caldera', title: 'Caldera' },
-            { id: 'EXTRAOBRA_Nativitas', title: 'Nativitas' }
+            { id: 'EXTRAOBRA_PedroLoza', title: 'Pedro Loza' }
           ]);
           await enviarBotones(from, '👇 *Otras Opciones:*', [
             { id: 'EXTRAOBRA_Salud', title: 'Salud' },
@@ -1891,7 +1891,7 @@ app.post('/webhook', async (req, res) => {
           await enviarBotones(from, `👷‍♂️ *Contrato ${nombreContratista.toUpperCase()}:* ${formatoMoneda(montoContrato)}\n\n🏗️ *¿A qué sucursal pertenece este contrato?*`, [
             { id: 'CTROBRA_Pelicano', title: 'Pelicano' },
             { id: 'CTROBRA_Caldera', title: 'Caldera' },
-            { id: 'CTROBRA_Nativitas', title: 'Nativitas' }
+            { id: 'CTROBRA_PedroLoza', title: 'Pedro Loza' }
           ]);
           await enviarBotones(from, '👇 *Otras Opciones:*', [
             { id: 'CTROBRA_Salud', title: 'Salud' },
@@ -1909,7 +1909,7 @@ app.post('/webhook', async (req, res) => {
           await enviarBotones(from, `📅 *Fecha Registrada:* ${sesionActual.fechaPago}\n\n🏗️ *¿A qué Obra/Sucursal se aplica este viático?*`, [
             { id: 'VISITAOBRA_Pelicano', title: 'Pelicano' },
             { id: 'VISITAOBRA_Caldera', title: 'Caldera' },
-            { id: 'VISITAOBRA_Nativitas', title: 'Nativitas' }
+            { id: 'VISITAOBRA_PedroLoza', title: 'Pedro Loza' }
           ]);
           await enviarBotones(from, '👇 *Otras Opciones:*', [
             { id: 'VISITAOBRA_Salud', title: 'Salud' },
@@ -2249,7 +2249,7 @@ app.post('/webhook', async (req, res) => {
           await enviarBotones(from, `👷‍♂️ *Trabajador:* ${sesionActual.nombre}\n\n🏗️ *¿A qué Obra/Sucursal pertenece?*`, [
             { id: 'EMPOBRA_Pelicano', title: 'Pelicano' },
             { id: 'EMPOBRA_Caldera', title: 'Caldera' },
-            { id: 'EMPOBRA_Nativitas', title: 'Nativitas' }
+            { id: 'EMPOBRA_PedroLoza', title: 'Pedro Loza' }
           ]);
           await enviarBotones(from, '👇 *Otras Opciones:*', [
             { id: 'EMPOBRA_Salud', title: 'Salud' },
@@ -2378,7 +2378,7 @@ app.post('/webhook', async (req, res) => {
           await enviarBotones(from, `🏷️ *Material:* ${sesionActual.material.toUpperCase()}\n💵 *Precio:* ${formatoMoneda(sesionActual.precio)} / ${sesionActual.unidad}\n\n🏗️ *¿En qué Sucursal se cotizó/compró?*`, [
             { id: 'PRECIOBRA_Pelicano', title: 'Pelicano' },
             { id: 'PRECIOBRA_Caldera', title: 'Caldera' },
-            { id: 'PRECIOBRA_Nativitas', title: 'Nativitas' }
+            { id: 'PRECIOBRA_PedroLoza', title: 'Pedro Loza' }
           ]);
           await enviarBotones(from, '👇 *Otras Opciones:*', [
             { id: 'PRECIOBRA_Salud', title: 'Salud' },
@@ -2432,7 +2432,7 @@ app.post('/webhook', async (req, res) => {
           await enviarBotones(from, `📝 *Gasto:* ${concepto} (${formatoMoneda(monto)})\n\n🏗️ *Selecciona la Sucursal:*`, [
             { id: 'OBRA_Pelicano', title: 'Pelicano' },
             { id: 'OBRA_Caldera', title: 'Caldera' },
-            { id: 'OBRA_Nativitas', title: 'Nativitas' }
+            { id: 'OBRA_PedroLoza', title: 'Pedro Loza' }
           ]);
           await enviarBotones(from, '👇 *Otras Opciones:*', [
             { id: 'OBRA_Salud', title: 'Salud' },
@@ -2489,7 +2489,7 @@ app.post('/webhook', async (req, res) => {
               await enviarBotones(from, `📅 *Fecha:* Hoy\n\n🏗️ *¿A qué Obra/Sucursal se aplican estos viáticos?*`, [
                 { id: 'VISITAOBRA_Pelicano', title: 'Pelicano' },
                 { id: 'VISITAOBRA_Caldera', title: 'Caldera' },
-                { id: 'VISITAOBRA_Nativitas', title: 'Nativitas' }
+                { id: 'VISITAOBRA_PedroLoza', title: 'Pedro Loza' }
               ]);
               await enviarBotones(from, '👇 *Otras Opciones:*', [
                 { id: 'VISITAOBRA_Salud', title: 'Salud' },
@@ -2503,7 +2503,7 @@ app.post('/webhook', async (req, res) => {
               await enviarBotones(from, `📅 *Fecha:* Ayer\n\n🏗️ *¿A qué Obra/Sucursal se aplican estos viáticos?*`, [
                 { id: 'VISITAOBRA_Pelicano', title: 'Pelicano' },
                 { id: 'VISITAOBRA_Caldera', title: 'Caldera' },
-                { id: 'VISITAOBRA_Nativitas', title: 'Nativitas' }
+                { id: 'VISITAOBRA_PedroLoza', title: 'Pedro Loza' }
               ]);
               await enviarBotones(from, '👇 *Otras Opciones:*', [
                 { id: 'VISITAOBRA_Salud', title: 'Salud' },
@@ -2538,11 +2538,11 @@ app.post('/webhook', async (req, res) => {
             const nombreTrabajador = resPers.data.values?.[0]?.[0] || 'Trabajador';
             const obraActual = resPers.data.values?.[0]?.[1] || 'N/A';
 
-            sesions[from] = { tipoAccion: 'CAMBIO_OBRA_SELECCION', filaIndex, nombre: nombreTrabajador, obraActual };
+            sesiones[from] = { tipoAccion: 'CAMBIO_OBRA_SELECCION', filaIndex, nombre: nombreTrabajador, obraActual };
             await enviarBotones(from, `👤 *Trabajador:* ${nombreTrabajador}\n🏗️ *Obra Actual:* ${obraActual}\n\n¿A qué nueva Sucursal deseas moverlo?`, [
               { id: 'CAMBIOBRA_Pelicano', title: 'Pelicano' },
               { id: 'CAMBIOBRA_Caldera', title: 'Caldera' },
-              { id: 'CAMBIOBRA_Nativitas', title: 'Nativitas' }
+              { id: 'CAMBIOBRA_PedroLoza', title: 'Pedro Loza' }
             ]);
             await enviarBotones(from, '👇 *Otras Opciones:*', [
               { id: 'CAMBIOBRA_Salud', title: 'Salud' },
@@ -2557,7 +2557,7 @@ app.post('/webhook', async (req, res) => {
           const obraMap = {
             'CAMBIOBRA_Pelicano': 'Suc. Pelicano',
             'CAMBIOBRA_Caldera': 'Suc. Caldera',
-            'CAMBIOBRA_Nativitas': 'Suc. Nativitas',
+            'CAMBIOBRA_PedroLoza': 'Demolición Pedro Loza',
             'CAMBIOBRA_Salud': 'Suc. Salud',
             'CAMBIOBRA_Otro': 'Suc. Otro'
           };
@@ -2619,7 +2619,7 @@ app.post('/webhook', async (req, res) => {
           await enviarBotones(from, '🚀 *ASISTENTE DE CONFIGURACIÓN DE OBRA*\n\n🏗️ *¿Qué sucursal deseas configurar?*', [
             { id: 'CARGAOBRA_Pelicano', title: 'Pelicano' },
             { id: 'CARGAOBRA_Caldera', title: 'Caldera' },
-            { id: 'CARGAOBRA_Nativitas', title: 'Nativitas' }
+            { id: 'CARGAOBRA_PedroLoza', title: 'Pedro Loza' }
           ]);
           await enviarBotones(from, '👇 *Otras Opciones:*', [
             { id: 'CARGAOBRA_Salud', title: 'Salud' },
@@ -2633,7 +2633,7 @@ app.post('/webhook', async (req, res) => {
           const obraMap = {
             'CARGAOBRA_Pelicano': 'Suc. Pelicano',
             'CARGAOBRA_Caldera': 'Suc. Caldera',
-            'CARGAOBRA_Nativitas': 'Suc. Nativitas',
+            'CARGAOBRA_PedroLoza': 'Demolición Pedro Loza',
             'CARGAOBRA_Salud': 'Suc. Salud',
             'CARGAOBRA_Otro': 'Suc. Otro'
           };
@@ -2703,7 +2703,7 @@ app.post('/webhook', async (req, res) => {
           const obraMap = {
             'CTROBRA_Pelicano': 'Suc. Pelicano',
             'CTROBRA_Caldera': 'Suc. Caldera',
-            'CTROBRA_Nativitas': 'Suc. Nativitas',
+            'CTROBRA_PedroLoza': 'Demolición Pedro Loza',
             'CTROBRA_Salud': 'Suc. Salud',
             'CTROBRA_Otro': 'Suc. Otro'
           };
@@ -2805,7 +2805,7 @@ app.post('/webhook', async (req, res) => {
           await enviarBotones(from, '🔨 *Registro de Trabajo Extra*\n\n🏗️ *¿De qué Sucursal/Obra es el trabajo extra?*', [
             { id: 'EXTRAOBRA_Pelicano', title: 'Pelicano' },
             { id: 'EXTRAOBRA_Caldera', title: 'Caldera' },
-            { id: 'EXTRAOBRA_Nativitas', title: 'Nativitas' }
+            { id: 'EXTRAOBRA_PedroLoza', title: 'Pedro Loza' }
           ]);
           await enviarBotones(from, '👇 *Otras Opciones:*', [
             { id: 'EXTRAOBRA_Salud', title: 'Salud' },
@@ -2875,6 +2875,13 @@ app.post('/webhook', async (req, res) => {
           return;
         }
 
+        if (respuestaId === 'OPC_BUS_PRECIO') {
+          sesiones[from] = { esperandoBusquedaPrecio: true };
+          await enviarTexto(from, '🔍 *Escribe el material que deseas buscar/comparar:* (ej: cemento, impermeabilizante)');
+          res.sendStatus(200);
+          return;
+        }
+
         if (respuestaId === 'MENU_REPORTES') {
           if (!tieneAccesoDireccion) {
             await enviarTexto(from, '⚙️ *Módulo en consolidación administrativa.* Consulta con administración central.');
@@ -2884,7 +2891,7 @@ app.post('/webhook', async (req, res) => {
           await enviarBotones(from, '📊 *¿De qué Sucursal deseas generar el Reporte PDF?*', [
             { id: 'REP_Pelicano', title: 'Pelicano' },
             { id: 'REP_Caldera', title: 'Caldera' },
-            { id: 'REP_Nativitas', title: 'Nativitas' }
+            { id: 'REP_PedroLoza', title: 'Pedro Loza' }
           ]);
           await enviarBotones(from, '👇 *Otras Opciones:*', [
             { id: 'REP_Salud', title: 'Salud' },
@@ -2922,7 +2929,7 @@ app.post('/webhook', async (req, res) => {
           const obraMap = {
             'REP_Pelicano': 'Suc. Pelicano',
             'REP_Caldera': 'Suc. Caldera',
-            'REP_Nativitas': 'Suc. Nativitas',
+            'REP_PedroLoza': 'Demolición Pedro Loza',
             'REP_Salud': 'Suc. Salud'
           };
           const obraSel = obraMap[respuestaId];
@@ -3060,7 +3067,7 @@ app.post('/webhook', async (req, res) => {
           const obraMap = {
             'EXTRAOBRA_Pelicano': 'Suc. Pelicano',
             'EXTRAOBRA_Caldera': 'Suc. Caldera',
-            'EXTRAOBRA_Nativitas': 'Suc. Nativitas',
+            'EXTRAOBRA_PedroLoza': 'Demolición Pedro Loza',
             'EXTRAOBRA_Salud': 'Suc. Salud',
             'EXTRAOBRA_Otro': 'Suc. Otro'
           };
@@ -3078,7 +3085,7 @@ app.post('/webhook', async (req, res) => {
           const obraMap = {
             'EMPOBRA_Pelicano': 'Suc. Pelicano',
             'EMPOBRA_Caldera': 'Suc. Caldera',
-            'EMPOBRA_Nativitas': 'Suc. Nativitas',
+            'EMPOBRA_PedroLoza': 'Demolición Pedro Loza',
             'EMPOBRA_Salud': 'Suc. Salud',
             'EMPOBRA_Otro': 'Suc. Otro'
           };
@@ -3109,7 +3116,7 @@ app.post('/webhook', async (req, res) => {
           const obraMap = {
             'VISITAOBRA_Pelicano': 'Suc. Pelicano',
             'VISITAOBRA_Caldera': 'Suc. Caldera',
-            'VISITAOBRA_Nativitas': 'Suc. Nativitas',
+            'VISITAOBRA_PedroLoza': 'Demolición Pedro Loza',
             'VISITAOBRA_Salud': 'Suc. Salud',
             'VISITAOBRA_Otro': 'Suc. Otro'
           };
@@ -3178,7 +3185,7 @@ app.post('/webhook', async (req, res) => {
           await enviarBotones(from, `🏷️ *Material:* ${sesion.material.toUpperCase()}\n💵 *Precio:* ${formatoMoneda(sesion.precio)} / ${sesion.unidad}\n\n🏗️ *¿En qué Sucursal se cotizó/compró?*`, [
             { id: 'PRECIOBRA_Pelicano', title: 'Pelicano' },
             { id: 'PRECIOBRA_Caldera', title: 'Caldera' },
-            { id: 'PRECIOBRA_Nativitas', title: 'Nativitas' }
+            { id: 'PRECIOBRA_PedroLoza', title: 'Pedro Loza' }
           ]);
           await enviarBotones(from, '👇 *Otras Opciones:*', [
             { id: 'PRECIOBRA_Salud', title: 'Salud' },
@@ -3192,7 +3199,7 @@ app.post('/webhook', async (req, res) => {
           const obraMap = {
             'PRECIOBRA_Pelicano': 'Suc. Pelicano',
             'PRECIOBRA_Caldera': 'Suc. Caldera',
-            'PRECIOBRA_Nativitas': 'Suc. Nativitas',
+            'PRECIOBRA_PedroLoza': 'Demolición Pedro Loza',
             'PRECIOBRA_Salud': 'Suc. Salud',
             'PRECIOBRA_Otro': 'Suc. Otro'
           };
@@ -3217,7 +3224,7 @@ app.post('/webhook', async (req, res) => {
           const obraMap = {
             'REPCONTRATISTAS_Pelicano': 'Suc. Pelicano',
             'REPCONTRATISTAS_Caldera': 'Suc. Caldera',
-            'REPCONTRATISTAS_Nativitas': 'Suc. Nativitas',
+            'REPCONTRATISTAS_PedroLoza': 'Demolición Pedro Loza',
             'REPCONTRATISTAS_Salud': 'Suc. Salud',
             'REPCONTRATISTAS_GLOBAL': null
           };
@@ -3255,7 +3262,7 @@ app.post('/webhook', async (req, res) => {
           const obraMap = {
             'OBRA_Pelicano': 'Suc. Pelicano',
             'OBRA_Caldera': 'Suc. Caldera',
-            'OBRA_Nativitas': 'Suc. Nativitas',
+            'OBRA_PedroLoza': 'Demolición Pedro Loza',
             'OBRA_Salud': 'Suc. Salud',
             'OBRA_Otro': 'Suc. Otro'
           };
