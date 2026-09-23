@@ -83,6 +83,15 @@ function limpiarMonto(texto) {
   return isNaN(res) ? 0 : res;
 }
 
+function parseFechaMX(fechaStr) {
+  if (!fechaStr) return 0;
+  const partes = fechaStr.split('/');
+  if (partes.length === 3) {
+    return new Date(partes[2], partes[1] - 1, partes[0]).getTime();
+  }
+  return new Date(fechaStr).getTime();
+}
+
 function esDireccion(from) {
   if (!from) return false;
   const diez = from.replace(/\D/g, '').slice(-10);
@@ -1232,7 +1241,7 @@ async function darDeBajaTrabajadorPorFila(filaIndex) {
 async function guardarVisitaFamiliar(datos) {
   if (!sheets || !SPREADSHEET_PERSONAL_ID) return;
   try {
-    const fechaSalida = new Date(datos.fechaPago || Date.now());
+    const fechaSalida = new Date(parseFechaMX(datos.fechaPago));
     const fechaSugerida = new Date(fechaSalida.getTime() + (45 * 24 * 60 * 60 * 1000));
 
     const fechaSalidaStr = fechaSalida.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City' });
@@ -1260,6 +1269,71 @@ async function guardarVisitaFamiliar(datos) {
   } catch (error) {
     console.error('❌ Error guardando visita familiar:', error.message);
   }
+}
+
+async function consultarUltimaVisita(busqueda) {
+  if (!sheets || !SPREADSHEET_PERSONAL_ID) return [];
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_PERSONAL_ID,
+      range: 'VISITAS_FAMILIARES!A:G'
+    });
+    const filas = res.data.values || [];
+    const termino = (busqueda || '').toLowerCase().trim();
+    const registrosPorTrabajador = {};
+
+    for (let i = 1; i < filas.length; i++) {
+      const fila = filas[i];
+      const fechaSalida = fila[1] || '';
+      const nombre = fila[2] || '';
+      const obra = fila[3] || '';
+      const monto = fila[4] || '';
+      const fechaSugerida = fila[5] || '';
+
+      if (nombre && nombre.toLowerCase().includes(termino)) {
+        const ts = parseFechaMX(fechaSalida);
+        if (!registrosPorTrabajador[nombre] || ts > registrosPorTrabajador[nombre].ts) {
+          registrosPorTrabajador[nombre] = { nombre, obra, monto, fechaSalida, fechaSugerida, ts };
+        }
+      }
+    }
+    return Object.values(registrosPorTrabajador);
+  } catch (e) {
+    return [];
+  }
+}
+
+async function procesarConsultaVisita(from, busqueda) {
+  const resultados = await consultarUltimaVisita(busqueda);
+  if (resultados.length === 0) {
+    await enviarTexto(from, `⚠️ No se encontraron registros de viajes o viáticos para "${busqueda}".`);
+    return;
+  }
+
+  let msg = `🔍 *Resultados de Visitas para "${busqueda}":*\n\n`;
+  const hoy = new Date();
+  hoy.setHours(0, 0, 0, 0);
+
+  resultados.forEach(r => {
+    const sugeridaTs = parseFechaMX(r.fechaSugerida);
+    const sugeridaDate = new Date(sugeridaTs);
+    const difMs = sugeridaDate - hoy;
+    const difDias = Math.ceil(difMs / (1000 * 60 * 60 * 24));
+
+    let estatusTxt = '';
+    if (difDias <= 0) estatusTxt = '🟢 Ya puede viajar';
+    else if (difDias <= 7) estatusTxt = `🟡 Faltan ${difDias} días (Próximo a salir)`;
+    else estatusTxt = `🔴 Faltan ${difDias} días`;
+
+    msg += `👤 *Trabajador:* ${r.nombre}\n` +
+           `🏗️ *Obra:* ${r.obra}\n` +
+           `📅 *Última Salida:* ${r.fechaSalida}\n` +
+           `💵 *Monto Apoyo:* ${formatoMoneda(r.monto)}\n` +
+           `⏳ *Próxima sugerida:* ${r.fechaSugerida}\n` +
+           `🚦 *Estatus:* ${estatusTxt}\n\n`;
+  });
+
+  await enviarTexto(from, msg.trim());
 }
 
 async function guardarPrecioHistorico(datos) {
@@ -1604,6 +1678,7 @@ async function desplegarGuiaComandos(from) {
   let guia = `📝 *GUÍA DE COMANDOS:*\n\n` +
     `• \`[concepto] [monto]\` - Registrar Gasto Rápido\n` +
     `• \`comparar [mat]\` - Buscar Historial Precios\n` +
+    `• \`estatus visita [nombre]\` - Consultar próxima visita\n` +
     `• \`cancelar\` - Anular último registro\n`;
 
   if (esMickeOusuarioPrueba) {
@@ -1613,30 +1688,6 @@ async function desplegarGuiaComandos(from) {
   }
 
   await enviarTexto(from, guia);
-}
-
-async function procesarBusquedaBaja(from, busqueda) {
-  const coincidencias = await buscarTrabajadoresActivos(busqueda);
-
-  if (coincidencias.length === 0) {
-    await enviarTexto(from, `⚠️ No se encontró a ningún trabajador activo registrado que coincida con "${busqueda || 'la consulta'}".`);
-  } else if (coincidencias.length === 1) {
-    const t = coincidencias[0];
-    const baja = await darDeBajaTrabajadorPorFila(t.filaIndex);
-    if (baja) {
-      await enviarTexto(from, `🔴 *Trabajador Dado de Baja Correctamente*\n\n👤 *Nombre:* ${baja.nombre}\n🏗️ *Obra:* ${baja.obra}\n📅 *Fecha de Baja:* ${baja.fechaBaja}\n📌 *Estatus:* BAJA 🔴`);
-    } else {
-      await enviarTexto(from, '⚠️ Error procesando la baja.');
-    }
-  } else {
-    const opciones = coincidencias.slice(0, 10).map(c => ({
-      id: `EJECUTARBAJA_${c.filaIndex}`,
-      title: c.nombre.substring(0, 24),
-      description: `${c.obra} (Fila ${c.filaIndex})`
-    }));
-
-    await enviarLista(from, `🔍 *Se encontraron ${coincidencias.length} coincidencias:*`, 'Seleccionar', 'Trabajadores Activos', opciones);
-  }
 }
 
 app.get('/webhook', (req, res) => {
@@ -1707,6 +1758,23 @@ app.post('/webhook', async (req, res) => {
 
         if (/^(comandos)$/i.test(textBody)) {
           await desplegarGuiaComandos(from);
+          res.sendStatus(200);
+          return;
+        }
+
+        const matchEstatusVisita = textBody.match(/^estatus\s+visita\s+(.+)/i);
+        if (matchEstatusVisita) {
+          const busqueda = matchEstatusVisita[1].trim();
+          await procesarConsultaVisita(from, busqueda);
+          res.sendStatus(200);
+          return;
+        }
+
+        if (sesionActual && sesionActual.esperandoConsultaVisita) {
+          const busqueda = textBody.trim();
+          delete sesionActual.esperandoConsultaVisita;
+          await procesarConsultaVisita(from, busqueda);
+          delete sesiones[from];
           res.sendStatus(200);
           return;
         }
@@ -1962,7 +2030,7 @@ app.post('/webhook', async (req, res) => {
             usuario: nombreUsuario
           };
 
-          await enviarBotones(from, '🔨 *Registro de Trabajo Extra*\n\n🏗️ *¿De qué Sucursal/Obra es el trabajo extra?*[cite: 1]', [
+          await enviarBotones(from, '🔨 *Registro de Trabajo Extra*\n\n🏗️ *¿De qué Sucursal/Obra es el trabajo extra?*', [
             { id: 'EXTRAOBRA_Pelicano', title: 'Pelicano' },
             { id: 'EXTRAOBRA_Caldera', title: 'Caldera' },
             { id: 'EXTRAOBRA_PedroLoza', title: 'Pedro Loza' }
@@ -2622,6 +2690,13 @@ app.post('/webhook', async (req, res) => {
       } else if (msg.type === 'interactive') {
         const respuestaId = msg.interactive.button_reply?.id || msg.interactive.list_reply?.id;
 
+        if (respuestaId === 'OPC_ESTATUS_VISITA') {
+          sesiones[from] = { esperandoConsultaVisita: true };
+          await enviarTexto(from, '✏️ *Escribe el Nombre (o parte del nombre) del trabajador para consultar cuándo le toca viaje:*');
+          res.sendStatus(200);
+          return;
+        }
+
         if (respuestaId?.startsWith('MICKEBRA_')) {
           const obraMap = {
             'MICKEBRA_Pelicano': 'Suc. Pelicano',
@@ -3003,7 +3078,8 @@ app.post('/webhook', async (req, res) => {
             { id: 'OPC_CAMBIO_EMP', title: '🔄 Cambiar Obra' }
           ]);
           await enviarBotones(from, '👇 *Otras Opciones:*', [
-            { id: 'OPC_VISITA_EMP', title: '🚌 Visita Familiar' }
+            { id: 'OPC_VISITA_EMP', title: '🚌 Registrar Visita' },
+            { id: 'OPC_ESTATUS_VISITA', title: '🔍 Estatus Visita' }
           ]);
           res.sendStatus(200);
           return;
@@ -3396,7 +3472,7 @@ app.post('/webhook', async (req, res) => {
 
             await guardarVisitaFamiliar(sesion);
 
-            const fechaSalidaReal = new Date(sesion.fechaPago || Date.now());
+            const fechaSalidaReal = new Date(parseFechaMX(sesion.fechaPago));
             const fechaProxima = new Date(fechaSalidaReal.getTime() + (45 * 24 * 60 * 60 * 1000)).toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City' });
 
             await enviarTexto(from, `✅ *Visita Familiar Registrada con Éxito*\n\n👤 *Trabajador:* ${sesion.nombre}\n🏗️ *Obra Afectada:* ${sesion.obra}\n💵 *Monto Apoyo:* ${formatoMoneda(sesion.monto)}\n📅 *Fecha de Pago:* ${sesion.fechaPago}\n⏳ *Próxima Visita Sugerida (+45 días):* ${fechaProxima}`);
@@ -3480,7 +3556,7 @@ app.post('/webhook', async (req, res) => {
 
           const obraMap = {
             'REPCONTRATISTAS_Pelicano': 'Suc. Pelicano',
-            'REPCONTRATISTAS_Caldera': 'Suc. Caldera',
+            'REPCONTRATISTAS_Caldera', 'Suc. Caldera',
             'REPCONTRATISTAS_PedroLoza': 'Demolición Pedro Loza',
             'REPCONTRATISTAS_Salud': 'Suc. Salud',
             'REPCONTRATISTAS_GLOBAL': null
