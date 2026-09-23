@@ -265,7 +265,7 @@ function generarPDFCorteMicke(datos, rutaSalida) {
     doc.fillColor('#000000').fontSize(11).font('Helvetica-Bold')
        .text('CONSTRUCTIVE GALLERY ARCHITECTS', 180, 25, { align: 'right' });
     doc.fontSize(9).fillColor('#4A5568')
-       .text('CORTE DE CAJA OPERATIVO — MICKE (MIGUELONCHES)', 180, 40, { align: 'right' });
+       .text('CORTE DE CAJA OPERATIVO — MIGUELONCHES', 180, 40, { align: 'right' });
     doc.fontSize(8).fillColor('#718096')
        .text(`FECHA CONSULTADA: ${datos.fechaStr}`, 180, 53, { align: 'right' });
 
@@ -1563,7 +1563,7 @@ async function procesarBusquedaCambioObra(from, busqueda) {
 
 async function desplegarMenuPrincipal(from) {
   const tieneAccesoDireccion = esDireccion(from);
-  const esMicke = from.replace(/\D/g, '').slice(-10) === '3331747434';
+  const esMickeOusuarioPrueba = ['3331747434', '3313008395'].includes(from.replace(/\D/g, '').slice(-10));
 
   if (tieneAccesoDireccion) {
     const opciones = [
@@ -1576,11 +1576,11 @@ async function desplegarMenuPrincipal(from) {
       { id: 'MENU_EXTRAS', title: '🔨 Trabajos Extras', description: 'Registro de extras y evidencias a Drive' },
       { id: 'MENU_PRECIOS', title: '🏷️ Precios Materiales', description: 'Registrar precio y comparar histórico' }
     ];
-    if (esMicke) {
+    if (esMickeOusuarioPrueba) {
       opciones.push({ id: 'MENU_MICKE_CORTE', title: '📋 Corte Micke (PDF)', description: 'Cuadratura de caja y gastos personales' });
     }
     await enviarLista(from, '🏗️ *PANEL DE CONTROL CENTRAL (DIRECCIÓN)*\n\nSelecciona la gestión que deseas realizar:', 'Abrir Menú', 'Dirección de Obra', opciones);
-  } else if (esMicke) {
+  } else if (esMickeOusuarioPrueba) {
     const opciones = [
       { id: 'MENU_PERSONAL', title: '👷‍♂️ Personal Propio', description: 'Altas, bajas, cambio de obra y Visitas' },
       { id: 'MENU_EXTRAS', title: '🔨 Trabajos Extras', description: 'Registro de extras y evidencias con foto' },
@@ -1599,17 +1599,16 @@ async function desplegarMenuPrincipal(from) {
 }
 
 async function desplegarGuiaComandos(from) {
-  const tieneAccesoDireccion = esDireccion(from);
-  const esMicke = from.replace(/\D/g, '').slice(-10) === '3331747434';
+  const esMickeOusuarioPrueba = ['3331747434', '3313008395'].includes(from.replace(/\D/g, '').slice(-10));
 
   let guia = `📝 *GUÍA DE COMANDOS:*\n\n` +
     `• \`[concepto] [monto]\` - Registrar Gasto Rápido\n` +
     `• \`comparar [mat]\` - Buscar Historial Precios\n` +
     `• \`cancelar\` - Anular último registro\n`;
 
-  if (esMicke) {
-    opcionesMicke = `• \`efectivo micke [monto]\` - Registrar efectivo recibido\n` +
-                    `• \`corte micke\` - Generar PDF de cuadratura de caja\n`;
+  if (esMickeOusuarioPrueba) {
+    const opcionesMicke = `• \`efectivo micke [monto]\` - Registrar efectivo recibido\n` +
+                          `• \`corte micke\` - Generar PDF de cuadratura de caja\n`;
     guia += opcionesMicke;
   }
 
