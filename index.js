@@ -3556,7 +3556,7 @@ app.post('/webhook', async (req, res) => {
 
           const obraMap = {
             'REPCONTRATISTAS_Pelicano': 'Suc. Pelicano',
-            'REPCONTRATISTAS_Caldera', 'Suc. Caldera',
+            'REPCONTRATISTAS_Caldera': 'Suc. Caldera',
             'REPCONTRATISTAS_PedroLoza': 'Demolición Pedro Loza',
             'REPCONTRATISTAS_Salud': 'Suc. Salud',
             'REPCONTRATISTAS_GLOBAL': null
