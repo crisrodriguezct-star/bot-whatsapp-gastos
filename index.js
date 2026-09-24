@@ -1760,49 +1760,44 @@ async function desplegarMenuPrincipal(from) {
   const tieneAccesoDireccion = esDireccion(from);
   const esMickeOusuarioPrueba = ['3331747434', '3313008395'].includes(from.replace(/\D/g, '').slice(-10));
 
+  // Menú unificado y completo para todos los roles operativos, manteniendo privilegios de dirección
+  const opciones = [
+    { id: 'MENU_PERSONAL', title: '👷‍♂️ Personal Propio', description: 'Altas, bajas, cambio de obra y Visitas' },
+    { id: 'MENU_EXTRAS', title: '🔨 Trabajos Extras', description: 'Registro de extras y evidencias con foto' },
+    { id: 'MENU_PRECIOS', title: '🏷️ Precios Materiales', description: 'Registrar precio y comparar cotizaciones' },
+    { id: 'OPC_VER_FAC', title: '📋 Gastos Pendientes', description: 'Ver y resolver gastos pendientes de factura' },
+    { id: 'MENU_CORREGIR', title: '✏️ Corregir Últimos Gastos', description: 'Modificar monto o anular gasto con un toque' }
+  ];
+
   if (tieneAccesoDireccion) {
-    const opciones = [
+    opciones.unshift(
       { id: 'MENU_CARGA_OBRA', title: '🚀 Configurar / Cargar Obra', description: 'Presupuesto, Cuentas Bancarias y Contratos' },
-      { id: 'MENU_REPORTES', title: '📊 Saldos y PDF de Corte', description: 'Caja chica, bancos y estado de cuenta oficial' },
-      { id: 'MENU_CORREGIR', title: '✏️ Corregir Últimos Gastos', description: 'Modificar monto o anular gasto con un toque' },
+      { id: 'MENU_REPORTES', title: '📊 Saldos y PDF de Corte', description: 'Caja chica, bancos y estado de cuenta oficial' }
+    );
+    opciones.push(
       { id: 'MENU_CONTRATISTAS', title: '🤝 Contratistas / Destajos', description: 'Asignación de contratos y consulta de saldos' },
-      { id: 'MENU_PRESU', title: '🏦 Avance de Presupuestos', description: 'Presupuesto autorizado y cobro a clientes' },
-      { id: 'MENU_PERSONAL', title: '👷‍♂️ Personal Propio', description: 'Altas, bajas, cambio de obra y Visitas' },
-      { id: 'MENU_EXTRAS', title: '🔨 Trabajos Extras', description: 'Registro de extras y evidencias a Drive' },
-      { id: 'MENU_PRECIOS', title: '🏷️ Precios Materiales', description: 'Registrar precio y comparar histórico' }
-    ];
-    if (esMickeOusuarioPrueba) {
-      opciones.push({ id: 'MENU_MICKE_CORTE', title: '📋 Corte Micke (PDF)', description: 'Cuadratura de caja y gastos personales' });
-    }
-    await enviarLista(from, '🏗️ *PANEL DE CONTROL CENTRAL (DIRECCIÓN)*\n\nSelecciona la gestión que deseas realizar:', 'Abrir Menú', 'Dirección de Obra', opciones);
-  } else if (esMickeOusuarioPrueba) {
-    const opciones = [
-      { id: 'MENU_PERSONAL', title: '👷‍♂️ Personal Propio', description: 'Altas, bajas, cambio de obra y Visitas' },
-      { id: 'MENU_EXTRAS', title: '🔨 Trabajos Extras', description: 'Registro de extras y evidencias con foto' },
-      { id: 'MENU_PRECIOS', title: '🏷️ Precios Materiales', description: 'Registrar precio y comparar cotizaciones' },
-      { id: 'MENU_MICKE_CORTE', title: '📋 Corte Micke (PDF)', description: 'Cuadratura de caja y gastos personales' }
-    ];
-    await enviarLista(from, '🏗️ *MENÚ OPERATIVO DE MIGUELONCHES*\n\nPara registrar un gasto rápido, escribe el concepto y monto (ej: `cemento 450`). O sube la foto de un Ticket.', 'Abrir Menú', 'Operación Campo', opciones);
-  } else {
-    const opciones = [
-      { id: 'MENU_PERSONAL', title: '👷‍♂️ Personal Propio', description: 'Altas, bajas, cambio de obra y Visitas' },
-      { id: 'MENU_EXTRAS', title: '🔨 Trabajos Extras', description: 'Registro de extras y evidencias con foto' },
-      { id: 'MENU_PRECIOS', title: '🏷️ Precios Materiales', description: 'Registrar precio y comparar cotizaciones' }
-    ];
-    await enviarLista(from, '🏗️ *MENÚ OPERATIVO DE OBRA*\n\nPara registrar un gasto rápido, escribe el concepto y monto (ej: `cemento 450`). O sube la foto de un Ticket.\n\nO selecciona una gestión:', 'Abrir Menú', 'Operación de Campo', opciones);
+      { id: 'MENU_PRESU', title: '🏦 Avance de Presupuestos', description: 'Presupuesto autorizado y cobro a clientes' }
+    );
   }
+
+  if (esMickeOusuarioPrueba) {
+    opciones.push({ id: 'MENU_MICKE_CORTE', title: '📋 Corte Micke (PDF)', description: 'Cuadratura de caja y gastos personales' });
+  }
+
+  await enviarLista(from, '🏗️ *PANEL DE CONTROL CENTRAL*\n\nSelecciona la gestión que deseas realizar (o sube la foto de un Ticket para leerlo con IA):', 'Abrir Menú', 'Menú Principal', opciones);
 }
 
 async function desplegarGuiaComandos(from) {
   const esMickeOusuarioPrueba = ['3331747434', '3313008395'].includes(from.replace(/\D/g, '').slice(-10));
 
   let guia = `📝 *GUÍA DE COMANDOS:*\n\n` +
-    `• Sube una foto para Procesar Tickets\n` +
+    `• Sube una foto de ticket para procesamiento IA automático\n` +
     `• \`[concepto] [monto]\` - Registrar Gasto Rápido\n` +
     `• \`nomina [monto]\` - Registrar Nómina Global\n` +
     `• \`comparar [mat]\` - Buscar Historial Precios\n` +
     `• \`estatus visita [nombre]\` - Consultar próxima visita\n` +
-    `• \`cancelar\` - Anular último registro\n`;
+    `• \`cancelar\` - Anular último registro\n` +
+    `• \`facturar\` - Ver gastos pendientes de factura\n`;
 
   if (esMickeOusuarioPrueba) {
     const opcionesMicke = `• \`efectivo micke [monto]\` - Registrar efectivo recibido\n` +
@@ -1996,7 +1991,7 @@ app.post('/webhook', async (req, res) => {
 
         if (/^(cargar obra|configurar obra|configurar|carga inicial)$/i.test(textBody)) {
           if (!tieneAccesoDireccion) {
-            await enviarTexto(from, '⚙️ *Módulo en consolidación administrativa.*\nEsta función se encuentra deshabilitada para este perfil.');
+            await enviarTexto(from, '⚙️ *Módulo exclusivo para Dirección.*\nEsta función se encuentra deshabilitada para este perfil.');
             res.sendStatus(200);
             return;
           }
@@ -2016,12 +2011,6 @@ app.post('/webhook', async (req, res) => {
         }
 
         if (/^(corregir|editar|modificar|corregir gasto)$/i.test(textBody)) {
-          if (!tieneAccesoDireccion) {
-            await enviarTexto(from, '⚙️ *Módulo en consolidación administrativa.* Para cancelar el último gasto inmediato utiliza `cancelar`.');
-            res.sendStatus(200);
-            return;
-          }
-
           const ultimos = await obtenerUltimosGastos(null);
           if (ultimos.length === 0) {
             await enviarTexto(from, '⚠️ No hay gastos recientes para corregir.');
@@ -2050,7 +2039,7 @@ app.post('/webhook', async (req, res) => {
 
         if (/^(saldo|corte|reporte|resumen)$/i.test(textBody)) {
           if (!tieneAccesoDireccion) {
-            await enviarTexto(from, '⚙️ *Módulo en consolidación administrativa.*\nEsta consulta de balance financiero se encuentra deshabilitada para este perfil.');
+            await enviarTexto(from, '⚙️ *Módulo exclusivo para Dirección.*\nEsta consulta de balance financiero se encuentra deshabilitada para este perfil.');
             res.sendStatus(200);
             return;
           }
@@ -2070,7 +2059,7 @@ app.post('/webhook', async (req, res) => {
 
         if (/^(contratistas|destajos|contratos)$/i.test(textBody)) {
           if (!tieneAccesoDireccion) {
-            await enviarTexto(from, '⚙️ *Módulo en consolidación administrativa.* Consulta con administración central.');
+            await enviarTexto(from, '⚙️ *Módulo exclusivo para Dirección.*\nConsulta con administración central.');
             res.sendStatus(200);
             return;
           }
@@ -2090,7 +2079,7 @@ app.post('/webhook', async (req, res) => {
 
         if (/^(avance|cobrado|avance presupuestos)$/i.test(textBody)) {
           if (!tieneAccesoDireccion) {
-            await enviarTexto(from, '⚙️ *Módulo en consolidación administrativa.* Consulta con administración central.');
+            await enviarTexto(from, '⚙️ *Módulo exclusivo para Dirección.*\nConsulta con administración central.');
             res.sendStatus(200);
             return;
           }
@@ -3367,6 +3356,11 @@ app.post('/webhook', async (req, res) => {
         }
 
         if (respuestaId === 'MENU_CARGA_OBRA') {
+          if (!tieneAccesoDireccion) {
+            await enviarTexto(from, '⚙️ *Módulo exclusivo para Dirección.*');
+            res.sendStatus(200);
+            return;
+          }
           sesiones[from] = { tipoAccion: 'CARGA_OBRA', usuario: nombreUsuario };
           await enviarBotones(from, '🚀 *ASISTENTE DE CONFIGURACIÓN DE OBRA*\n\n🏗️ *¿Qué sucursal deseas configurar?*', [
             { id: 'CARGAOBRA_Pelicano', title: 'Pelicano' },
@@ -3523,7 +3517,7 @@ app.post('/webhook', async (req, res) => {
 
         if (respuestaId === 'MENU_CONTRATISTAS') {
           if (!tieneAccesoDireccion) {
-            await enviarTexto(from, '⚙️ *Módulo en consolidación administrativa.* Consulta con administración central.');
+            await enviarTexto(from, '⚙️ *Módulo exclusivo para Dirección.*');
             res.sendStatus(200);
             return;
           }
@@ -3536,7 +3530,7 @@ app.post('/webhook', async (req, res) => {
 
         if (respuestaId === 'MENU_PRESU') {
           if (!tieneAccesoDireccion) {
-            await enviarTexto(from, '⚙️ *Módulo en consolidación administrativa.* Consulta con administración central.');
+            await enviarTexto(from, '⚙️ *Módulo exclusivo para Dirección.*');
             res.sendStatus(200);
             return;
           }
@@ -3653,7 +3647,7 @@ app.post('/webhook', async (req, res) => {
 
         if (respuestaId === 'MENU_REPORTES') {
           if (!tieneAccesoDireccion) {
-            await enviarTexto(from, '⚙️ *Módulo en consolidación administrativa.* Consulta con administración central.');
+            await enviarTexto(from, '⚙️ *Módulo exclusivo para Dirección.*');
             res.sendStatus(200);
             return;
           }
@@ -3672,7 +3666,7 @@ app.post('/webhook', async (req, res) => {
 
         if (respuestaId === 'REP_GLOBAL') {
           if (!tieneAccesoDireccion) {
-            await enviarTexto(from, '⚙️ *Módulo en consolidación administrativa.* Consulta con administración central.');
+            await enviarTexto(from, '⚙️ *Módulo exclusivo para Dirección.*');
             res.sendStatus(200);
             return;
           }
@@ -3690,7 +3684,7 @@ app.post('/webhook', async (req, res) => {
 
         if (respuestaId?.startsWith('REP_')) {
           if (!tieneAccesoDireccion) {
-            await enviarTexto(from, '⚙️ *Módulo en consolidación administrativa.* Consulta con administración central.');
+            await enviarTexto(from, '⚙️ *Módulo exclusivo para Dirección.*');
             res.sendStatus(200);
             return;
           }
@@ -3985,7 +3979,7 @@ app.post('/webhook', async (req, res) => {
 
         if (respuestaId?.startsWith('REPCONTRATISTAS_')) {
           if (!tieneAccesoDireccion) {
-            await enviarTexto(from, '⚙️ *Módulo en consolidación administrativa.* Consulta con administración central.');
+            await enviarTexto(from, '⚙️ *Módulo exclusivo para Dirección.*');
             res.sendStatus(200);
             return;
           }
