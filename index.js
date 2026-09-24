@@ -70,7 +70,7 @@ const ETAPA_4_ADMIN = [
 ];
 
 // Se ordenan por longitud para que las validaciones exactas agarren primero la frase completa
-const CONTRATISTAS_VALIDOS = ['cubiertas de lamina', 'aluminio y vidrio', 'carpinteria', 'tablaroca', 'cubiertas', 'cortinas', 'herreria', 'pintura'];
+const CONTRATISTAS_VALIDOS = ['cubiertas de lamina', 'inst hidraulica', 'aluminio y vidrio', 'carpinteria', 'tablaroca', 'cubiertas', 'cortinas', 'herreria', 'pintura'];
 
 function formatoMoneda(monto) {
   const num = parseFloat(monto) || 0;
@@ -3142,7 +3142,8 @@ app.post('/webhook', async (req, res) => {
             ]);
             await enviarBotones(from, '👇 *Otras:*', [
               { id: 'ESPCONT_cortinas', title: 'Cortinas' },
-              { id: 'ESPCONT_carpinteria', title: 'Carpintería' }
+              { id: 'ESPCONT_carpinteria', title: 'Carpintería' },
+              { id: 'ESPCONT_hidraulica', title: 'Inst. Hidráulica' }
             ]);
           }
           res.sendStatus(200);
@@ -3158,7 +3159,8 @@ app.post('/webhook', async (req, res) => {
             'ESPCONT_cub_lamina': 'cubiertas de lamina',
             'ESPCONT_herreria': 'herreria',
             'ESPCONT_cortinas': 'cortinas',
-            'ESPCONT_carpinteria': 'carpinteria'
+            'ESPCONT_carpinteria': 'carpinteria',
+            'ESPCONT_hidraulica': 'inst hidraulica'
           };
           const sesion = sesiones[from];
           if (sesion) {
@@ -3651,7 +3653,7 @@ app.post('/webhook', async (req, res) => {
 
           if (respuestaId === 'UNIDAD_OTRO') {
             sesion.esperandoUnidadManual = true;
-            await enviarTexto(from, '✏️ *Por favor, escribe manualmente la Unidad de Medida:* (ej: kg, millar, rollo, paquete)');
+            await enviarTexto(from, '✏️ *Por favor, escribe manually la Unidad de Medida:* (ej: kg, millar, rollo, paquete)');
             res.sendStatus(200);
             return;
           }
