@@ -366,7 +366,6 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
     doc.fontSize(9).fillColor('#4A5568')
        .text('ESTADO DE CUENTA Y CORTE FINANCIERO SEMANAL', 180, 40, { align: 'right' });
     
-    // AQUÍ SE INTEGRA LA SEMANA DE OBRA DINÁMICA EN EL MEMBRETE DEL PDF
     const textoSemanaObra = datos.semanaObra ? ` | ${datos.semanaObra}` : '';
     doc.fontSize(8).fillColor('#718096')
        .text(`SUCURSAL: ${datos.sucursal.toUpperCase()}${textoSemanaObra}  |  PERIODO: ${datos.periodo}`, 180, 53, { align: 'right' });
@@ -556,7 +555,6 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
   });
 }
 
-// Función auxiliar para leer la celda F1 de la sucursal correspondiente
 async function obtenerSemanaObraDesdeSheet(obraBuscada) {
   if (!sheets || !SPREADSHEET_ID || !obraBuscada) return 'Semana 1 de Obra';
   try {
@@ -682,7 +680,6 @@ async function generarDatosCorteSemanal(obraBuscada) {
     });
     const filas = res.data.values || [];
 
-    // Obtener la semana de obra dinámicamente desde la celda F1 de la sucursal
     const semanaObraStr = await obtenerSemanaObraDesdeSheet(obraBuscada);
 
     const ahora = new Date();
@@ -962,6 +959,39 @@ async function anularGastoPorFila(filaIndex) {
     return true;
   } catch (e) {
     return false;
+  }
+}
+
+async function obtenerOcrearCarpetaMesTickets(parentFolderId) {
+  if (!drive || !parentFolderId) return parentFolderId;
+  try {
+    const meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+    const ahora = new Date();
+    const nombreMes = `${meses[ahora.getMonth()]} ${ahora.getFullYear()}`;
+
+    const q = `'${parentFolderId}' in parents and name = '${nombreMes}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+    const res = await drive.files.list({ q, fields: 'files(id, name)' });
+
+    if (res.data.files && res.data.files.length > 0) {
+      return res.data.files[0].id;
+    }
+
+    const folderMetadata = {
+      name: nombreMes,
+      mimeType: 'application/vnd.google-apps.folder',
+      parents: [parentFolderId]
+    };
+    const folder = await drive.files.create({ resource: folderMetadata, fields: 'id' });
+    
+    await drive.permissions.create({
+      fileId: folder.data.id,
+      requestBody: { role: 'reader', type: 'anyone' }
+    });
+    
+    return folder.data.id;
+  } catch (error) {
+    console.error('❌ Error creando carpeta mensual:', error);
+    return parentFolderId;
   }
 }
 
@@ -1739,31 +1769,35 @@ async function procesarBusquedaCambioObra(from, busqueda) {
   }
 }
 
+// =========================================================================
+// MOTOR IA HÍBRIDO (Materiales Críticos Individuales vs. Consumos Agrupados)
+// =========================================================================
 async function procesarTicketConIA(bufferImagen) {
   try {
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
     const prompt = `
-      Eres un auditor contable estricto. Analiza este ticket o factura de compra de materiales de construcción.
-      IGNORA artículos que no sean de obra (ej. refrescos, propinas, comida).
-      Clasifica CADA LÍNEA en UNA de estas categorías exactas:
-      - 03) MATERIAL ALBAÑILERIA GRUESA
-      - 09) MATERIAL ESTRUCTURA METALICA
-      - 12) MATERIAL HERRERIA
-      - 21) INST HIDRAULICA
-      - 16) PINTURA
-      - 15) CARPINTERIA
-      - 20) VARIOS
+      Eres un auditor contable estricto de obra. Analiza este ticket de compra a detalle.
+      
+      REGLA DE ORO DE CLASIFICACIÓN (MÉTODO HÍBRIDO):
+      1. MATERIALES CRÍTICOS Y ESTRUCTURALES: Extrae UNO POR UNO los materiales de construcción reales (ej. cemento, varilla, herramientas, pintura, tablaroca, clavos, cables) con su cantidad y precio exacto. Clasifícalos en la categoría que les corresponda (ej. "03) MATERIAL ALBAÑILERIA GRUESA", "16) PINTURA", "15) CARPINTERIA", etc.).
+      
+      2. CONSUMOS MENORES Y TIENDAS DE CONVENIENCIA: Si detectas que se compraron alimentos, botanas, aguas, sueros, refrescos, hielos, cigarros o artículos de tienda (como Oxxo), NO los separes. Agrúpalos TODOS en una sola línea llamada "Consumos Menores / Alimentos" y clasifica esa única línea ESTRICTAMENTE en la categoría "20) VARIOS". Jamás rechaces el ticket, siempre agrúpalos aquí.
+      
+      3. NOMENCLATURA INTELIGENTE: Genera un valor llamado "resumen_archivo" de 2 a 3 palabras sin espacios (usa guiones bajos) que describa el ticket de forma rápida (ej. "Oxxo_Bebidas", "Ferreteria_Tornillos", "HomeDepot_Pintura").
 
-      Devuelve ÚNICAMENTE un arreglo JSON válido con este formato exacto, sin texto adicional (ni markdown de bloque de código):
-      [
-        {
-          "material": "Nombre estandarizado (ej. CEMENTO TOLTECA)",
-          "cantidad": 10,
-          "precio_unitario": 350.50,
-          "total_linea": 3505.00,
-          "categoria": "03) MATERIAL ALBAÑILERIA GRUESA"
-        }
-      ]
+      Devuelve ÚNICAMENTE un objeto JSON válido con esta estructura exacta, sin texto extra ni etiquetas de markdown:
+      {
+        "resumen_archivo": "Oxxo_Bebidas",
+        "lineas": [
+          {
+            "material": "Nombre del concepto o agrupador",
+            "cantidad": 1,
+            "precio_unitario": 45.00,
+            "total_linea": 45.00,
+            "categoria": "20) VARIOS"
+          }
+        ]
+      }
     `;
 
     const imageParts = [{
@@ -2984,13 +3018,23 @@ app.post('/webhook', async (req, res) => {
 
             try {
               const buffer = await descargarArchivoWhatsApp(sesion.mediaId);
-              const fileName = `Ticket_${sesion.obra.replace(/\s+/g,'_')}_${Date.now()}.jpg`;
-              sesion.linkDrive = await subirArchivoADrive(buffer, fileName, DRIVE_FOLDER_TICKETS_ID, 'image/jpeg');
+              
+              // 1. Procesar IA (Desglosa materiales críticos, agrupa alimentos/consumos menores)
+              const iaResult = await procesarTicketConIA(buffer);
+              if (!iaResult || !iaResult.lineas || iaResult.lineas.length === 0) throw new Error("IA Empty");
 
-              const lineas = await procesarTicketConIA(buffer);
-              if (!lineas || lineas.length === 0) throw new Error("IA Empty");
+              // 2. Obtener / Crear Carpeta Mensual en Drive
+              const folderMesId = await obtenerOcrearCarpetaMesTickets(DRIVE_FOLDER_TICKETS_ID);
 
-              sesion.lineasIA = lineas;
+              // 3. Generar Nomenclatura Inteligente de Archivo (Dia_24_Oxxo_Bebidas_Suc_Pelicano.jpg)
+              const diaActual = new Date().getDate().toString().padStart(2, '0');
+              const obraLimpia = sesion.obra.replace(/^Suc\.\s*/i, '').replace(/\s+/g, '_');
+              const resumenArchivo = iaResult.resumen_archivo || 'Compra_Varios';
+              const fileName = `Dia_${diaActual}_${resumenArchivo}_${obraLimpia}.jpg`;
+
+              sesion.linkDrive = await subirArchivoADrive(buffer, fileName, folderMesId, 'image/jpeg');
+              sesion.lineasIA = iaResult.lineas;
+
               await imprimirResumenTicket(from, sesion);
             } catch (error) {
               await enviarTexto(from, '❌ *Error de IA:* No pude leer correctamente el ticket (foto borrosa o no válida). Por favor registra el gasto manualmente.');
