@@ -365,8 +365,11 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
        .text('CONSTRUCTIVE GALLERY ARCHITECTS', 180, 25, { align: 'right' });
     doc.fontSize(9).fillColor('#4A5568')
        .text('ESTADO DE CUENTA Y CORTE FINANCIERO SEMANAL', 180, 40, { align: 'right' });
+    
+    // AQUÍ SE INTEGRA LA SEMANA DE OBRA DINÁMICA EN EL MEMBRETE DEL PDF
+    const textoSemanaObra = datos.semanaObra ? ` | ${datos.semanaObra}` : '';
     doc.fontSize(8).fillColor('#718096')
-       .text(`SUCURSAL: ${datos.sucursal.toUpperCase()}  |  PERIODO: ${datos.periodo}`, 180, 53, { align: 'right' });
+       .text(`SUCURSAL: ${datos.sucursal.toUpperCase()}${textoSemanaObra}  |  PERIODO: ${datos.periodo}`, 180, 53, { align: 'right' });
 
     doc.moveTo(35, 70).lineTo(575, 70).strokeColor('#000000').lineWidth(1.5).stroke();
 
@@ -489,17 +492,14 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
     y += 18;
     doc.fillColor('#000000').fontSize(7.5).font('Helvetica');
     
-    // 1. Presupuesto Autorizado (Con validación si no existe)
     doc.text('(+) Presupuesto Autorizado:', 40, y, { width: 160 });
     const textoPresupuesto = datos.presupuestoAutorizado > 0 ? formatoMoneda(datos.presupuestoAutorizado) : 'No se ha ingresado el dato';
     doc.font('Helvetica-Bold').text(textoPresupuesto, 200, y, { width: 100, align: 'right' });
 
-    // 2. Gastos acumulados a la derecha
     doc.font('Helvetica').fillColor('#991B1B').text('(-) Gastos Acumulados Totales de Obra:', 305, y, { width: 175 });
     doc.font('Helvetica-Bold').text(formatoMoneda(datos.gastosTotal), 480, y, { width: 95, align: 'right' });
 
     y += 14;
-    // 3. Ingresos / Anticipos Recibidos reales debajo del presupuesto
     doc.fillColor('#000000').font('Helvetica').text('(+) Ingresos / Anticipos Recibidos:', 40, y, { width: 160 });
     doc.font('Helvetica-Bold').text(formatoMoneda(datos.ingresosTotal), 200, y, { width: 100, align: 'right' });
 
@@ -554,6 +554,32 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
     stream.on('finish', () => resolve(rutaSalida));
     stream.on('error', reject);
   });
+}
+
+// Función auxiliar para leer la celda F1 de la sucursal correspondiente
+async function obtenerSemanaObraDesdeSheet(obraBuscada) {
+  if (!sheets || !SPREADSHEET_ID || !obraBuscada) return 'Semana 1 de Obra';
+  try {
+    const obraUpper = obraBuscada.toUpperCase();
+    let nombreHojaCtrl = 'CTRL_PELICANO';
+    if (obraUpper.includes('PELICANO')) nombreHojaCtrl = 'CTRL_PELICANO';
+    else if (obraUpper.includes('CALDERA')) nombreHojaCtrl = 'CTRL_CALDERA';
+    else if (obraUpper.includes('PEDRO')) nombreHojaCtrl = 'CTRL_PEDRO_LOZA';
+    else if (obraUpper.includes('SALUD')) nombreHojaCtrl = 'CTRL_SALUD';
+    else {
+      const limpio = obraBuscada.replace(/^Suc\.\s*/i, '').replace(/\s+/g, '_').toUpperCase();
+      nombreHojaCtrl = `CTRL_${limpio}`;
+    }
+
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${nombreHojaCtrl}!F1`
+    });
+    const val = res.data.values?.[0]?.[0];
+    return val ? `Semana ${val} de Obra` : 'Semana 1 de Obra';
+  } catch (e) {
+    return 'Semana 1 de Obra';
+  }
 }
 
 async function calcularGastosPreviosObra(obraBuscada) {
@@ -655,6 +681,9 @@ async function generarDatosCorteSemanal(obraBuscada) {
       range: 'Hoja 1!A:J'
     });
     const filas = res.data.values || [];
+
+    // Obtener la semana de obra dinámicamente desde la celda F1 de la sucursal
+    const semanaObraStr = await obtenerSemanaObraDesdeSheet(obraBuscada);
 
     const ahora = new Date();
     const diaSemana = ahora.getDay();
@@ -823,6 +852,7 @@ async function generarDatosCorteSemanal(obraBuscada) {
 
     return {
       sucursal: obraBuscada || 'General Global',
+      semanaObra: semanaObraStr,
       periodo: `${inicioStr} al ${finStr}`,
       semanaEfectivo,
       semanaTarjeta,
@@ -3718,7 +3748,7 @@ app.post('/webhook', async (req, res) => {
 
             await generarPDFCorteSemanal(datosCorte, rutaPdfLocal);
 
-            const captionTxt = `📄 *Corte Financiero Semanal — ${datosCorte.sucursal}*\n` +
+            const captionTxt = `📄 *Corte Financiero Semanal — ${datosCorte.sucursal} (${datosCorte.semanaObra})*\n` +
               `📅 *Periodo:* ${datosCorte.periodo}\n\n` +
               `💵 *Gastos de la Semana:* ${formatoMoneda(datosCorte.semanaTotal)}\n` +
               `💰 *Saldo Total Disponible:* ${formatoMoneda(datosCorte.saldoDisponible)}\n` +
