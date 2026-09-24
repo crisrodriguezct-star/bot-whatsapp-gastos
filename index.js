@@ -4,6 +4,7 @@ const https = require('https');
 const PDFDocument = require('pdfkit');
 const fs = require('fs');
 const path = require('path');
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 const app = express();
 app.use(express.json());
@@ -16,9 +17,12 @@ const SPREADSHEET_PRECIOS_ID = process.env.SPREADSHEET_PRECIOS_ID || '1Cscdoi4k3
 const SPREADSHEET_EXTRAS_ID = process.env.SPREADSHEET_EXTRAS_ID || '1uO9QMilrhjooFgsqF7Nu7GA4WYEV94QZRNjwQj2Jz5o';
 const SPREADSHEET_PERSONAL_ID = process.env.SPREADSHEET_PERSONAL_ID || '1LU5V21D9wPILoq6HHEBqxJc9mE7EwDMJEnwpvQHnpFQ';
 const DRIVE_FOLDER_EXTRAS_ID = process.env.DRIVE_FOLDER_EXTRAS_ID || '1ZTIGfyRjFa0Yn1MMUMjOzWiPi810vVvw';
+const DRIVE_FOLDER_TICKETS_ID = process.env.DRIVE_FOLDER_TICKETS_ID;
 
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
+
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 const sesiones = {};
 
@@ -69,7 +73,6 @@ const ETAPA_4_ADMIN = [
   { id: 'CAT_29', title: '29) RESIDENCIA DE OBRA' }
 ];
 
-// Se ordenan por longitud para que las validaciones exactas agarren primero la frase completa
 const CONTRATISTAS_VALIDOS = ['cubiertas de lamina', 'inst hidraulica', 'aluminio y vidrio', 'carpinteria', 'tablaroca', 'cubiertas', 'cortinas', 'herreria', 'pintura'];
 
 function formatoMoneda(monto) {
@@ -1117,6 +1120,33 @@ async function guardarEnSheets(datos) {
   }
 }
 
+async function guardarInventarioTicket(idMovimiento, obra, lineasIA, linkDrive) {
+  if (!sheets || !SPREADSHEET_ID) return;
+  try {
+    const fechaHora = new Date().toLocaleString('es-MX', { timeZone: 'America/Mexico_City' });
+    const valores = lineasIA.map(l => [
+      idMovimiento,
+      fechaHora,
+      obra,
+      l.material,
+      l.cantidad,
+      l.precio_unitario,
+      l.total_linea,
+      l.categoria,
+      linkDrive ? `=HIPERVINCULO("${linkDrive}", "📸 Ver Ticket")` : 'N/A'
+    ]);
+    
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SPREADSHEET_ID,
+      range: 'INVENTARIO_TICKETS!A:I',
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: valores }
+    });
+  } catch (error) {
+    console.error('❌ Error guardando inventario tickets:', error.message);
+  }
+}
+
 async function guardarTrabajoExtra(datos) {
   if (!sheets || !SPREADSHEET_EXTRAS_ID) return;
   try {
@@ -1665,6 +1695,67 @@ async function procesarBusquedaCambioObra(from, busqueda) {
   }
 }
 
+async function procesarTicketConIA(bufferImagen) {
+  try {
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const prompt = `
+      Eres un auditor contable estricto. Analiza este ticket o factura de compra de materiales de construcción.
+      IGNORA artículos que no sean de obra (ej. refrescos, propinas, comida).
+      Clasifica CADA LÍNEA en UNA de estas categorías exactas:
+      - 03) MATERIAL ALBAÑILERIA GRUESA
+      - 09) MATERIAL ESTRUCTURA METALICA
+      - 12) MATERIAL HERRERIA
+      - 21) INST HIDRAULICA
+      - 16) PINTURA
+      - 15) CARPINTERIA
+      - 20) VARIOS
+
+      Devuelve ÚNICAMENTE un arreglo JSON válido con este formato exacto, sin texto adicional (ni markdown de bloque de código):
+      [
+        {
+          "material": "Nombre estandarizado (ej. CEMENTO TOLTECA)",
+          "cantidad": 10,
+          "precio_unitario": 350.50,
+          "total_linea": 3505.00,
+          "categoria": "03) MATERIAL ALBAÑILERIA GRUESA"
+        }
+      ]
+    `;
+
+    const imageParts = [{
+      inlineData: {
+        data: bufferImagen.toString("base64"),
+        mimeType: "image/jpeg"
+      }
+    }];
+
+    const result = await model.generateContent([prompt, ...imageParts]);
+    const responseText = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+    
+    return JSON.parse(responseText);
+  } catch (error) {
+    console.error('Error procesando IA:', error);
+    return null;
+  }
+}
+
+async function imprimirResumenTicket(from, sesion) {
+  let total = 0;
+  let txt = `🤖 *Análisis de IA Finalizado*\n\nRevisa el desglose extraído:\n\n`;
+  sesion.lineasIA.forEach((l, i) => {
+    txt += `${i + 1}. ${l.material} - ${formatoMoneda(l.total_linea)}\n   📂 ${l.categoria}\n`;
+    total += l.total_linea;
+  });
+  txt += `\n💰 *Total Detectado: ${formatoMoneda(total)}*\n\n¿Todo es correcto?`;
+
+  await enviarTexto(from, txt);
+  await enviarBotones(from, 'Elige una acción:', [
+    { id: 'TICKCONF_Ok', title: '✅ Aprobar y Guardar' },
+    { id: 'TICKCONF_Edit', title: '✏️ Corregir Línea' },
+    { id: 'TICKCONF_Cancel', title: '❌ Cancelar Ticket' }
+  ]);
+}
+
 async function desplegarMenuPrincipal(from) {
   const tieneAccesoDireccion = esDireccion(from);
   const esMickeOusuarioPrueba = ['3331747434', '3313008395'].includes(from.replace(/\D/g, '').slice(-10));
@@ -1691,14 +1782,14 @@ async function desplegarMenuPrincipal(from) {
       { id: 'MENU_PRECIOS', title: '🏷️ Precios Materiales', description: 'Registrar precio y comparar cotizaciones' },
       { id: 'MENU_MICKE_CORTE', title: '📋 Corte Micke (PDF)', description: 'Cuadratura de caja y gastos personales' }
     ];
-    await enviarLista(from, '🏗️ *MENÚ OPERATIVO DE MIGUELONCHES*\n\nPara registrar un gasto rápido, escribe el concepto y monto (ej: `cemento 450`).', 'Abrir Menú', 'Operación Campo', opciones);
+    await enviarLista(from, '🏗️ *MENÚ OPERATIVO DE MIGUELONCHES*\n\nPara registrar un gasto rápido, escribe el concepto y monto (ej: `cemento 450`). O sube la foto de un Ticket.', 'Abrir Menú', 'Operación Campo', opciones);
   } else {
     const opciones = [
       { id: 'MENU_PERSONAL', title: '👷‍♂️ Personal Propio', description: 'Altas, bajas, cambio de obra y Visitas' },
       { id: 'MENU_EXTRAS', title: '🔨 Trabajos Extras', description: 'Registro de extras y evidencias con foto' },
       { id: 'MENU_PRECIOS', title: '🏷️ Precios Materiales', description: 'Registrar precio y comparar cotizaciones' }
     ];
-    await enviarLista(from, '🏗️ *MENÚ OPERATIVO DE OBRA*\n\nPara registrar un gasto rápido, escribe el concepto y monto (ej: `cemento 450`).\n\nO selecciona una gestión:', 'Abrir Menú', 'Operación de Campo', opciones);
+    await enviarLista(from, '🏗️ *MENÚ OPERATIVO DE OBRA*\n\nPara registrar un gasto rápido, escribe el concepto y monto (ej: `cemento 450`). O sube la foto de un Ticket.\n\nO selecciona una gestión:', 'Abrir Menú', 'Operación de Campo', opciones);
   }
 }
 
@@ -1706,6 +1797,7 @@ async function desplegarGuiaComandos(from) {
   const esMickeOusuarioPrueba = ['3331747434', '3313008395'].includes(from.replace(/\D/g, '').slice(-10));
 
   let guia = `📝 *GUÍA DE COMANDOS:*\n\n` +
+    `• Sube una foto para Procesar Tickets\n` +
     `• \`[concepto] [monto]\` - Registrar Gasto Rápido\n` +
     `• \`nomina [monto]\` - Registrar Nómina Global\n` +
     `• \`comparar [mat]\` - Buscar Historial Precios\n` +
@@ -1775,6 +1867,23 @@ app.post('/webhook', async (req, res) => {
           }
           res.sendStatus(200);
           return;
+        } else if (msg.type === 'image') {
+          sesiones[from] = {
+            tipoAccion: 'NUEVO_TICKET',
+            mediaId: msg.image.id,
+            usuario: nombreUsuario
+          };
+          await enviarBotones(from, '📸 *Ticket de Material detectado.*\n\n🏗️ *¿A qué Sucursal pertenece esta compra?*', [
+            { id: 'TICKOBRA_Pelicano', title: 'Pelicano' },
+            { id: 'TICKOBRA_Caldera', title: 'Caldera' },
+            { id: 'TICKOBRA_PedroLoza', title: 'Pedro Loza' }
+          ]);
+          await enviarBotones(from, '👇 *Otras Opciones:*', [
+            { id: 'TICKOBRA_Salud', title: 'Salud' },
+            { id: 'TICKOBRA_Otro', title: 'Otro' }
+          ]);
+          res.sendStatus(200);
+          return;
         }
       }
 
@@ -1791,6 +1900,26 @@ app.post('/webhook', async (req, res) => {
           await desplegarGuiaComandos(from);
           res.sendStatus(200);
           return;
+        }
+
+        if (sesionActual && sesionActual.tipoAccion === 'NUEVO_TICKET' && sesionActual.esperandoLineaEditar) {
+            const num = parseInt(textBody) - 1;
+            if (!isNaN(num) && num >= 0 && num < sesionActual.lineasIA.length) {
+                sesionActual.esperandoNuevaCatIndex = num;
+                delete sesionActual.esperandoLineaEditar;
+                await enviarBotones(from, `✏️ *Editando Categoría para:* ${sesionActual.lineasIA[num].material}\n\nSelecciona la Etapa para la nueva categoría:`, [
+                  { id: 'ETAPA_1', title: '🏗️ 1. Estructura/Muros' },
+                  { id: 'ETAPA_2', title: '🎨 2. Acabados e Inst.' },
+                  { id: 'ETAPA_3', title: '🚚 3. Campo y Viáticos' }
+                ]);
+                await enviarBotones(from, '👇 *Administrativa:*', [
+                  { id: 'ETAPA_4', title: '📋 4. Admin y Servicios' }
+                ]);
+            } else {
+                await enviarTexto(from, '⚠️ Número de línea inválido. Escribe el número exacto que aparece en la lista (ej. 1, 2, 3):');
+            }
+            res.sendStatus(200);
+            return;
         }
 
         const matchNomina = textBody.match(/^n[oó]mina\s+(\d+(\.\d+)?)/i);
@@ -2743,6 +2872,162 @@ app.post('/webhook', async (req, res) => {
       } else if (msg.type === 'interactive') {
         const respuestaId = msg.interactive.button_reply?.id || msg.interactive.list_reply?.id;
 
+        if (respuestaId?.startsWith('TICKOBRA_')) {
+          const obraMap = {
+            'TICKOBRA_Pelicano': 'Suc. Pelicano',
+            'TICKOBRA_Caldera': 'Suc. Caldera',
+            'TICKOBRA_PedroLoza': 'Demolición Pedro Loza',
+            'TICKOBRA_Salud': 'Suc. Salud',
+            'TICKOBRA_Otro': 'Suc. Otro'
+          };
+          const sesion = sesiones[from];
+          if (sesion && sesion.tipoAccion === 'NUEVO_TICKET') {
+            sesion.obra = obraMap[respuestaId] || 'Suc. Otro';
+            await enviarBotones(from, '💳 *¿Cómo pagaste este ticket?*', [
+              { id: 'TICKPAY_Efectivo', title: 'Efectivo' },
+              { id: 'TICKPAY_Transf', title: 'Transferencia' },
+              { id: 'TICKPAY_Tarjeta', title: 'Tarjeta' }
+            ]);
+          }
+          res.sendStatus(200);
+          return;
+        }
+
+        if (respuestaId?.startsWith('TICKPAY_')) {
+          const sesion = sesiones[from];
+          if (sesion && sesion.tipoAccion === 'NUEVO_TICKET') {
+            if (respuestaId === 'TICKPAY_Efectivo') {
+              sesion.metodo = 'Efectivo';
+              await enviarBotones(from, '📄 *¿Requiere Factura?*', [
+                { id: 'TICKFAC_Si', title: 'Facturado 🟢' },
+                { id: 'TICKFAC_Pendiente', title: 'Pendiente 🟡' },
+                { id: 'TICKFAC_No', title: 'No Requiere 🔴' }
+              ]);
+            } else if (respuestaId === 'TICKPAY_Transf') {
+              sesion.metodo = 'Transferencia';
+              await enviarBotones(from, '🏦 *Selecciona la cuenta:*', [
+                { id: 'TICKSUB_BanamexBeto', title: 'Banamex Beto' },
+                { id: 'TICKSUB_BBVARigo', title: 'BBVA Rigo' },
+                { id: 'TICKSUB_BBVABeto', title: 'BBVA Beto' }
+              ]);
+            } else if (respuestaId === 'TICKPAY_Tarjeta') {
+              sesion.metodo = 'Tarjeta';
+              await enviarBotones(from, '💳 *Selecciona la tarjeta:*', [
+                { id: 'TICKSUB_NU', title: 'NU' },
+                { id: 'TICKSUB_DIDI', title: 'DIDI' },
+                { id: 'TICKSUB_MercadoPago', title: 'MercadoPago' }
+              ]);
+            }
+          }
+          res.sendStatus(200);
+          return;
+        }
+
+        if (respuestaId?.startsWith('TICKSUB_')) {
+          const subMap = {
+            'TICKSUB_BanamexBeto': 'Banamex Beto',
+            'TICKSUB_BBVARigo': 'BBVA Rigo',
+            'TICKSUB_BBVABeto': 'BBVA Beto',
+            'TICKSUB_NU': 'NU',
+            'TICKSUB_DIDI': 'DIDI',
+            'TICKSUB_MercadoPago': 'MercadoPago'
+          };
+          const sesion = sesiones[from];
+          if (sesion && sesion.tipoAccion === 'NUEVO_TICKET') {
+            sesion.subMetodo = subMap[respuestaId] || '';
+            await enviarBotones(from, '📄 *¿Requiere Factura?*', [
+              { id: 'TICKFAC_Si', title: 'Facturado 🟢' },
+              { id: 'TICKFAC_Pendiente', title: 'Pendiente 🟡' },
+              { id: 'TICKFAC_No', title: 'No Requiere 🔴' }
+            ]);
+          }
+          res.sendStatus(200);
+          return;
+        }
+
+        if (respuestaId?.startsWith('TICKFAC_')) {
+          const sesion = sesiones[from];
+          if (sesion && sesion.tipoAccion === 'NUEVO_TICKET') {
+            sesion.estatusFactura = respuestaId === 'TICKFAC_Si' ? 'Facturado 🟢' : (respuestaId === 'TICKFAC_Pendiente' ? 'Pendiente 🟡' : 'No Requiere 🔴');
+
+            await enviarTexto(from, '⚙️ *Motor IA activado.* Extrayendo y clasificando conceptos del ticket... ⏳');
+
+            try {
+              const buffer = await descargarArchivoWhatsApp(sesion.mediaId);
+              const fileName = `Ticket_${sesion.obra.replace(/\s+/g,'_')}_${Date.now()}.jpg`;
+              sesion.linkDrive = await subirArchivoADrive(buffer, fileName, DRIVE_FOLDER_TICKETS_ID, 'image/jpeg');
+
+              const lineas = await procesarTicketConIA(buffer);
+              if (!lineas || lineas.length === 0) throw new Error("IA Empty");
+
+              sesion.lineasIA = lineas;
+              await imprimirResumenTicket(from, sesion);
+            } catch (error) {
+              await enviarTexto(from, '❌ *Error de IA:* No pude leer correctamente el ticket (foto borrosa o no válida). Por favor registra el gasto manualmente.');
+              delete sesiones[from];
+            }
+          }
+          res.sendStatus(200);
+          return;
+        }
+
+        if (respuestaId === 'TICKCONF_Cancel') {
+          await enviarTexto(from, '❌ *Proceso de lectura de ticket cancelado.*');
+          delete sesiones[from];
+          res.sendStatus(200);
+          return;
+        }
+
+        if (respuestaId === 'TICKCONF_Edit') {
+          const sesion = sesiones[from];
+          if (sesion && sesion.tipoAccion === 'NUEVO_TICKET') {
+            sesion.esperandoLineaEditar = true;
+            await enviarTexto(from, '✏️ *Escribe el número de la línea (1, 2, 3...) que deseas reclasificar:*');
+          }
+          res.sendStatus(200);
+          return;
+        }
+
+        if (respuestaId === 'TICKCONF_Ok') {
+          const sesion = sesiones[from];
+          if (sesion && sesion.tipoAccion === 'NUEVO_TICKET') {
+            await enviarTexto(from, '💾 *Guardando en inventario y actualizando estado de cuenta financiero...*');
+            const idMovimiento = 'TICK-' + Date.now().toString().slice(-6);
+
+            await guardarInventarioTicket(idMovimiento, sesion.obra, sesion.lineasIA, sesion.linkDrive);
+
+            const grupos = {};
+            sesion.lineasIA.forEach(l => {
+              if (!grupos[l.categoria]) grupos[l.categoria] = { sum: 0, items: [] };
+              grupos[l.categoria].sum += l.total_linea;
+              grupos[l.categoria].items.push(l.material);
+            });
+
+            for (const [cat, data] of Object.entries(grupos)) {
+              if (data.sum > 0) {
+                const conceptoCorto = `Ticket: ${data.items.join(', ')}`.substring(0, 150);
+                await guardarEnSheets({
+                  idMovimiento: idMovimiento,
+                  obra: sesion.obra,
+                  metodo: sesion.metodo,
+                  subMetodo: sesion.subMetodo,
+                  categoria: cat,
+                  monto: data.sum,
+                  concepto: conceptoCorto,
+                  usuario: sesion.usuario,
+                  estatusFactura: sesion.estatusFactura,
+                  linkFactura: sesion.linkDrive || 'N/A'
+                });
+              }
+            }
+
+            await enviarTexto(from, `✅ *Ticket Procesado Exitosamente*\n\n🆔 *ID:* ${idMovimiento}\n🏗️ *Obra:* ${sesion.obra}\n📊 *Desglose guardado en Inventario y Finanzas*\n👤 *Registró:* ${sesion.usuario}`);
+            delete sesiones[from];
+          }
+          res.sendStatus(200);
+          return;
+        }
+
         if (respuestaId?.startsWith('NOMOBRA_')) {
           const obraMap = {
             'NOMOBRA_Pelicano': 'Suc. Pelicano',
@@ -3286,7 +3571,7 @@ app.post('/webhook', async (req, res) => {
             linksFotos: [],
             usuario: nombreUsuario
           };
-          await enviarBotones(from, '🔨 *Registro de Trabajo Extra*\n\n🏗️ *¿De qué Sucursal/Obra es el trabajo extra?*[cite: 1]', [
+          await enviarBotones(from, '🔨 *Registro de Trabajo Extra*\n\n🏗️ *¿De qué Sucursal/Obra es el trabajo extra?*', [
             { id: 'EXTRAOBRA_Pelicano', title: 'Pelicano' },
             { id: 'EXTRAOBRA_Caldera', title: 'Caldera' },
             { id: 'EXTRAOBRA_PedroLoza', title: 'Pedro Loza' }
@@ -3791,13 +4076,24 @@ app.post('/webhook', async (req, res) => {
             'CAT_30': '30) INDIRECTOS'
           };
 
+          let categoriaAsignada = '';
           if (mapaDirecto[respuestaId]) {
-            sesionActual.categoria = mapaDirecto[respuestaId];
+            categoriaAsignada = mapaDirecto[respuestaId];
           } else {
             const todasSecundarias = ETAPA_1_ESTRUCTURA.concat(ETAPA_2_ACABADOS).concat(ETAPA_3_CAMPO).concat(ETAPA_4_ADMIN);
             const catSel = todasSecundarias.find(c => c.id === respuestaId);
-            sesionActual.categoria = catSel ? catSel.title : '20) VARIOS';
+            categoriaAsignada = catSel ? catSel.title : '20) VARIOS';
           }
+
+          if (sesionActual.tipoAccion === 'NUEVO_TICKET' && sesionActual.esperandoNuevaCatIndex !== undefined) {
+             sesionActual.lineasIA[sesionActual.esperandoNuevaCatIndex].categoria = categoriaAsignada;
+             delete sesionActual.esperandoNuevaCatIndex;
+             await imprimirResumenTicket(from, sesionActual);
+             res.sendStatus(200);
+             return;
+          }
+
+          sesionActual.categoria = categoriaAsignada;
 
           if (sesionActual.categoria.includes('HONORARIOS')) {
             await enviarBotones(from, '👤 *¿Honorarios de quién?*', [
