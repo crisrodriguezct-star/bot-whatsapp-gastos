@@ -488,15 +488,24 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
 
     y += 18;
     doc.fillColor('#000000').fontSize(7.5).font('Helvetica');
-    doc.text('(+) Total Presupuesto / Ingresos Recibidos:', 40, y, { width: 180 });
-    doc.font('Helvetica-Bold').text(formatoMoneda(datos.ingresosTotal), 205, y, { width: 90, align: 'right' });
+    
+    // 1. Presupuesto Autorizado (Con validación si no existe)
+    doc.text('(+) Presupuesto Autorizado:', 40, y, { width: 160 });
+    const textoPresupuesto = datos.presupuestoAutorizado > 0 ? formatoMoneda(datos.presupuestoAutorizado) : 'No se ha ingresado el dato';
+    doc.font('Helvetica-Bold').text(textoPresupuesto, 200, y, { width: 100, align: 'right' });
 
+    // 2. Gastos acumulados a la derecha
     doc.font('Helvetica').fillColor('#991B1B').text('(-) Gastos Acumulados Totales de Obra:', 305, y, { width: 175 });
     doc.font('Helvetica-Bold').text(formatoMoneda(datos.gastosTotal), 480, y, { width: 95, align: 'right' });
 
     y += 14;
+    // 3. Ingresos / Anticipos Recibidos reales debajo del presupuesto
+    doc.fillColor('#000000').font('Helvetica').text('(+) Ingresos / Anticipos Recibidos:', 40, y, { width: 160 });
+    doc.font('Helvetica-Bold').text(formatoMoneda(datos.ingresosTotal), 200, y, { width: 100, align: 'right' });
+
+    y += 16;
     doc.fillColor('#166534').font('Helvetica-Bold').text('(=) SALDO TOTAL DISPONIBLE EN OBRA:', 40, y, { width: 180 });
-    doc.text(formatoMoneda(datos.saldoDisponible), 205, y, { width: 90, align: 'right' });
+    doc.text(formatoMoneda(datos.saldoDisponible), 205, y, { width: 95, align: 'right' });
 
     y += 18;
     doc.rect(35, y, 540, 48).fillAndStroke('#F8FAFC', '#CBD5E1');
@@ -660,7 +669,7 @@ async function generarDatosCorteSemanal(obraBuscada) {
     finDomingo.setHours(23, 59, 59, 999);
 
     let semanaEfectivo = 0, semanaTarjeta = 0, semanaTransferencia = 0;
-    let gastosTotal = 0, ingresosTotal = 0, dotacionesCaja = 0, egresosEfectivoTotal = 0;
+    let gastosTotal = 0, ingresosTotal = 0, presupuestoTotalObra = 0, dotacionesCaja = 0, egresosEfectivoTotal = 0;
     let nominaSemanal = 0, nominaAcumulada = 0;
 
     const cuentas = {
@@ -710,6 +719,10 @@ async function generarDatosCorteSemanal(obraBuscada) {
       if (estatus.includes('CANCELADO') || monto === 0) continue;
 
       if (!obraBuscada || obra.toLowerCase() === obraBuscada.toLowerCase()) {
+        if (concepto.includes('presupuesto total autorizado') || metodo.includes('Control Presupuestal')) {
+          presupuestoTotalObra += monto;
+        }
+
         let fechaMov = new Date(fechaStr);
         const partes = fechaStr.split(',')[0].split('/');
         if (partes.length === 3) {
@@ -822,6 +835,7 @@ async function generarDatosCorteSemanal(obraBuscada) {
       contratistasContrato,
       contratistasPagado,
       contratistasDeuda: contratistasContrato - contratistasPagado,
+      presupuestoAutorizado: presupuestoTotalObra,
       ingresosTotal,
       gastosTotal,
       saldoDisponible,
@@ -1760,7 +1774,6 @@ async function desplegarMenuPrincipal(from) {
   const tieneAccesoDireccion = esDireccion(from);
   const esMickeOusuarioPrueba = ['3331747434', '3313008395'].includes(from.replace(/\D/g, '').slice(-10));
 
-  // Menú unificado y completo para todos los roles operativos, manteniendo privilegios de dirección
   const opciones = [
     { id: 'MENU_PERSONAL', title: '👷‍♂️ Personal Propio', description: 'Altas, bajas, cambio de obra y Visitas' },
     { id: 'MENU_EXTRAS', title: '🔨 Trabajos Extras', description: 'Registro de extras y evidencias con foto' },
@@ -2822,7 +2835,6 @@ app.post('/webhook', async (req, res) => {
         const partes = textBody.split(/\s+/);
         const posibleMonto = limpiarMonto(partes[partes.length - 1]);
         
-        // FILTRO DE SEGURIDAD: Solo procesar como gasto si el mensaje termina con un número válido > 0
         if (!isNaN(posibleMonto) && posibleMonto > 0 && partes.length > 1) {
           const concepto = partes.slice(0, -1).join(' ');
           const monto = posibleMonto;
@@ -2853,7 +2865,6 @@ app.post('/webhook', async (req, res) => {
           res.sendStatus(200);
           return;
         } else {
-          // Si el texto libre no es un comando ni un gasto con número, ignorar o guiar amablemente
           res.sendStatus(200);
           return;
         }
@@ -4182,7 +4193,7 @@ app.post('/webhook', async (req, res) => {
     }
   } catch (error) {
     console.error('❌ Error crítico no controlado en Webhook:', error.message);
-    res.sendStatus(200); // Siempre responder 200 a Meta para evitar reintentos en bucle
+    res.sendStatus(200); 
   }
 });
 
