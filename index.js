@@ -40,7 +40,7 @@ const ETAPA_1_ESTRUCTURA = [
   { id: 'CAT_6', title: '06) EST. CONCRETO MDO' },
   { id: 'CAT_7', title: '07) EST. CONCRETO MAT' },
   { id: 'CAT_8', title: '08) MDO EST. METALICA' },
-  { id: 'CAT_10', title: '10) CUBIERTAS LAMINA' }
+  { id: 'CAT_10', title: '10) CUBIERTAS DE LAMINA' }
 ];
 
 const ETAPA_2_ACABADOS = [
@@ -69,7 +69,8 @@ const ETAPA_4_ADMIN = [
   { id: 'CAT_29', title: '29) RESIDENCIA DE OBRA' }
 ];
 
-const CONTRATISTAS_VALIDOS = ['tablaroca', 'aluminio y vidrio', 'cortinas', 'pintura', 'cubiertas', 'herreria', 'carpinteria'];
+// Se ordenan por longitud para que las validaciones exactas agarren primero la frase completa
+const CONTRATISTAS_VALIDOS = ['cubiertas de lamina', 'aluminio y vidrio', 'carpinteria', 'tablaroca', 'cubiertas', 'cortinas', 'herreria', 'pintura'];
 
 function formatoMoneda(monto) {
   const num = parseFloat(monto) || 0;
@@ -388,7 +389,20 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
 
     y += 36;
     doc.rect(35, y, 540, 16).fill('#000000');
-    doc.fillColor('#FFFFFF').fontSize(8.5).font('Helvetica-Bold').text('2. DESGLOSE DE GASTOS SEMANALES VS ACUMULADO POR CATEGORÍA', 40, y + 4);
+    doc.fillColor('#FFFFFF').fontSize(8.5).font('Helvetica-Bold').text('2. REPORTE DE NÓMINA OPERATIVA', 40, y + 4);
+
+    y += 18;
+    doc.rect(35, y, 540, 20).fill('#F8FAFC');
+    doc.fillColor('#0F172A').fontSize(8).font('Helvetica-Bold');
+    doc.text('Nómina Ejercida en la Semana:', 45, y + 5);
+    doc.fillColor('#991B1B').text(formatoMoneda(datos.nominaSemanal), 200, y + 5);
+
+    doc.fillColor('#0F172A').text('Nómina Acumulada de Obra:', 320, y + 5);
+    doc.fillColor('#991B1B').text(formatoMoneda(datos.nominaAcumulada), 460, y + 5);
+
+    y += 30;
+    doc.rect(35, y, 540, 16).fill('#000000');
+    doc.fillColor('#FFFFFF').fontSize(8.5).font('Helvetica-Bold').text('3. DESGLOSE DE GASTOS SEMANALES VS ACUMULADO POR CATEGORÍA', 40, y + 4);
 
     y += 18;
     doc.rect(35, y, 540, 14).fill('#E2E8F0');
@@ -425,7 +439,7 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
 
     y += 20;
     doc.rect(35, y, 540, 16).fill('#000000');
-    doc.fillColor('#FFFFFF').fontSize(8.5).font('Helvetica-Bold').text('3. ESTADO DE CUENTA DETALLADO DE CONTRATISTAS', 40, y + 4);
+    doc.fillColor('#FFFFFF').fontSize(8.5).font('Helvetica-Bold').text('4. ESTADO DE CUENTA DETALLADO DE CONTRATISTAS', 40, y + 4);
 
     y += 18;
     doc.rect(35, y, 540, 14).fill('#E2E8F0');
@@ -467,7 +481,7 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
 
     y += 20;
     doc.rect(35, y, 540, 16).fill('#000000');
-    doc.fillColor('#FFFFFF').fontSize(8.5).font('Helvetica-Bold').text('4. BALANCE FINANCIERO GENERAL Y DISPONIBILIDAD', 40, y + 4);
+    doc.fillColor('#FFFFFF').fontSize(8.5).font('Helvetica-Bold').text('5. BALANCE FINANCIERO GENERAL Y DISPONIBILIDAD', 40, y + 4);
 
     y += 18;
     doc.fillColor('#000000').fontSize(7.5).font('Helvetica');
@@ -644,6 +658,7 @@ async function generarDatosCorteSemanal(obraBuscada) {
 
     let semanaEfectivo = 0, semanaTarjeta = 0, semanaTransferencia = 0;
     let gastosTotal = 0, ingresosTotal = 0, dotacionesCaja = 0, egresosEfectivoTotal = 0;
+    let nominaSemanal = 0, nominaAcumulada = 0;
 
     const cuentas = {
       banamexBeto: 0,
@@ -671,6 +686,8 @@ async function generarDatosCorteSemanal(obraBuscada) {
       if (obraBuscada && obra.toLowerCase() !== obraBuscada.toLowerCase()) continue;
 
       CONTRATISTAS_VALIDOS.forEach(c => {
+        if (c === 'cubiertas' && (concepto.includes('cubiertas de lamina') || categoria.includes('CUBIERTAS DE LAMINA'))) return;
+
         if ((concepto.includes(c) || categoria.includes(c.toUpperCase())) && !concepto.includes('contrato') && !concepto.includes('cerrado') && !concepto.includes('total autorizado')) {
           totalPagadoContratistasGlobal += monto;
         }
@@ -720,12 +737,19 @@ async function generarDatosCorteSemanal(obraBuscada) {
           dotacionesCaja += monto;
         } else if (concepto.includes('contrato') || concepto.includes('cerrado')) {
           CONTRATISTAS_VALIDOS.forEach(c => {
+            if (c === 'cubiertas' && (concepto.includes('cubiertas de lamina') || categoria.includes('CUBIERTAS DE LAMINA'))) return;
+
             if (concepto.includes(c) || categoria.includes(c.toUpperCase())) {
               detalleContratistas[c].contrato += monto;
             }
           });
         } else if (!metodo.includes('Apertura') && !categoria.includes('CONTROL') && !categoria.includes('APERTURA')) {
           
+          if (categoria.includes('NÓMINA') || categoria.includes('NOMINA') || concepto.includes('nómina') || concepto.includes('nomina')) {
+            nominaAcumulada += monto;
+            if (esSemanaActual) nominaSemanal += monto;
+          }
+
           if (categoria.includes('GASTO HISTORICO INICIAL')) {
             monto = monto - totalPagadoContratistasGlobal;
           }
@@ -748,6 +772,8 @@ async function generarDatosCorteSemanal(obraBuscada) {
         }
 
         CONTRATISTAS_VALIDOS.forEach(c => {
+          if (c === 'cubiertas' && (concepto.includes('cubiertas de lamina') || categoria.includes('CUBIERTAS DE LAMINA'))) return;
+
           if ((concepto.includes(c) || categoria.includes(c.toUpperCase())) && !concepto.includes('contrato') && !concepto.includes('cerrado') && !concepto.includes('total autorizado')) {
             detalleContratistas[c].pagado += monto;
           }
@@ -786,6 +812,8 @@ async function generarDatosCorteSemanal(obraBuscada) {
       semanaTarjeta,
       semanaTransferencia,
       semanaTotal: semanaEfectivo + semanaTarjeta + semanaTransferencia,
+      nominaSemanal,
+      nominaAcumulada,
       partidas: listaPartidas,
       detalleContratistas,
       contratistasContrato,
@@ -1553,6 +1581,8 @@ async function calcularReporteContratistas(obraBuscada) {
       if (obraBuscada && obra.toLowerCase() !== obraBuscada.toLowerCase()) continue;
 
       CONTRATISTAS_VALIDOS.forEach(c => {
+        if (c === 'cubiertas' && (concepto.includes('cubiertas de lamina') || categoria.includes('CUBIERTAS DE LAMINA'))) return;
+
         if (!resultado[c]) resultado[c] = { totalContrato: 0, pagado: 0 };
 
         if (concepto.includes(`contrato ${c}`) || concepto.includes(`total autorizado ${c}`) || concepto.includes(`contrato cerrado ${c}`)) {
@@ -1677,6 +1707,7 @@ async function desplegarGuiaComandos(from) {
 
   let guia = `📝 *GUÍA DE COMANDOS:*\n\n` +
     `• \`[concepto] [monto]\` - Registrar Gasto Rápido\n` +
+    `• \`nomina [monto]\` - Registrar Nómina Global\n` +
     `• \`comparar [mat]\` - Buscar Historial Precios\n` +
     `• \`estatus visita [nombre]\` - Consultar próxima visita\n` +
     `• \`cancelar\` - Anular último registro\n`;
@@ -1758,6 +1789,28 @@ app.post('/webhook', async (req, res) => {
 
         if (/^(comandos)$/i.test(textBody)) {
           await desplegarGuiaComandos(from);
+          res.sendStatus(200);
+          return;
+        }
+
+        const matchNomina = textBody.match(/^n[oó]mina\s+(\d+(\.\d+)?)/i);
+        if (matchNomina) {
+          const montoNomina = limpiarMonto(matchNomina[1]);
+          sesiones[from] = {
+            tipoAccion: 'REGISTRO_NOMINA',
+            monto: montoNomina,
+            usuario: nombreUsuario
+          };
+
+          await enviarBotones(from, `👷‍♂️ *Registro de Nómina:* ${formatoMoneda(montoNomina)}\n\n🏗️ *¿De qué obra es esta nómina?*`, [
+            { id: 'NOMOBRA_Pelicano', title: 'Pelicano' },
+            { id: 'NOMOBRA_Caldera', title: 'Caldera' },
+            { id: 'NOMOBRA_PedroLoza', title: 'Pedro Loza' }
+          ]);
+          await enviarBotones(from, '👇 *Otras Opciones:*', [
+            { id: 'NOMOBRA_Salud', title: 'Salud' },
+            { id: 'NOMOBRA_Otro', title: 'Otro' }
+          ]);
           res.sendStatus(200);
           return;
         }
@@ -2690,6 +2743,88 @@ app.post('/webhook', async (req, res) => {
       } else if (msg.type === 'interactive') {
         const respuestaId = msg.interactive.button_reply?.id || msg.interactive.list_reply?.id;
 
+        if (respuestaId?.startsWith('NOMOBRA_')) {
+          const obraMap = {
+            'NOMOBRA_Pelicano': 'Suc. Pelicano',
+            'NOMOBRA_Caldera': 'Suc. Caldera',
+            'NOMOBRA_PedroLoza': 'Demolición Pedro Loza',
+            'NOMOBRA_Salud': 'Suc. Salud',
+            'NOMOBRA_Otro': 'Suc. Otro'
+          };
+          const sesion = sesiones[from];
+          if (sesion && sesion.tipoAccion === 'REGISTRO_NOMINA') {
+            sesion.obra = obraMap[respuestaId] || 'Suc. Otro';
+            await enviarBotones(from, '💳 *¿Cómo se pagó esta nómina?*', [
+              { id: 'NOMPAY_Efectivo', title: 'Efectivo' },
+              { id: 'NOMPAY_Transf', title: 'Transferencia' }
+            ]);
+          }
+          res.sendStatus(200);
+          return;
+        }
+
+        if (respuestaId?.startsWith('NOMPAY_')) {
+          const sesion = sesiones[from];
+          if (sesion && sesion.tipoAccion === 'REGISTRO_NOMINA') {
+            if (respuestaId === 'NOMPAY_Efectivo') {
+              sesion.metodo = 'Efectivo';
+              sesion.subMetodo = '';
+              
+              await guardarEnSheets({
+                idMovimiento: 'NOM-' + Date.now().toString().slice(-6),
+                obra: sesion.obra,
+                metodo: sesion.metodo,
+                subMetodo: sesion.subMetodo,
+                categoria: '32) NÓMINA DE OBRA',
+                monto: sesion.monto,
+                concepto: 'Pago de Nómina Semanal',
+                usuario: sesion.usuario,
+                estatusFactura: 'No Requiere 🔴',
+                linkFactura: 'N/A'
+              });
+              await enviarTexto(from, `✅ *Nómina Registrada con Éxito*\n\n💵 *Monto:* ${formatoMoneda(sesion.monto)}\n🏗️ *Obra:* ${sesion.obra}\n💳 *Pago:* Efectivo`);
+              delete sesiones[from];
+            } else {
+              sesion.metodo = 'Transferencia';
+              await enviarBotones(from, '🏦 *Selecciona la cuenta de salida:*', [
+                { id: 'NOMSUB_BanamexBeto', title: 'Banamex Beto' },
+                { id: 'NOMSUB_BBVARigo', title: 'BBVA Rigo' },
+                { id: 'NOMSUB_BBVABeto', title: 'BBVA Beto' }
+              ]);
+            }
+          }
+          res.sendStatus(200);
+          return;
+        }
+
+        if (respuestaId?.startsWith('NOMSUB_')) {
+          const subMap = {
+            'NOMSUB_BanamexBeto': 'Banamex Beto',
+            'NOMSUB_BBVARigo': 'BBVA Rigo',
+            'NOMSUB_BBVABeto': 'BBVA Beto'
+          };
+          const sesion = sesiones[from];
+          if (sesion && sesion.tipoAccion === 'REGISTRO_NOMINA') {
+            sesion.subMetodo = subMap[respuestaId] || '';
+            await guardarEnSheets({
+              idMovimiento: 'NOM-' + Date.now().toString().slice(-6),
+              obra: sesion.obra,
+              metodo: sesion.metodo,
+              subMetodo: sesion.subMetodo,
+              categoria: '32) NÓMINA DE OBRA',
+              monto: sesion.monto,
+              concepto: 'Pago de Nómina Semanal',
+              usuario: sesion.usuario,
+              estatusFactura: 'No Requiere 🔴',
+              linkFactura: 'N/A'
+            });
+            await enviarTexto(from, `✅ *Nómina Registrada con Éxito*\n\n💵 *Monto:* ${formatoMoneda(sesion.monto)}\n🏗️ *Obra:* ${sesion.obra}\n💳 *Pago:* Transf (${sesion.subMetodo})`);
+            delete sesiones[from];
+          }
+          res.sendStatus(200);
+          return;
+        }
+
         if (respuestaId === 'OPC_ESTATUS_VISITA') {
           sesiones[from] = { esperandoConsultaVisita: true };
           await enviarTexto(from, '✏️ *Escribe el Nombre (o parte del nombre) del trabajador para consultar cuándo le toca viaje:*');
@@ -2997,13 +3132,17 @@ app.post('/webhook', async (req, res) => {
           if (sesion) {
             await enviarBotones(from, '👷‍♂️ *Selecciona la especialidad del contratista:*', [
               { id: 'ESPCONT_tablaroca', title: 'Tablaroca' },
-              { id: 'ESPCONT_aluminio y vidrio', title: 'Aluminio y Vidrio' },
+              { id: 'ESPCONT_aluminio', title: 'Aluminio y Vidrio' },
               { id: 'ESPCONT_pintura', title: 'Pintura' }
             ]);
             await enviarBotones(from, '👇 *Más Especialidades:*', [
-              { id: 'ESPCONT_cubiertas', title: 'Cubiertas' },
-              { id: 'ESPCONT_cortinas', title: 'Cortinas' },
+              { id: 'ESPCONT_cubiertas', title: 'Cubiertas (Acabados)' },
+              { id: 'ESPCONT_cub_lamina', title: 'Cubiertas de Lámina' },
               { id: 'ESPCONT_herreria', title: 'Herrería' }
+            ]);
+            await enviarBotones(from, '👇 *Otras:*', [
+              { id: 'ESPCONT_cortinas', title: 'Cortinas' },
+              { id: 'ESPCONT_carpinteria', title: 'Carpintería' }
             ]);
           }
           res.sendStatus(200);
@@ -3011,9 +3150,19 @@ app.post('/webhook', async (req, res) => {
         }
 
         if (respuestaId?.startsWith('ESPCONT_')) {
+          const mapEsp = {
+            'ESPCONT_tablaroca': 'tablaroca',
+            'ESPCONT_aluminio': 'aluminio y vidrio',
+            'ESPCONT_pintura': 'pintura',
+            'ESPCONT_cubiertas': 'cubiertas',
+            'ESPCONT_cub_lamina': 'cubiertas de lamina',
+            'ESPCONT_herreria': 'herreria',
+            'ESPCONT_cortinas': 'cortinas',
+            'ESPCONT_carpinteria': 'carpinteria'
+          };
           const sesion = sesiones[from];
           if (sesion) {
-            sesion.especialidadTemp = respuestaId.replace('ESPCONT_', '');
+            sesion.especialidadTemp = mapEsp[respuestaId] || respuestaId.replace('ESPCONT_', '');
             sesion.esperandoMontoContrato = true;
             await enviarTexto(from, `👷‍♂️ *Especialidad:* ${sesion.especialidadTemp.toUpperCase()}\n\n💵 Escribe el *Monto Total del Contrato Cerrado*:`);
           }
