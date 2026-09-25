@@ -257,30 +257,53 @@ async function enviarDocumentoWhatsApp(to, rutaArchivo, nombreArchivo, caption) 
   });
 }
 
+function colocarLogo(doc) {
+  const rutasPosiblesLogo = [
+    path.join(__dirname, 'logo.png'),
+    path.join(__dirname, 'logo.PNG'),
+    path.join(__dirname, 'Imagenes', 'logo.png'),
+    path.join(__dirname, 'imagenes', 'logo.png')
+  ];
+  let rutaLogoEncontrada = rutasPosiblesLogo.find(r => fs.existsSync(r));
+  if (rutaLogoEncontrada) {
+    doc.image(rutaLogoEncontrada, 35, 20, { width: 105 });
+  }
+}
+
+function colocarFirma(doc, nombre, titulo) {
+  const yFirmaSegura = 680; 
+  const xFirma = 350;
+  const anchoFirma = 210;
+
+  const rutasPosiblesFirma = [
+    path.join(__dirname, 'firma.png'),
+    path.join(__dirname, 'firma.PNG'),
+    path.join(__dirname, 'Imagenes', 'firma.png'),
+    path.join(__dirname, 'imagenes', 'firma.png')
+  ];
+  let rutaFirmaEncontrada = rutasPosiblesFirma.find(r => fs.existsSync(r));
+  if (rutaFirmaEncontrada) {
+    doc.image(rutaFirmaEncontrada, xFirma + 55, yFirmaSegura - 45, { width: 95 });
+  }
+
+  doc.moveTo(xFirma, yFirmaSegura + 6).lineTo(xFirma + anchoFirma, yFirmaSegura + 6).strokeColor('#000000').lineWidth(1).stroke();
+  doc.fontSize(8).font('Helvetica-Bold').fillColor('#0F172A').text(nombre, xFirma, yFirmaSegura + 10, { width: anchoFirma, align: 'center' });
+  doc.fontSize(6.5).font('Helvetica').fillColor('#64748B').text(titulo, xFirma, yFirmaSegura + 20, { width: anchoFirma, align: 'center' });
+}
+
+// =========================================================================
+// 1. CORTE MICKE (Gris - Original Intacto)
+// =========================================================================
 function generarPDFCorteMicke(datos, rutaSalida) {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ margin: 35, size: 'LETTER' });
     const stream = fs.createWriteStream(rutaSalida);
     doc.pipe(stream);
+    colocarLogo(doc);
 
-    const rutasPosiblesLogo = [
-      path.join(__dirname, 'logo.png'),
-      path.join(__dirname, 'logo.PNG'),
-      path.join(__dirname, 'Imagenes', 'logo.png'),
-      path.join(__dirname, 'imagenes', 'logo.png')
-    ];
-
-    let rutaLogoEncontrada = rutasPosiblesLogo.find(r => fs.existsSync(r));
-    if (rutaLogoEncontrada) {
-      doc.image(rutaLogoEncontrada, 35, 20, { width: 105 });
-    }
-
-    doc.fillColor('#000000').fontSize(11).font('Helvetica-Bold')
-       .text('CONSTRUCTIVE GALLERY ARCHITECTS', 180, 25, { align: 'right' });
-    doc.fontSize(9).fillColor('#4A5568')
-       .text('CORTE DE CAJA OPERATIVO — MIGUELONCHES', 180, 40, { align: 'right' });
-    doc.fontSize(8).fillColor('#718096')
-       .text(`FECHA CONSULTADA: ${datos.fechaStr}`, 180, 53, { align: 'right' });
+    doc.fillColor('#000000').fontSize(11).font('Helvetica-Bold').text('CONSTRUCTIVE GALLERY ARCHITECTS', 180, 25, { align: 'right' });
+    doc.fontSize(9).fillColor('#4A5568').text('CORTE DE CAJA OPERATIVO — MIGUELONCHES', 180, 40, { align: 'right' });
+    doc.fontSize(8).fillColor('#718096').text(`FECHA CONSULTADA: ${datos.fechaStr}`, 180, 53, { align: 'right' });
 
     doc.moveTo(35, 70).lineTo(575, 70).strokeColor('#000000').lineWidth(1.5).stroke();
 
@@ -291,9 +314,9 @@ function generarPDFCorteMicke(datos, rutaSalida) {
     y += 24;
     const filasReporte = [
       { t: 'TENIA EN CARTERA', v: formatoMoneda(datos.teniaEnCartera) },
-      { t: 'BETO ME DIO O AGARRE EFECTIVO', v: formatoMoneda(datos.betoDioOAgarre) },
+      { t: 'BETO ME DIO O AGARRE EFECTIVO', v: formatoMoneda(datos.recibidoHoy) },
       { t: 'SUMA AGARRE + LO QUE TENIA EN CARTERA', v: formatoMoneda(datos.sumaAgarreMasCartera) },
-      { t: 'TOTAL GASTADO', v: formatoMoneda(datos.totalGastado) },
+      { t: 'TOTAL GASTADO', v: formatoMoneda(datos.gastadoHoy) },
       { t: 'DIFERENCIA', v: formatoMoneda(datos.diferencia) }
     ];
 
@@ -308,72 +331,146 @@ function generarPDFCorteMicke(datos, rutaSalida) {
     doc.rect(35, y, 540, 42).fillAndStroke('#F1F5F9', '#CBD5E1');
     doc.fillColor('#0F172A').fontSize(7.5).font('Helvetica-Bold').text('CONTROL DE CARTERA ACTUAL:', 42, y + 6);
     doc.font('Helvetica').fontSize(7.5);
-    doc.text(`• LO QUE TENGO EN CARTERA ACTUAL: ${formatoMoneda(datos.carteraActual)}`, 45, y + 18);
-    doc.text(`• VALIDACIÓN / CUADRATURA: ${formatoMoneda(datos.cuadraturaFinal)}`, 45, y + 28);
+    doc.text(`• LO QUE TENGO EN CARTERA ACTUAL: ${formatoMoneda(datos.saldoFinal)}`, 45, y + 18);
+    doc.text(`• VALIDACIÓN / CUADRATURA: ${formatoMoneda(datos.saldoFinal)}`, 45, y + 28);
 
-    const yFirmaSegura = 680; 
-    const xFirma = 350;
-    const anchoFirma = 210;
-
-    const rutasPosiblesFirma = [
-      path.join(__dirname, 'firma.png'),
-      path.join(__dirname, 'firma.PNG'),
-      path.join(__dirname, 'Imagenes', 'firma.png'),
-      path.join(__dirname, 'imagenes', 'firma.png')
-    ];
-
-    let rutaFirmaEncontrada = rutasPosiblesFirma.find(r => fs.existsSync(r));
-    if (rutaFirmaEncontrada) {
-      doc.image(rutaFirmaEncontrada, xFirma + 55, yFirmaSegura - 45, { width: 95 });
-    }
-
-    doc.moveTo(xFirma, yFirmaSegura + 6).lineTo(xFirma + anchoFirma, yFirmaSegura + 6).strokeColor('#000000').lineWidth(1).stroke();
-    
-    let yTextoFirma = yFirmaSegura + 10;
-    doc.fontSize(8).font('Helvetica-Bold').fillColor('#0F172A')
-        .text('Firma Operativa — Miguelonches', xFirma, yTextoFirma, { width: anchoFirma, align: 'center' });
-    
-    yTextoFirma += 10;
-    doc.fontSize(6.5).font('Helvetica').fillColor('#64748B')
-        .text('Validación de Cuadratura Diaria', xFirma, yTextoFirma, { width: anchoFirma, align: 'center' });
-
+    colocarFirma(doc, 'Firma Operativa — Miguelonches', 'Validación de Cuadratura Diaria');
     doc.end();
     stream.on('finish', () => resolve(rutaSalida));
     stream.on('error', reject);
   });
 }
 
+// =========================================================================
+// 2. CORTE RIGO (Azul Marino - Términos Específicos)
+// =========================================================================
+function generarPDFCorteRigo(datos, rutaSalida) {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ margin: 35, size: 'LETTER' });
+    const stream = fs.createWriteStream(rutaSalida);
+    doc.pipe(stream);
+    colocarLogo(doc);
+
+    doc.fillColor('#000000').fontSize(11).font('Helvetica-Bold').text('CONSTRUCTIVE GALLERY ARCHITECTS', 180, 25, { align: 'right' });
+    doc.fontSize(10).fillColor('#1E3A8A').text('CORTE DIARIO DE OPERACIÓN — RIGO', 180, 40, { align: 'right' }); 
+    doc.fontSize(8).fillColor('#718096').text(`FECHA DE CORTE: ${datos.fechaStr}`, 180, 53, { align: 'right' });
+
+    doc.moveTo(35, 70).lineTo(575, 70).strokeColor('#1E3A8A').lineWidth(2).stroke();
+
+    let y = 90;
+    doc.rect(35, y, 540, 18).fill('#1E3A8A');
+    doc.fillColor('#FFFFFF').fontSize(9).font('Helvetica-Bold').text('REPORTE Y CONTROL DE CARTERA FÍSICA', 45, y + 5);
+
+    y += 26;
+    doc.fontSize(8.5).font('Helvetica-Bold');
+    
+    // Fila 1: Lo que tenía
+    doc.rect(35, y - 2, 540, 20).fill('#EFF6FF');
+    doc.fillColor('#1E3A8A').text('• CUANTO TENIA EN CARTERA EN EFECTIVO', 45, y + 2);
+    doc.fillColor('#0F172A').text(formatoMoneda(datos.teniaEnCartera), 430, y + 2, { width: 130, align: 'right' });
+    y += 24;
+
+    // Fila 2: Lo que le dieron
+    doc.fillColor('#1E3A8A').text('• CUANTO ME DIO BETO', 45, y + 2);
+    doc.fillColor('#166534').text(`+ ${formatoMoneda(datos.recibidoHoy)}`, 430, y + 2, { width: 130, align: 'right' });
+    y += 24;
+
+    // Fila 3: Total Gastos
+    doc.rect(35, y - 2, 540, 20).fill('#FEF2F2');
+    doc.fillColor('#991B1B').text('• TOTAL GASTOS DEL DIA', 45, y + 2);
+    doc.text(`- ${formatoMoneda(datos.gastadoHoy)}`, 430, y + 2, { width: 130, align: 'right' });
+    y += 24;
+
+    // Fila 4: Total a Favor
+    doc.rect(35, y, 540, 26).fillAndStroke('#F8FAFC', '#1E3A8A');
+    doc.fillColor('#1E3A8A').fontSize(10).text('• Y CUANTO QUEDA A FAVOR', 45, y + 8);
+    doc.fillColor('#000000').text(formatoMoneda(datos.saldoFinal), 430, y + 8, { width: 130, align: 'right' });
+
+    colocarFirma(doc, 'Firma Operativa — Rigo', 'Cuadratura y Cierre de Día');
+    doc.end();
+    stream.on('finish', () => resolve(rutaSalida));
+    stream.on('error', reject);
+  });
+}
+
+// =========================================================================
+// 3. CORTE GENERAL (Paty / Beto - Verde Azulado / Profesional)
+// =========================================================================
+function generarPDFCorteGeneralPersonal(datos, nombrePersona, rutaSalida) {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ margin: 35, size: 'LETTER' });
+    const stream = fs.createWriteStream(rutaSalida);
+    doc.pipe(stream);
+    colocarLogo(doc);
+
+    doc.fillColor('#000000').fontSize(11).font('Helvetica-Bold').text('CONSTRUCTIVE GALLERY ARCHITECTS', 180, 25, { align: 'right' });
+    doc.fontSize(10).fillColor('#0F766E').text(`CORTE FINANCIERO PERSONAL — ${nombrePersona.toUpperCase()}`, 180, 40, { align: 'right' });
+    doc.fontSize(8).fillColor('#718096').text(`FECHA DE EMISIÓN: ${datos.fechaStr}`, 180, 53, { align: 'right' });
+
+    doc.moveTo(35, 70).lineTo(575, 70).strokeColor('#0F766E').lineWidth(2).stroke();
+
+    let y = 90;
+    doc.rect(35, y, 540, 18).fill('#0F766E');
+    doc.fillColor('#FFFFFF').fontSize(9).font('Helvetica-Bold').text('CONCILIACIÓN DE EFECTIVO Y FONDOS ASIGNADOS', 45, y + 5);
+
+    y += 26;
+    doc.fontSize(8.5).font('Helvetica-Bold');
+    
+    doc.rect(35, y - 2, 540, 20).fill('#F0FDFA');
+    doc.fillColor('#115E59').text('Saldo Inicial (Efectivo Anterior):', 45, y + 2);
+    doc.fillColor('#0F172A').text(formatoMoneda(datos.teniaEnCartera), 430, y + 2, { width: 130, align: 'right' });
+    y += 24;
+
+    doc.fillColor('#115E59').text('(+) Fondos Recibidos en la Fecha:', 45, y + 2);
+    doc.fillColor('#166534').text(formatoMoneda(datos.recibidoHoy), 430, y + 2, { width: 130, align: 'right' });
+    y += 24;
+
+    doc.rect(35, y - 2, 540, 20).fill('#FEF2F2');
+    doc.fillColor('#991B1B').text('(-) Egresos Comprobados (Tickets/Gastos):', 45, y + 2);
+    doc.text(formatoMoneda(datos.gastadoHoy), 430, y + 2, { width: 130, align: 'right' });
+    y += 24;
+
+    doc.rect(35, y, 540, 26).fillAndStroke('#F8FAFC', '#0F766E');
+    doc.fillColor('#0F766E').fontSize(10).text('(=) Efectivo Físico Esperado (Saldo a Favor):', 45, y + 8);
+    doc.fillColor('#000000').text(formatoMoneda(datos.saldoFinal), 430, y + 8, { width: 130, align: 'right' });
+
+    colocarFirma(doc, `Auditoría y Control — ${nombrePersona}`, 'Reporte de Responsabilidad de Efectivo');
+    doc.end();
+    stream.on('finish', () => resolve(rutaSalida));
+    stream.on('error', reject);
+  });
+}
+
+// =========================================================================
+// CORTE SEMANAL DIRECCIÓN (CON COLORES E INTER-OBRAS)
+// =========================================================================
 function generarPDFCorteSemanal(datos, rutaSalida) {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ margin: 35, size: 'LETTER' });
     const stream = fs.createWriteStream(rutaSalida);
     doc.pipe(stream);
 
-    const rutasPosiblesLogo = [
-      path.join(__dirname, 'logo.png'),
-      path.join(__dirname, 'logo.PNG'),
-      path.join(__dirname, 'Imagenes', 'logo.png'),
-      path.join(__dirname, 'imagenes', 'logo.png')
-    ];
+    colocarLogo(doc);
 
-    let rutaLogoEncontrada = rutasPosiblesLogo.find(r => fs.existsSync(r));
-    if (rutaLogoEncontrada) {
-      doc.image(rutaLogoEncontrada, 35, 20, { width: 105 });
-    }
+    // Asignación de colores por Obra
+    const coloresObra = {
+      'SUC. PELICANO': '#0369A1',     // Azul
+      'SUC. CALDERA': '#C2410C',      // Naranja
+      'DEMOLICIÓN PEDRO LOZA': '#B91C1C', // Rojo
+      'SUC. SALUD': '#15803D'         // Verde
+    };
+    const colorTema = coloresObra[datos.sucursal.toUpperCase()] || '#1E293B'; // Slate (General)
 
-    doc.fillColor('#000000').fontSize(11).font('Helvetica-Bold')
-       .text('CONSTRUCTIVE GALLERY ARCHITECTS', 180, 25, { align: 'right' });
-    doc.fontSize(9).fillColor('#4A5568')
-       .text('ESTADO DE CUENTA Y CORTE FINANCIERO SEMANAL', 180, 40, { align: 'right' });
+    doc.fillColor('#000000').fontSize(11).font('Helvetica-Bold').text('CONSTRUCTIVE GALLERY ARCHITECTS', 180, 25, { align: 'right' });
+    doc.fontSize(9).fillColor(colorTema).text('ESTADO DE CUENTA Y CORTE FINANCIERO SEMANAL', 180, 40, { align: 'right' });
     
     const textoSemanaObra = datos.semanaObra ? ` | ${datos.semanaObra}` : '';
-    doc.fontSize(8).fillColor('#718096')
-       .text(`SUCURSAL: ${datos.sucursal.toUpperCase()}${textoSemanaObra}  |  PERIODO: ${datos.periodo}`, 180, 53, { align: 'right' });
+    doc.fontSize(8).fillColor('#718096').text(`SUCURSAL: ${datos.sucursal.toUpperCase()}${textoSemanaObra}  |  PERIODO: ${datos.periodo}`, 180, 53, { align: 'right' });
 
-    doc.moveTo(35, 70).lineTo(575, 70).strokeColor('#000000').lineWidth(1.5).stroke();
+    doc.moveTo(35, 70).lineTo(575, 70).strokeColor(colorTema).lineWidth(2).stroke();
 
     let y = 80;
-    doc.rect(35, y, 540, 16).fill('#000000');
+    doc.rect(35, y, 540, 16).fill(colorTema);
     doc.fillColor('#FFFFFF').fontSize(8.5).font('Helvetica-Bold').text('1. RESUMEN DE FLUJO SEMANAL (LUNES A DOMINGO)', 40, y + 4);
 
     y += 20;
@@ -393,7 +490,7 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
     });
 
     y += 36;
-    doc.rect(35, y, 540, 16).fill('#000000');
+    doc.rect(35, y, 540, 16).fill(colorTema);
     doc.fillColor('#FFFFFF').fontSize(8.5).font('Helvetica-Bold').text('2. REPORTE DE NÓMINA OPERATIVA', 40, y + 4);
 
     y += 18;
@@ -406,7 +503,7 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
     doc.fillColor('#991B1B').text(formatoMoneda(datos.nominaAcumulada), 460, y + 5);
 
     y += 30;
-    doc.rect(35, y, 540, 16).fill('#000000');
+    doc.rect(35, y, 540, 16).fill(colorTema);
     doc.fillColor('#FFFFFF').fontSize(8.5).font('Helvetica-Bold').text('3. DESGLOSE DE GASTOS SEMANALES VS ACUMULADO POR CATEGORÍA', 40, y + 4);
 
     y += 18;
@@ -443,7 +540,7 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
     doc.text(formatoMoneda(datos.gastosTotal), 420, y + 3, { width: 150, align: 'right' });
 
     y += 20;
-    doc.rect(35, y, 540, 16).fill('#000000');
+    doc.rect(35, y, 540, 16).fill(colorTema);
     doc.fillColor('#FFFFFF').fontSize(8.5).font('Helvetica-Bold').text('4. ESTADO DE CUENTA DETALLADO DE CONTRATISTAS', 40, y + 4);
 
     y += 18;
@@ -485,7 +582,7 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
     doc.fillColor(datos.contratistasDeuda > 0 ? '#991B1B' : '#0F172A').text(formatoMoneda(datos.contratistasDeuda), 465, y + 3, { width: 105, align: 'right' });
 
     y += 20;
-    doc.rect(35, y, 540, 16).fill('#000000');
+    doc.rect(35, y, 540, 16).fill(colorTema);
     doc.fillColor('#FFFFFF').fontSize(8.5).font('Helvetica-Bold').text('5. BALANCE FINANCIERO GENERAL Y DISPONIBILIDAD', 40, y + 4);
 
     y += 18;
@@ -506,7 +603,23 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
     doc.fillColor('#166534').font('Helvetica-Bold').text('(=) SALDO TOTAL DISPONIBLE EN OBRA:', 40, y, { width: 180 });
     doc.text(formatoMoneda(datos.saldoDisponible), 205, y, { width: 95, align: 'right' });
 
-    y += 18;
+    y += 16;
+    // BALANCE INTER-OBRAS (PRÉSTAMOS CRUZADOS)
+    if (datos.saldoInterObras < 0) {
+        doc.rect(35, y, 540, 16).fill('#FEF2F2');
+        doc.fillColor('#991B1B').font('Helvetica-Bold').text('⚠️ BALANCE DE EFECTIVO CRUZADO (DÉFICIT):', 40, y + 4, { width: 230 });
+        doc.font('Helvetica').text(`Esta obra fue financiada por otras sucursales. Debe reintegrar: ${formatoMoneda(Math.abs(datos.saldoInterObras))}`, 275, y + 4);
+    } else if (datos.saldoInterObras > 0) {
+        doc.rect(35, y, 540, 16).fill('#F0FDFA');
+        doc.fillColor('#115E59').font('Helvetica-Bold').text('✅ BALANCE DE EFECTIVO CRUZADO (A FAVOR):', 40, y + 4, { width: 230 });
+        doc.font('Helvetica').text(`Esta obra financió a otras sucursales. Saldo a cobrar: ${formatoMoneda(datos.saldoInterObras)}`, 275, y + 4);
+    } else {
+        doc.rect(35, y, 540, 16).fill('#F8FAFC');
+        doc.fillColor('#475569').font('Helvetica-Bold').text('⚖️ BALANCE DE EFECTIVO CRUZADO:', 40, y + 4, { width: 230 });
+        doc.font('Helvetica').text('Sin cruces pendientes (Finanzas aisladas correctamente).', 275, y + 4);
+    }
+
+    y += 20;
     doc.rect(35, y, 540, 48).fillAndStroke('#F8FAFC', '#CBD5E1');
     doc.fillColor('#0F172A').fontSize(7.5).font('Helvetica-Bold').text('DESGLOSE DETALLADO DE DISPONIBILIDAD EN CUENTAS:', 42, y + 4);
     
@@ -523,38 +636,16 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
     doc.text(`• En Efectivo (Caja Chica): ${formatoMoneda(datos.saldoEfectivo)}`, 385, y + 16);
     doc.text(`• Total en Bancos: ${formatoMoneda(datos.saldoBanco)}`, 385, y + 28);
 
-    const yFirmaSegura = 700; 
-    const xFirma = 350;
-    const anchoFirma = 210;
-
-    const rutasPosiblesFirma = [
-      path.join(__dirname, 'firma.png'),
-      path.join(__dirname, 'firma.PNG'),
-      path.join(__dirname, 'Imagenes', 'firma.png'),
-      path.join(__dirname, 'imagenes', 'firma.png')
-    ];
-
-    let rutaFirmaEncontrada = rutasPosiblesFirma.find(r => fs.existsSync(r));
-    if (rutaFirmaEncontrada) {
-      doc.image(rutaFirmaEncontrada, xFirma + 55, yFirmaSegura - 45, { width: 95 });
-    }
-
-    doc.moveTo(xFirma, yFirmaSegura + 6).lineTo(xFirma + anchoFirma, yFirmaSegura + 6).strokeColor('#000000').lineWidth(1).stroke();
-    
-    let yTextoFirma = yFirmaSegura + 10;
-    doc.fontSize(8).font('Helvetica-Bold').fillColor('#0F172A')
-        .text('Administración Constructive Gallery Architects', xFirma, yTextoFirma, { width: anchoFirma, align: 'center' });
-    
-    yTextoFirma += 10;
-    doc.fontSize(6.5).font('Helvetica').fillColor('#64748B')
-        .text('Validación y Firma Digital Autónoma', xFirma, yTextoFirma, { width: anchoFirma, align: 'center' });
-
+    colocarFirma(doc, 'Administración Constructive Gallery Architects', 'Validación y Firma Digital Autónoma');
     doc.end();
     stream.on('finish', () => resolve(rutaSalida));
     stream.on('error', reject);
   });
 }
 
+// =========================================================================
+// FUNCIONES AUXILIARES Y DE CÁLCULO
+// =========================================================================
 async function obtenerSemanaObraDesdeSheet(obraBuscada) {
   if (!sheets || !SPREADSHEET_ID || !obraBuscada) return 'Semana 1 de Obra';
   try {
@@ -610,65 +701,72 @@ async function calcularGastosPreviosObra(obraBuscada) {
   }
 }
 
-async function calcularDatosCorteMicke(fechaObjetivo, nombreUsuarioFiltro) {
+// -------------------------------------------------------------
+// CÁLCULO DE CARTERA PERSONAL (ROLLING BALANCE)
+// -------------------------------------------------------------
+async function calcularDatosCortePersonal(fechaObjetivo, nombrePersonaStr) {
   if (!sheets || !SPREADSHEET_ID) return null;
   try {
-    const res = await sheets.spreadsheets.values.get({
-      spreadsheetId: SPREADSHEET_ID,
-      range: 'Hoja 1!A:J'
-    });
+    const res = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: 'Hoja 1!A:J' });
     const filas = res.data.values || [];
 
-    let totalGastado = 0;
-    let efectivoRecibido = 0;
+    let carteraHistoricaAnterior = 0; 
+    let ingresosHoy = 0;
+    let gastosHoy = 0;
 
-    const fechaBusquedaStr = fechaObjetivo.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City' });
+    const fechaFiltroObj = new Date(fechaObjetivo);
+    fechaFiltroObj.setHours(0,0,0,0);
+    const fechaFiltroStr = fechaFiltroObj.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City' });
+    const targetTime = fechaFiltroObj.getTime();
+
+    const mapNombres = { 'micke': 'Miguelonches', 'miguelonches': 'Miguelonches', 'rigo': 'Rigo', 'paty': 'Paty', 'beto': 'Beto' };
+    const nombreNormalizado = mapNombres[nombrePersonaStr.toLowerCase()] || nombrePersonaStr;
 
     for (let i = 1; i < filas.length; i++) {
       const fila = filas[i];
-      const fechaStr = (fila[1] || '').split(',')[0].trim();
+      const fechaTxt = (fila[1] || '').split(',')[0].trim();
       const usuarioReg = (fila[7] || '').trim();
       const metodo = (fila[3] || '').toLowerCase();
       const monto = limpiarMonto(fila[5]);
       const estatus = fila[8] || '';
 
       if (estatus.includes('CANCELADO') || monto === 0) continue;
+      
+      // Filtro para saber si el registro le pertenece a esta persona
+      if (usuarioReg.toLowerCase() !== nombreNormalizado.toLowerCase() && !metodo.includes(`efectivo ${nombreNormalizado.toLowerCase()}`)) {
+         continue; 
+      }
 
-      if (fechaStr === fechaBusquedaStr) {
-        if (usuarioReg.toLowerCase() === nombreUsuarioFiltro.toLowerCase()) {
-          if (metodo.includes('dotación caja chica') || metodo.includes('efectivo micke') || metodo.includes('efectivo')) {
-            if (metodo.includes('ingreso') || metodo.includes('dotación') || metodo.includes('efectivo micke')) {
-              efectivoRecibido += monto;
-            } else {
-              totalGastado += monto;
-            }
-          } else {
-            totalGastado += monto;
-          }
-        }
+      const filaTime = parseFechaMX(fechaTxt);
+      const esIngreso = metodo.includes('ingreso') || metodo.includes('dotación') || metodo.includes('efectivo micke') || metodo.includes('efectivo rigo') || metodo.includes('efectivo paty') || metodo.includes('efectivo beto');
+      const esEgresoEfectivo = metodo.startsWith('efectivo') && !esIngreso;
+
+      // Calcular rolling balance (días anteriores a hoy)
+      if (filaTime < targetTime) {
+         if (esIngreso) carteraHistoricaAnterior += monto;
+         else if (esEgresoEfectivo) carteraHistoricaAnterior -= monto;
+      } 
+      // Calcular movimientos del día exacto consultado
+      else if (fechaTxt === fechaFiltroStr) {
+         if (esIngreso) ingresosHoy += monto;
+         else if (esEgresoEfectivo) gastosHoy += monto;
       }
     }
 
-    const teniaEnCartera = 0; 
-    const betoDioOAgarre = efectivoRecibido;
-    const sumaAgarreMasCartera = teniaEnCartera + betoDioOAgarre;
-    const diferencia = sumaAgarreMasCartera - totalGastado;
-    const carteraActual = diferencia; 
-    const cuadraturaFinal = (carteraActual + totalGastado) - betoDioOAgarre;
+    const sumaAgarreMasCartera = carteraHistoricaAnterior + ingresosHoy;
+    const saldoFinal = sumaAgarreMasCartera - gastosHoy;
 
     return {
-      fechaStr: fechaBusquedaStr,
-      teniaEnCartera,
-      betoDioOAgarre,
-      sumaAgarreMasCartera,
-      totalGastado,
-      diferencia,
-      carteraActual,
-      cuadraturaFinal
+      fechaStr: fechaFiltroStr,
+      teniaEnCartera: carteraHistoricaAnterior,
+      recibidoHoy: ingresosHoy,
+      sumaAgarreMasCartera: sumaAgarreMasCartera,
+      gastadoHoy: gastosHoy,
+      diferencia: saldoFinal,
+      saldoFinal: saldoFinal,
+      cuadraturaFinal: saldoFinal
     };
-  } catch (e) {
-    return null;
-  }
+  } catch (e) { return null; }
 }
 
 async function generarDatosCorteSemanal(obraBuscada) {
@@ -698,13 +796,12 @@ async function generarDatosCorteSemanal(obraBuscada) {
     let gastosTotal = 0, ingresosTotal = 0, presupuestoTotalObra = 0, dotacionesCaja = 0, egresosEfectivoTotal = 0;
     let nominaSemanal = 0, nominaAcumulada = 0;
 
+    // Variables de inter-obras
+    let efectivoDadoAEstaObra = 0;
+    let efectivoGastadoEnEstaObra = 0;
+
     const cuentas = {
-      banamexBeto: 0,
-      bbvaRigo: 0,
-      bbvaBeto: 0,
-      nu: 0,
-      didi: 0,
-      mercadoPago: 0
+      banamexBeto: 0, bbvaRigo: 0, bbvaBeto: 0, nu: 0, didi: 0, mercadoPago: 0
     };
 
     const mapaPartidas = {};
@@ -744,6 +841,19 @@ async function generarDatosCorteSemanal(obraBuscada) {
 
       if (estatus.includes('CANCELADO') || monto === 0) continue;
 
+      // Detectar fondos inyectados a esta obra vs gastados físicamente en esta obra (para cálculo inter-obras)
+      if (obraBuscada && obra.toLowerCase() === obraBuscada.toLowerCase() && (metodo.toLowerCase().includes('efectivo') || metodo.toLowerCase().includes('dotación'))) {
+          // Si es un ingreso de fondo a la persona
+          if (metodo.toLowerCase().includes('efectivo rigo') || metodo.toLowerCase().includes('efectivo paty') || metodo.toLowerCase().includes('efectivo beto') || metodo.toLowerCase().includes('efectivo micke') || metodo.toLowerCase().includes('dotación')) {
+              efectivoDadoAEstaObra += monto;
+          }
+      }
+      
+      // Si el gasto fue pagado en efectivo y asignado a esta obra (independiente de quién pagó)
+      if (obraBuscada && obra.toLowerCase() === obraBuscada.toLowerCase() && metodo.startsWith('Efectivo') && !metodo.toLowerCase().includes('micke') && !metodo.toLowerCase().includes('rigo') && !metodo.toLowerCase().includes('paty') && !metodo.toLowerCase().includes('beto')) {
+          efectivoGastadoEnEstaObra += monto;
+      }
+
       if (!obraBuscada || obra.toLowerCase() === obraBuscada.toLowerCase()) {
         if (concepto.includes('presupuesto total autorizado') || metodo.includes('Control Presupuestal')) {
           presupuestoTotalObra += monto;
@@ -775,17 +885,21 @@ async function generarDatosCorteSemanal(obraBuscada) {
           // Informativo de presupuesto
         } else if (metodo.includes('Ingreso Presupuesto') || concepto.includes('ingreso presupuesto')) {
           ingresosTotal += monto;
-        } else if (metodo.includes('Dotación Caja Chica')) {
-          dotacionesCaja += monto;
+        } else if (metodo.includes('Dotación Caja Chica') || metodo.toLowerCase().includes('efectivo')) {
+           // Solo sumar a dotaciones los que son ingresos (etiquetas con nombres)
+           if (metodo.toLowerCase().includes('efectivo rigo') || metodo.toLowerCase().includes('efectivo paty') || metodo.toLowerCase().includes('efectivo beto') || metodo.toLowerCase().includes('efectivo micke') || metodo.toLowerCase().includes('dotación')) {
+              dotacionesCaja += monto;
+           }
         } else if (concepto.includes('contrato') || concepto.includes('cerrado')) {
           CONTRATISTAS_VALIDOS.forEach(c => {
             if (c === 'cubiertas' && (concepto.includes('cubiertas de lamina') || categoria.includes('CUBIERTAS DE LAMINA'))) return;
-
             if (concepto.includes(c) || categoria.includes(c.toUpperCase())) {
               detalleContratistas[c].contrato += monto;
             }
           });
-        } else if (!metodo.includes('Apertura') && !categoria.includes('CONTROL') && !categoria.includes('APERTURA')) {
+        } 
+        
+        if (!metodo.includes('Apertura') && !categoria.includes('CONTROL') && !categoria.includes('APERTURA') && !metodo.toLowerCase().includes('efectivo micke') && !metodo.toLowerCase().includes('efectivo rigo') && !metodo.toLowerCase().includes('efectivo paty') && !metodo.toLowerCase().includes('efectivo beto') && !metodo.toLowerCase().includes('dotación')) {
           
           if (categoria.includes('NÓMINA') || categoria.includes('NOMINA') || concepto.includes('nómina') || concepto.includes('nomina')) {
             nominaAcumulada += monto;
@@ -868,6 +982,7 @@ async function generarDatosCorteSemanal(obraBuscada) {
       saldoDisponible,
       saldoBanco: saldoBancoTotal > 0 ? saldoBancoTotal : 0,
       saldoEfectivo: saldoEfectivo > 0 ? saldoEfectivo : 0,
+      saldoInterObras: efectivoDadoAEstaObra - efectivoGastadoEnEstaObra,
       cuentas
     };
   } catch (error) {
@@ -1836,7 +1951,7 @@ async function imprimirResumenTicket(from, sesion) {
 
 async function desplegarMenuPrincipal(from) {
   const tieneAccesoDireccion = esDireccion(from);
-  const esMickeOusuarioPrueba = ['3331747434', '3313008395'].includes(from.replace(/\D/g, '').slice(-10));
+  const esPersonalGestor = true;
 
   const opciones = [
     { id: 'MENU_PERSONAL', title: '👷‍♂️ Personal Propio', description: 'Altas, bajas, cambio de obra y Visitas' },
@@ -1857,15 +1972,18 @@ async function desplegarMenuPrincipal(from) {
     );
   }
 
-  if (esMickeOusuarioPrueba) {
-    opciones.push({ id: 'MENU_MICKE_CORTE', title: '📋 Corte Micke (PDF)', description: 'Cuadratura de caja y gastos personales' });
+  if (esPersonalGestor) {
+    opciones.push(
+      { id: 'MENU_RECIBIR_EFECTIVO', title: '💰 Recibir Efectivo', description: 'Registrar efectivo que se me entregó' },
+      { id: 'MENU_CORTE_DIARIO', title: '📋 Mi Corte Diario', description: 'PDF para cuadrar mi cartera física' }
+    );
   }
 
   await enviarLista(from, '🏗️ *PANEL DE CONTROL CENTRAL*\n\nSelecciona la gestión que deseas realizar (o sube la foto de un Ticket para leerlo con IA):', 'Abrir Menú', 'Menú Principal', opciones);
 }
 
 async function desplegarGuiaComandos(from) {
-  const esMickeOusuarioPrueba = ['3331747434', '3313008395'].includes(from.replace(/\D/g, '').slice(-10));
+  const esPersonalGestor = true;
 
   let guia = `📝 *GUÍA DE COMANDOS:*\n\n` +
     `• Sube una foto de ticket para procesamiento IA automático\n` +
@@ -1876,10 +1994,10 @@ async function desplegarGuiaComandos(from) {
     `• \`cancelar\` - Anular último registro\n` +
     `• \`facturar\` - Ver gastos pendientes de factura\n`;
 
-  if (esMickeOusuarioPrueba) {
-    const opcionesMicke = `• \`efectivo micke [monto]\` - Registrar efectivo recibido\n` +
-                          `• \`corte micke\` - Generar PDF de cuadratura de caja\n`;
-    guia += opcionesMicke;
+  if (esPersonalGestor) {
+    const opcionesEfectivo = `• \`efectivo [nombre] [monto]\` - (Ej: efectivo rigo 5000)\n` +
+                             `• \`corte [nombre]\` - (Ej: corte micke)\n`;
+    guia += opcionesEfectivo;
   }
 
   await enviarTexto(from, guia);
@@ -2033,34 +2151,40 @@ app.post('/webhook', async (req, res) => {
           return;
         }
 
-        const matchEfectivoMicke = textBody.match(/^efectivo\s+micke\s+(\d+(\.\d+)?)/i);
-        if (matchEfectivoMicke) {
-          const montoEfectivo = limpiarMonto(matchEfectivoMicke[1]);
+        // COMANDO DE EFECTIVO UNIFICADO
+        const matchEfectivo = textBody.match(/^efectivo\s+(micke|rigo|paty|beto)\s+(\d+(\.\d+)?)/i);
+        if (matchEfectivo) {
+          const personaRecibe = matchEfectivo[1].charAt(0).toUpperCase() + matchEfectivo[1].slice(1).toLowerCase();
+          const montoEfectivo = limpiarMonto(matchEfectivo[2]);
           sesiones[from] = {
-            tipoAccion: 'EFECTIVO_MICKE',
+            tipoAccion: 'ENTREGA_EFECTIVO',
+            personaDestino: personaRecibe,
             monto: montoEfectivo,
             usuario: nombreUsuario
           };
 
-          await enviarBotones(from, `💵 *Efectivo Micke:* ${formatoMoneda(montoEfectivo)}\n\n🏗️ *¿De qué obra proviene este efectivo?*`, [
-            { id: 'MICKEBRA_Pelicano', title: 'Pelicano' },
-            { id: 'MICKEBRA_Caldera', title: 'Caldera' },
-            { id: 'MICKEBRA_PedroLoza', title: 'Pedro Loza' }
+          await enviarBotones(from, `💵 *Efectivo a ${personaRecibe}:* ${formatoMoneda(montoEfectivo)}\n\n🏗️ *¿Para qué obra es este fondo originalmente?*`, [
+            { id: 'EFECTIVOBRA_Pelicano', title: 'Pelicano' },
+            { id: 'EFECTIVOBRA_Caldera', title: 'Caldera' },
+            { id: 'EFECTIVOBRA_PedroLoza', title: 'Pedro Loza' }
           ]);
           await enviarBotones(from, '👇 *Otras Opciones:*', [
-            { id: 'MICKEBRA_Salud', title: 'Salud' },
-            { id: 'MICKEBRA_Otro', title: 'Otro' }
+            { id: 'EFECTIVOBRA_Salud', title: 'Salud' },
+            { id: 'EFECTIVOBRA_Otro', title: 'Otro' }
           ]);
           res.sendStatus(200);
           return;
         }
 
-        if (/^(corte\s+micke|micke\s+corte)$/i.test(textBody)) {
-          sesiones[from] = { tipoAccion: 'CORTE_MICKE' };
-          await enviarBotones(from, '📋 *Corte de Caja (Micke)*\n\n📅 *¿De qué día deseas generar el reporte?*', [
-            { id: 'MICKEFECHA_Hoy', title: 'Hoy' },
-            { id: 'MICKEFECHA_Ayer', title: 'Ayer' },
-            { id: 'MICKEFECHA_Antier', title: 'Antier' }
+        // COMANDO DE CORTE UNIFICADO
+        const matchCorte = textBody.match(/^(corte)\s+(micke|rigo|paty|beto)/i);
+        if (matchCorte) {
+          const personaCorte = matchCorte[2].charAt(0).toUpperCase() + matchCorte[2].slice(1).toLowerCase();
+          sesiones[from] = { tipoAccion: 'CORTE_PERSONAL', personaFiltro: personaCorte };
+          await enviarBotones(from, `📋 *Corte Diario (${personaCorte})*\n\n📅 *¿De qué día deseas cuadrar tu cartera?*`, [
+            { id: 'CORTEFECHA_Hoy', title: 'Hoy' },
+            { id: 'CORTEFECHA_Ayer', title: 'Ayer' },
+            { id: 'CORTEFECHA_Antier', title: 'Antier' }
           ]);
           res.sendStatus(200);
           return;
@@ -2936,6 +3060,135 @@ app.post('/webhook', async (req, res) => {
       } else if (msg.type === 'interactive') {
         const respuestaId = msg.interactive.button_reply?.id || msg.interactive.list_reply?.id;
 
+        // ==========================================
+        // MENÚ EFECTIVO Y CORTES UNIFICADO
+        // ==========================================
+        if (respuestaId === 'MENU_RECIBIR_EFECTIVO') {
+           await enviarBotones(from, '💰 *¿A quién se le entregó el efectivo?*', [
+              { id: 'SEL_EFECTIVO_RIGO', title: 'A Rigo' },
+              { id: 'SEL_EFECTIVO_PATY', title: 'A Paty' },
+              { id: 'SEL_EFECTIVO_MICKE', title: 'A Micke' }
+           ]);
+           await enviarBotones(from, '👇 *Otro:*', [
+              { id: 'SEL_EFECTIVO_BETO', title: 'A Beto (Fondo Propio)' }
+           ]);
+           res.sendStatus(200);
+           return;
+        }
+
+        if (respuestaId?.startsWith('SEL_EFECTIVO_')) {
+           const personaSel = respuestaId.replace('SEL_EFECTIVO_', '');
+           sesiones[from] = {
+             tipoAccion: 'ENTREGA_EFECTIVO_MONTO',
+             personaDestino: personaSel.charAt(0) + personaSel.slice(1).toLowerCase(),
+             usuario: nombreUsuario
+           };
+           await enviarTexto(from, `💵 *Has seleccionado a ${sesiones[from].personaDestino}.*\n\nEscribe la cantidad que se le entregó (ej. 5000):`);
+           res.sendStatus(200);
+           return;
+        }
+
+        if (respuestaId === 'MENU_CORTE_DIARIO') {
+           await enviarBotones(from, '📋 *¿De quién deseas generar el Corte de Cuadratura?*', [
+              { id: 'SEL_CORTE_RIGO', title: 'Corte Rigo' },
+              { id: 'SEL_CORTE_PATY', title: 'Corte Paty' },
+              { id: 'SEL_CORTE_MICKE', title: 'Corte Micke' }
+           ]);
+           await enviarBotones(from, '👇 *Otro:*', [
+              { id: 'SEL_CORTE_BETO', title: 'Corte Beto' }
+           ]);
+           res.sendStatus(200);
+           return;
+        }
+
+        if (respuestaId?.startsWith('SEL_CORTE_')) {
+           const personaSel = respuestaId.replace('SEL_CORTE_', '');
+           sesiones[from] = { tipoAccion: 'CORTE_PERSONAL', personaFiltro: personaSel.charAt(0) + personaSel.slice(1).toLowerCase() };
+           await enviarBotones(from, `📋 *Corte Diario (${sesiones[from].personaFiltro})*\n\n📅 *¿De qué día deseas cuadrar tu cartera?*`, [
+             { id: 'CORTEFECHA_Hoy', title: 'Hoy' },
+             { id: 'CORTEFECHA_Ayer', title: 'Ayer' },
+             { id: 'CORTEFECHA_Antier', title: 'Antier' }
+           ]);
+           res.sendStatus(200);
+           return;
+        }
+
+        if (respuestaId?.startsWith('EFECTIVOBRA_')) {
+          const obraMap = {
+            'EFECTIVOBRA_Pelicano': 'Suc. Pelicano',
+            'EFECTIVOBRA_Caldera': 'Suc. Caldera',
+            'EFECTIVOBRA_PedroLoza': 'Demolición Pedro Loza',
+            'EFECTIVOBRA_Salud': 'Suc. Salud',
+            'EFECTIVOBRA_Otro': 'Suc. Otro'
+          };
+          if (sesionActual && sesionActual.tipoAccion === 'ENTREGA_EFECTIVO') {
+            const obraSeleccionada = obraMap[respuestaId] || 'Suc. Otro';
+            const etiquetaContable = `Efectivo ${sesionActual.personaDestino}`;
+            
+            await guardarEnSheets({
+              idMovimiento: 'FND-' + Date.now().toString().slice(-6),
+              obra: obraSeleccionada,
+              metodo: etiquetaContable,
+              subMetodo: '',
+              categoria: 'Fondo Caja',
+              monto: sesionActual.monto,
+              concepto: `Fondo entregado a ${sesionActual.personaDestino}`,
+              usuario: sesionActual.personaDestino, 
+              estatusFactura: 'No Requiere 🔴',
+              linkFactura: 'N/A'
+            });
+
+            await enviarTexto(from, `✅ *Efectivo Registrado Correctamente*\n\n💵 *Monto:* ${formatoMoneda(sesionActual.monto)}\n🏗️ *Obra Origen:* ${obraSeleccionada}\n👤 *Se asignó a la cartera de:* ${sesionActual.personaDestino}`);
+            delete sesiones[from];
+          }
+          res.sendStatus(200);
+          return;
+        }
+
+        if (respuestaId?.startsWith('CORTEFECHA_')) {
+          const sesion = sesiones[from];
+          if (sesion && sesion.tipoAccion === 'CORTE_PERSONAL') {
+            const fechaObjetivo = new Date();
+            if (respuestaId === 'CORTEFECHA_Ayer') {
+              fechaObjetivo.setDate(fechaObjetivo.getDate() - 1);
+            } else if (respuestaId === 'CORTEFECHA_Antier') {
+              fechaObjetivo.setDate(fechaObjetivo.getDate() - 2);
+            }
+
+            await enviarTexto(from, `⏳ *Calculando movimientos históricos y cuadratura para ${sesion.personaFiltro}...*`);
+
+            const datosCorte = await calcularDatosCortePersonal(fechaObjetivo, sesion.personaFiltro);
+
+            if (datosCorte) {
+              const nombreArchivoPdf = `Corte_${sesion.personaFiltro}_${Date.now()}.pdf`;
+              const rutaPdfLocal = path.join(__dirname, nombreArchivoPdf);
+
+              if (sesion.personaFiltro === 'Micke' || sesion.personaFiltro === 'Miguelonches') {
+                 await generarPDFCorteMicke(datosCorte, rutaPdfLocal);
+              } else if (sesion.personaFiltro === 'Rigo') {
+                 await generarPDFCorteRigo(datosCorte, rutaPdfLocal);
+              } else {
+                 await generarPDFCorteGeneralPersonal(datosCorte, sesion.personaFiltro, rutaPdfLocal);
+              }
+
+              const captionTxt = `📋 *Corte Diario — ${sesion.personaFiltro}*\n📅 *Fecha:* ${datosCorte.fechaStr}\n\n` +
+                `• Efectivo Anterior (A favor): ${formatoMoneda(datosCorte.teniaEnCartera)}\n` +
+                `• Efectivo Recibido Hoy: ${formatoMoneda(datosCorte.recibidoHoy)}\n` +
+                `• Gastos de Hoy: ${formatoMoneda(datosCorte.gastadoHoy)}\n` +
+                `✅ *Saldo Físico Final: ${formatoMoneda(datosCorte.saldoFinal)}*\n\n_(Revisa el PDF para la firma de cuadratura)_`;
+
+              await enviarDocumentoWhatsApp(from, rutaPdfLocal, nombreArchivoPdf, captionTxt);
+
+              if (fs.existsSync(rutaPdfLocal)) fs.unlinkSync(rutaPdfLocal);
+            } else {
+              await enviarTexto(from, '⚠️ Error calculando la cartera de este usuario.');
+            }
+            delete sesiones[from];
+          }
+          res.sendStatus(200);
+          return;
+        }
+
         if (respuestaId?.startsWith('TICKOBRA_')) {
           const obraMap = {
             'TICKOBRA_Pelicano': 'Suc. Pelicano',
@@ -3014,7 +3267,7 @@ app.post('/webhook', async (req, res) => {
           if (sesion && sesion.tipoAccion === 'NUEVO_TICKET') {
             sesion.estatusFactura = respuestaId === 'TICKFAC_Si' ? 'Facturado 🟢' : (respuestaId === 'TICKFAC_Pendiente' ? 'Pendiente 🟡' : 'No Requiere 🔴');
 
-            await enviarTexto(from, '⚙️ *Motor IA activado.* Extrayendo y clasificando conceptos del ticket... ⏳');
+            await enviarTexto(from, '⚙️ *Motor IA Híbrido activado.* Agrupando consumos menores y desglosando materiales... ⏳');
 
             try {
               const buffer = await descargarArchivoWhatsApp(sesion.mediaId);
@@ -3187,90 +3440,6 @@ app.post('/webhook', async (req, res) => {
         if (respuestaId === 'OPC_ESTATUS_VISITA') {
           sesiones[from] = { esperandoConsultaVisita: true };
           await enviarTexto(from, '✏️ *Escribe el Nombre (o parte del nombre) del trabajador para consultar cuándo le toca viaje:*');
-          res.sendStatus(200);
-          return;
-        }
-
-        if (respuestaId?.startsWith('MICKEBRA_')) {
-          const obraMap = {
-            'MICKEBRA_Pelicano': 'Suc. Pelicano',
-            'MICKEBRA_Caldera': 'Suc. Caldera',
-            'MICKEBRA_PedroLoza': 'Demolición Pedro Loza',
-            'MICKEBRA_Salud': 'Suc. Salud',
-            'MICKEBRA_Otro': 'Suc. Otro'
-          };
-          const sesion = sesiones[from];
-          if (sesion && sesion.tipoAccion === 'EFECTIVO_MICKE') {
-            const obraSeleccionada = obraMap[respuestaId] || 'Suc. Otro';
-            
-            await guardarEnSheets({
-              idMovimiento: 'MICKE-' + Date.now().toString().slice(-6),
-              obra: obraSeleccionada,
-              metodo: 'Efectivo Micke',
-              subMetodo: '',
-              categoria: 'Fondo Caja',
-              monto: sesion.monto,
-              concepto: 'Efectivo entregado a Miguelonches',
-              usuario: sesion.usuario,
-              estatusFactura: 'No Requiere 🔴',
-              linkFactura: 'N/A'
-            });
-
-            await enviarTexto(from, `✅ *Efectivo Registrado Correctamente*\n\n💵 *Monto:* ${formatoMoneda(sesion.monto)}\n🏗️ *Obra:* ${obraSeleccionada}\n👤 *Recibió:* ${sesion.usuario}`);
-            delete sesiones[from];
-          }
-          res.sendStatus(200);
-          return;
-        }
-
-        if (respuestaId?.startsWith('MICKEFECHA_')) {
-          const sesion = sesiones[from];
-          if (sesion && sesion.tipoAccion === 'CORTE_MICKE') {
-            const fechaObjetivo = new Date();
-            if (respuestaId === 'MICKEFECHA_Ayer') {
-              fechaObjetivo.setDate(fechaObjetivo.getDate() - 1);
-            } else if (respuestaId === 'MICKEFECHA_Antier') {
-              fechaObjetivo.setDate(fechaObjetivo.getDate() - 2);
-            }
-
-            await enviarTexto(from, `⏳ *Generando Corte y Cuadratura para Miguelonches...*`);
-
-            const datosCorte = await calcularDatosCorteMicke(fechaObjetivo, 'Miguelonches');
-
-            if (datosCorte) {
-              const nombreArchivoPdf = `Corte_Micke_${Date.now()}.pdf`;
-              const rutaPdfLocal = path.join(__dirname, nombreArchivoPdf);
-
-              await generarPDFCorteMicke(datosCorte, rutaPdfLocal);
-
-              const captionTxt = `📋 *Corte Operativo — Miguelonches*\n` +
-                `📅 *Fecha:* ${datosCorte.fechaStr}\n\n` +
-                `• TENIA EN CARTERA: ${formatoMoneda(datosCorte.teniaEnCartera)}\n` +
-                `• BETO ME DIO O AGARRE EFECTIVO: ${formatoMoneda(datosCorte.betoDioOAgarre)}\n` +
-                `• SUMA AGARRE + LO QUE TENIA EN CARTERA: ${formatoMoneda(datosCorte.sumaAgarreMasCartera)}\n` +
-                `• TOTAL GASTADO: ${formatoMoneda(datosCorte.totalGastado)}\n` +
-                `• DIFERENCIA: ${formatoMoneda(datosCorte.diferencia)}\n` +
-                `• LO QUE TENGO EN CARTERA ACTUAL: ${formatoMoneda(datosCorte.carteraActual)}\n`;
-
-              await enviarDocumentoWhatsApp(from, rutaPdfLocal, nombreArchivoPdf, captionTxt);
-
-              if (fs.existsSync(rutaPdfLocal)) fs.unlinkSync(rutaPdfLocal);
-            } else {
-              await enviarTexto(from, '⚠️ No se pudieron procesar los datos para el reporte de Micke.');
-            }
-            delete sesiones[from];
-          }
-          res.sendStatus(200);
-          return;
-        }
-
-        if (respuestaId === 'MENU_MICKE_CORTE') {
-          sesiones[from] = { tipoAccion: 'CORTE_MICKE' };
-          await enviarBotones(from, '📋 *Corte de Caja (Micke)*\n\n📅 *¿De qué día deseas generar el reporte?*', [
-            { id: 'MICKEFECHA_Hoy', title: 'Hoy' },
-            { id: 'MICKEFECHA_Ayer', title: 'Ayer' },
-            { id: 'MICKEFECHA_Antier', title: 'Antier' }
-          ]);
           res.sendStatus(200);
           return;
         }
@@ -3557,7 +3726,7 @@ app.post('/webhook', async (req, res) => {
           const sesion = sesiones[from];
           if (sesion) {
             sesion.obra = obraMap[respuestaId] || 'Suc. Otro';
-            sesion.categoria = sesion.especialidadTemp.toUpperCase();
+            sesion.categoria = sesion.especialidadTemp ? sesion.especialidadTemp.toUpperCase() : 'CONTRATO';
             sesion.metodo = 'Transferencia';
             sesion.estatusFactura = 'No Requiere 🔴';
 
@@ -3620,7 +3789,7 @@ app.post('/webhook', async (req, res) => {
             return;
           }
           const rep = await calcularReportePresupuestos();
-          let msgTexto = '🏦 *Avance de Presupuestos Autorizados (Farmacias):*\n\n';
+          let msgTexto = '🏦 *Avance de Presupuestos Autorizados:*\n\n';
           Object.keys(rep).forEach(o => {
             const t = rep[o];
             const porCobrar = t.presupuestoTotal - t.liberado;
@@ -4287,4 +4456,4 @@ async function pedirFactura(from) {
   ]);
 }
 
-app.listen(PORT, () => console.log(`Servidor en puerto ${PORT}`));
+app.listen(PORT, () => console.log(`Servidor de Constructive Gallery activo en puerto ${PORT}`));
