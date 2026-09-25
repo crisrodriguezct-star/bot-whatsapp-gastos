@@ -342,7 +342,7 @@ function generarPDFCorteMicke(datos, rutaSalida) {
 }
 
 // =========================================================================
-// 2. CORTE RIGO (Azul Marino - Términos Específicos)
+// 2. CORTE RIGO (Azul Marino - Términos Profesionales Ajustados)
 // =========================================================================
 function generarPDFCorteRigo(datos, rutaSalida) {
   return new Promise((resolve, reject) => {
@@ -364,26 +364,22 @@ function generarPDFCorteRigo(datos, rutaSalida) {
     y += 26;
     doc.fontSize(8.5).font('Helvetica-Bold');
     
-    // Fila 1: Lo que tenía
     doc.rect(35, y - 2, 540, 20).fill('#EFF6FF');
-    doc.fillColor('#1E3A8A').text('• CUANTO TENIA EN CARTERA EN EFECTIVO', 45, y + 2);
+    doc.fillColor('#1E3A8A').text('• Saldo Inicial en Cartera (Efectivo Anterior)', 45, y + 2);
     doc.fillColor('#0F172A').text(formatoMoneda(datos.teniaEnCartera), 430, y + 2, { width: 130, align: 'right' });
     y += 24;
 
-    // Fila 2: Lo que le dieron
-    doc.fillColor('#1E3A8A').text('• CUANTO ME DIO BETO', 45, y + 2);
+    doc.fillColor('#1E3A8A').text('• Fondos Recibidos (Asignación Beto)', 45, y + 2);
     doc.fillColor('#166534').text(`+ ${formatoMoneda(datos.recibidoHoy)}`, 430, y + 2, { width: 130, align: 'right' });
     y += 24;
 
-    // Fila 3: Total Gastos
     doc.rect(35, y - 2, 540, 20).fill('#FEF2F2');
-    doc.fillColor('#991B1B').text('• TOTAL GASTOS DEL DIA', 45, y + 2);
+    doc.fillColor('#991B1B').text('• Egresos Totales Comprobados del Día', 45, y + 2);
     doc.text(`- ${formatoMoneda(datos.gastadoHoy)}`, 430, y + 2, { width: 130, align: 'right' });
     y += 24;
 
-    // Fila 4: Total a Favor
     doc.rect(35, y, 540, 26).fillAndStroke('#F8FAFC', '#1E3A8A');
-    doc.fillColor('#1E3A8A').fontSize(10).text('• Y CUANTO QUEDA A FAVOR', 45, y + 8);
+    doc.fillColor('#1E3A8A').fontSize(10).text('• Efectivo en Cartera a Favor (Saldo Físico)', 45, y + 8);
     doc.fillColor('#000000').text(formatoMoneda(datos.saldoFinal), 430, y + 8, { width: 130, align: 'right' });
 
     colocarFirma(doc, 'Firma Operativa — Rigo', 'Cuadratura y Cierre de Día');
@@ -452,14 +448,13 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
 
     colocarLogo(doc);
 
-    // Asignación de colores por Obra
     const coloresObra = {
-      'SUC. PELICANO': '#0369A1',     // Azul
-      'SUC. CALDERA': '#C2410C',      // Naranja
-      'DEMOLICIÓN PEDRO LOZA': '#B91C1C', // Rojo
-      'SUC. SALUD': '#15803D'         // Verde
+      'SUC. PELICANO': '#0369A1',     
+      'SUC. CALDERA': '#C2410C',      
+      'DEMOLICIÓN PEDRO LOZA': '#B91C1C', 
+      'SUC. SALUD': '#15803D'         
     };
-    const colorTema = coloresObra[datos.sucursal.toUpperCase()] || '#1E293B'; // Slate (General)
+    const colorTema = coloresObra[datos.sucursal.toUpperCase()] || '#1E293B'; 
 
     doc.fillColor('#000000').fontSize(11).font('Helvetica-Bold').text('CONSTRUCTIVE GALLERY ARCHITECTS', 180, 25, { align: 'right' });
     doc.fontSize(9).fillColor(colorTema).text('ESTADO DE CUENTA Y CORTE FINANCIERO SEMANAL', 180, 40, { align: 'right' });
@@ -604,7 +599,6 @@ function generarPDFCorteSemanal(datos, rutaSalida) {
     doc.text(formatoMoneda(datos.saldoDisponible), 205, y, { width: 95, align: 'right' });
 
     y += 16;
-    // BALANCE INTER-OBRAS (PRÉSTAMOS CRUZADOS)
     if (datos.saldoInterObras < 0) {
         doc.rect(35, y, 540, 16).fill('#FEF2F2');
         doc.fillColor('#991B1B').font('Helvetica-Bold').text('⚠️ BALANCE DE EFECTIVO CRUZADO (DÉFICIT):', 40, y + 4, { width: 230 });
@@ -701,9 +695,6 @@ async function calcularGastosPreviosObra(obraBuscada) {
   }
 }
 
-// -------------------------------------------------------------
-// CÁLCULO DE CARTERA PERSONAL (ROLLING BALANCE)
-// -------------------------------------------------------------
 async function calcularDatosCortePersonal(fechaObjetivo, nombrePersonaStr) {
   if (!sheets || !SPREADSHEET_ID) return null;
   try {
@@ -732,7 +723,6 @@ async function calcularDatosCortePersonal(fechaObjetivo, nombrePersonaStr) {
 
       if (estatus.includes('CANCELADO') || monto === 0) continue;
       
-      // Filtro para saber si el registro le pertenece a esta persona
       if (usuarioReg.toLowerCase() !== nombreNormalizado.toLowerCase() && !metodo.includes(`efectivo ${nombreNormalizado.toLowerCase()}`)) {
          continue; 
       }
@@ -741,13 +731,10 @@ async function calcularDatosCortePersonal(fechaObjetivo, nombrePersonaStr) {
       const esIngreso = metodo.includes('ingreso') || metodo.includes('dotación') || metodo.includes('efectivo micke') || metodo.includes('efectivo rigo') || metodo.includes('efectivo paty') || metodo.includes('efectivo beto');
       const esEgresoEfectivo = metodo.startsWith('efectivo') && !esIngreso;
 
-      // Calcular rolling balance (días anteriores a hoy)
       if (filaTime < targetTime) {
          if (esIngreso) carteraHistoricaAnterior += monto;
          else if (esEgresoEfectivo) carteraHistoricaAnterior -= monto;
-      } 
-      // Calcular movimientos del día exacto consultado
-      else if (fechaTxt === fechaFiltroStr) {
+      } else if (fechaTxt === fechaFiltroStr) {
          if (esIngreso) ingresosHoy += monto;
          else if (esEgresoEfectivo) gastosHoy += monto;
       }
@@ -796,7 +783,6 @@ async function generarDatosCorteSemanal(obraBuscada) {
     let gastosTotal = 0, ingresosTotal = 0, presupuestoTotalObra = 0, dotacionesCaja = 0, egresosEfectivoTotal = 0;
     let nominaSemanal = 0, nominaAcumulada = 0;
 
-    // Variables de inter-obras
     let efectivoDadoAEstaObra = 0;
     let efectivoGastadoEnEstaObra = 0;
 
@@ -841,15 +827,12 @@ async function generarDatosCorteSemanal(obraBuscada) {
 
       if (estatus.includes('CANCELADO') || monto === 0) continue;
 
-      // Detectar fondos inyectados a esta obra vs gastados físicamente en esta obra (para cálculo inter-obras)
       if (obraBuscada && obra.toLowerCase() === obraBuscada.toLowerCase() && (metodo.toLowerCase().includes('efectivo') || metodo.toLowerCase().includes('dotación'))) {
-          // Si es un ingreso de fondo a la persona
           if (metodo.toLowerCase().includes('efectivo rigo') || metodo.toLowerCase().includes('efectivo paty') || metodo.toLowerCase().includes('efectivo beto') || metodo.toLowerCase().includes('efectivo micke') || metodo.toLowerCase().includes('dotación')) {
               efectivoDadoAEstaObra += monto;
           }
       }
       
-      // Si el gasto fue pagado en efectivo y asignado a esta obra (independiente de quién pagó)
       if (obraBuscada && obra.toLowerCase() === obraBuscada.toLowerCase() && metodo.startsWith('Efectivo') && !metodo.toLowerCase().includes('micke') && !metodo.toLowerCase().includes('rigo') && !metodo.toLowerCase().includes('paty') && !metodo.toLowerCase().includes('beto')) {
           efectivoGastadoEnEstaObra += monto;
       }
@@ -886,7 +869,6 @@ async function generarDatosCorteSemanal(obraBuscada) {
         } else if (metodo.includes('Ingreso Presupuesto') || concepto.includes('ingreso presupuesto')) {
           ingresosTotal += monto;
         } else if (metodo.includes('Dotación Caja Chica') || metodo.toLowerCase().includes('efectivo')) {
-           // Solo sumar a dotaciones los que son ingresos (etiquetas con nombres)
            if (metodo.toLowerCase().includes('efectivo rigo') || metodo.toLowerCase().includes('efectivo paty') || metodo.toLowerCase().includes('efectivo beto') || metodo.toLowerCase().includes('efectivo micke') || metodo.toLowerCase().includes('dotación')) {
               dotacionesCaja += monto;
            }
@@ -901,7 +883,7 @@ async function generarDatosCorteSemanal(obraBuscada) {
         
         if (!metodo.includes('Apertura') && !categoria.includes('CONTROL') && !categoria.includes('APERTURA') && !metodo.toLowerCase().includes('efectivo micke') && !metodo.toLowerCase().includes('efectivo rigo') && !metodo.toLowerCase().includes('efectivo paty') && !metodo.toLowerCase().includes('efectivo beto') && !metodo.toLowerCase().includes('dotación')) {
           
-          if (categoria.includes('NÓMINA') || categoria.includes('NOMINA') || concepto.includes('nómina') || concepto.includes('nomina')) {
+          if (categoria.includes('NÓMINA') || categoria.includes('NOMINA') || concepto.includes('nómina') || concepto.includes('nomina') || categoria.includes('ALBAÑILERIA MDO')) {
             nominaAcumulada += monto;
             if (esSemanaActual) nominaSemanal += monto;
           }
@@ -1306,6 +1288,34 @@ async function guardarEnSheets(datos) {
     });
   } catch (error) {
     console.error('❌ Error guardando en Sheets:', error.message);
+  }
+}
+
+async function guardarDesgloseNomina(idMovimiento, obra, semana, trabajadores) {
+  if (!sheets || !SPREADSHEET_PERSONAL_ID || !trabajadores || trabajadores.length === 0) return;
+  try {
+    const fechaHora = new Date().toLocaleString('es-MX', { timeZone: 'America/Mexico_City' });
+    const valores = trabajadores.map(t => [
+      idMovimiento,
+      fechaHora,
+      semana || 'N/A',
+      obra || 'N/A',
+      t.nombre || 'N/A',
+      t.puesto || 'N/A',
+      t.base || 0,
+      t.extras || 0,
+      t.total || 0,
+      t.comentarios || ''
+    ]);
+    
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SPREADSHEET_PERSONAL_ID,
+      range: 'AUDITORIA_NOMINAS!A:J',
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: valores }
+    });
+  } catch (error) {
+    console.error('❌ Error guardando desglose de nóminas:', error.message);
   }
 }
 
@@ -1885,7 +1895,7 @@ async function procesarBusquedaCambioObra(from, busqueda) {
 }
 
 // =========================================================================
-// MOTOR IA HÍBRIDO (Materiales Críticos Individuales vs. Consumos Agrupados)
+// MOTORES DE IA (MATERIALES Y NÓMINA)
 // =========================================================================
 async function procesarTicketConIA(bufferImagen) {
   try {
@@ -1916,10 +1926,7 @@ async function procesarTicketConIA(bufferImagen) {
     `;
 
     const imageParts = [{
-      inlineData: {
-        data: bufferImagen.toString("base64"),
-        mimeType: "image/jpeg"
-      }
+      inlineData: { data: bufferImagen.toString("base64"), mimeType: "image/jpeg" }
     }];
 
     const result = await model.generateContent([prompt, ...imageParts]);
@@ -1927,7 +1934,50 @@ async function procesarTicketConIA(bufferImagen) {
     
     return JSON.parse(responseText);
   } catch (error) {
-    console.error('Error procesando IA:', error);
+    console.error('Error procesando IA (Ticket):', error);
+    return null;
+  }
+}
+
+async function procesarNominaConIA(bufferImagen, obraIndicada) {
+  try {
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const prompt = `
+      Eres un auditor contable experto. Analiza esta imagen de una nómina semanal de obra.
+      Si la obra preseleccionada por el sistema es "${obraIndicada}", respétala y úsala como valor "obra" a menos que el encabezado indique explícitamente y de manera contundente otra sucursal.
+      Extrae los siguientes datos clave:
+      1. "obra": El nombre de la sucursal o farmacia.
+      2. "semana": El periodo indicado (ej. "Semana 14").
+      3. "total_nomina": El gran total numérico a pagar al pie de la tabla (ej. 65433).
+      4. "trabajadores": Un arreglo con cada fila de la tabla desglosada. Por cada trabajador extrae:
+         - "nombre": Nombre del trabajador.
+         - "puesto": Puesto o cargo.
+         - "base": Nómina base (número).
+         - "extras": Extras (número, 0 si no hay).
+         - "total": Total de la fila (número).
+         - "comentarios": Comentarios (texto, cadena vacía si no hay).
+
+      Devuelve ÚNICAMENTE un objeto JSON válido sin texto extra ni etiquetas de markdown:
+      {
+        "obra": "${obraIndicada}",
+        "semana": "Semana 14",
+        "total_nomina": 65433.00,
+        "trabajadores": [
+          { "nombre": "Jose Manuel", "puesto": "Maestro enc", "base": 7500.0, "extras": 0.0, "total": 7500.0, "comentarios": "" }
+        ]
+      }
+    `;
+
+    const imageParts = [{
+      inlineData: { data: bufferImagen.toString("base64"), mimeType: "image/jpeg" }
+    }];
+
+    const result = await model.generateContent([prompt, ...imageParts]);
+    const responseText = result.response.text().replace(/```json/g, '').replace(/```/g, '').trim();
+    
+    return JSON.parse(responseText);
+  } catch (error) {
+    console.error('Error procesando IA (Nómina):', error);
     return null;
   }
 }
@@ -1957,6 +2007,7 @@ async function desplegarMenuPrincipal(from) {
     { id: 'MENU_PERSONAL', title: '👷‍♂️ Personal Propio', description: 'Altas, bajas, cambio de obra y Visitas' },
     { id: 'MENU_EXTRAS', title: '🔨 Trabajos Extras', description: 'Registro de extras y evidencias con foto' },
     { id: 'MENU_PRECIOS', title: '🏷️ Precios Materiales', description: 'Registrar precio y comparar cotizaciones' },
+    { id: 'MENU_SUBIR_NOMINA', title: '📋 Subir Nómina Semanal', description: 'Enviar foto de tabla de nómina para IA' },
     { id: 'OPC_VER_FAC', title: '📋 Gastos Pendientes', description: 'Ver y resolver gastos pendientes de factura' },
     { id: 'MENU_CORREGIR', title: '✏️ Corregir Últimos Gastos', description: 'Modificar monto o anular gasto con un toque' }
   ];
@@ -1987,8 +2038,9 @@ async function desplegarGuiaComandos(from) {
 
   let guia = `📝 *GUÍA DE COMANDOS:*\n\n` +
     `• Sube una foto de ticket para procesamiento IA automático\n` +
+    `• \`nomina [obra]\` - Subir foto directa de nómina (ej: nomina calderas)\n` +
     `• \`[concepto] [monto]\` - Registrar Gasto Rápido\n` +
-    `• \`nomina [monto]\` - Registrar Nómina Global\n` +
+    `• \`nomina [monto]\` - Registrar Nómina Manualmente\n` +
     `• \`comparar [mat]\` - Buscar Historial Precios\n` +
     `• \`estatus visita [nombre]\` - Consultar próxima visita\n` +
     `• \`cancelar\` - Anular último registro\n` +
@@ -2021,6 +2073,9 @@ app.post('/webhook', async (req, res) => {
       const tieneAccesoDireccion = esDireccion(from);
       const sesionActual = sesiones[from];
 
+      // ==========================================
+      // MANEJO DE IMÁGENES
+      // ==========================================
       if (msg.type === 'image' || msg.type === 'video') {
         if (sesionActual && sesionActual.esperandoFotosExtra) {
           const mediaId = msg.type === 'image' ? msg.image.id : msg.video.id;
@@ -2057,26 +2112,72 @@ app.post('/webhook', async (req, res) => {
           }
           res.sendStatus(200);
           return;
-        } else if (msg.type === 'image') {
+        } 
+        
+        else if (sesionActual && sesionActual.tipoAccion === 'ESPERANDO_FOTO_NOMINA') {
+          await enviarTexto(from, '⏳ *Procesando tabla de nómina con IA (extrayendo total y desglosando trabajadores)...*');
+          try {
+            const buffer = await descargarArchivoWhatsApp(msg.image.id);
+            const nominaResult = await procesarNominaConIA(buffer, sesionActual.obra || 'Suc. Otro');
+            
+            if (!nominaResult || !nominaResult.total_nomina) throw new Error("Nomina Empty");
+
+            const folderMesId = await obtenerOcrearCarpetaMesTickets(DRIVE_FOLDER_TICKETS_ID);
+            const diaActual = new Date().getDate().toString().padStart(2, '0');
+            const obraLimpia = (nominaResult.obra || 'Obra').replace(/^Suc\.\s*/i, '').replace(/\s+/g, '_');
+            const semanaLimpia = (nominaResult.semana || 'Nomina').replace(/\s+/g, '_');
+            const fileName = `Nomina_${diaActual}_${semanaLimpia}_${obraLimpia}.jpg`;
+
+            const linkDrive = await subirArchivoADrive(buffer, fileName, folderMesId, 'image/jpeg');
+            const idMovimiento = 'NOM-' + Date.now().toString().slice(-6);
+
+            // 1. Guardar Gasto Global en Hoja 1 en ALBAÑILERIA MDO
+            await guardarEnSheets({
+              idMovimiento: idMovimiento,
+              obra: nominaResult.obra || sesionActual.obra || 'Suc. Pelicano',
+              metodo: 'Transferencia', 
+              subMetodo: 'Banamex Beto',
+              categoria: '02) ALBAÑILERIA MDO',
+              monto: nominaResult.total_nomina,
+              concepto: `Nómina Semanal (${nominaResult.semana || 'Semanal'}) - AI Reader`,
+              usuario: nombreUsuario, 
+              estatusFactura: 'No Requiere 🔴', 
+              linkFactura: linkDrive
+            });
+
+            // 2. Guardar Desglose Fino en la Hoja de Auditoría
+            if (nominaResult.trabajadores && nominaResult.trabajadores.length > 0) {
+              await guardarDesgloseNomina(idMovimiento, nominaResult.obra, nominaResult.semana, nominaResult.trabajadores);
+            }
+
+            await enviarTexto(from, `✅ *Nómina Procesada Exitosamente por IA*\n\n🏗️ *Obra:* ${nominaResult.obra}\n📅 *Periodo:* ${nominaResult.semana}\n💵 *Total Extraído:* ${formatoMoneda(nominaResult.total_nomina)}\n👥 *Trabajadores Auditados:* ${nominaResult.trabajadores ? nominaResult.trabajadores.length : 0}\n📂 *Categoría Asignada:* 02) ALBAÑILERIA MDO\n📁 *Drive:* Foto guardada y auditoría alimentada 📸`);
+            delete sesiones[from];
+          } catch (e) {
+            await enviarTexto(from, '⚠️ Error de IA leyendo la tabla. Intenta enviar una foto más nítida o registra por texto con `nomina [monto]`.');
+            delete sesiones[from];
+          }
+          res.sendStatus(200);
+          return;
+        }
+
+        else if (msg.type === 'image') {
           sesiones[from] = {
             tipoAccion: 'NUEVO_TICKET',
             mediaId: msg.image.id,
             usuario: nombreUsuario
           };
-          await enviarBotones(from, '📸 *Ticket de Material detectado.*\n\n🏗️ *¿A qué Sucursal pertenece esta compra?*', [
-            { id: 'TICKOBRA_Pelicano', title: 'Pelicano' },
-            { id: 'TICKOBRA_Caldera', title: 'Caldera' },
-            { id: 'TICKOBRA_PedroLoza', title: 'Pedro Loza' }
-          ]);
-          await enviarBotones(from, '👇 *Otras Opciones:*', [
-            { id: 'TICKOBRA_Salud', title: 'Salud' },
-            { id: 'TICKOBRA_Otro', title: 'Otro' }
+          await enviarBotones(from, '📸 *Imagen detectada.*\n\n¿Qué tipo de documento es?', [
+            { id: 'TIPO_TICKET', title: '🧾 Ticket de Compra' },
+            { id: 'TIPO_NOMINA', title: '📋 Tabla de Nómina' }
           ]);
           res.sendStatus(200);
           return;
         }
       }
 
+      // ==========================================
+      // MANEJO DE TEXTO
+      // ==========================================
       if (msg.type === 'text') {
         const textBody = msg.text.body.trim();
 
@@ -2112,6 +2213,16 @@ app.post('/webhook', async (req, res) => {
             return;
         }
 
+        // COMANDO DIRECTO: NOMINA [OBRA] (Ej. nomina calderas)
+        const matchNominaObra = textBody.match(/^n[oó]mina\s+([a-zA-Záéíóúñ\s]+)$/i);
+        if (matchNominaObra && !/^\d+$/.test(matchNominaObra[1].trim())) {
+           const obraMencionada = matchNominaObra[1].trim();
+           sesiones[from] = { tipoAccion: 'ESPERANDO_FOTO_NOMINA', obra: obraMencionada, usuario: nombreUsuario };
+           await enviarTexto(from, `📋 *Modo Nómina Activado.*\n\nEntendido. Sube la foto de la nómina correspondiente a Sucursal *${obraMencionada.toUpperCase()}*. La IA extraerá a los trabajadores y guardará el total en automático.`);
+           res.sendStatus(200);
+           return;
+        }
+
         const matchNomina = textBody.match(/^n[oó]mina\s+(\d+(\.\d+)?)/i);
         if (matchNomina) {
           const montoNomina = limpiarMonto(matchNomina[1]);
@@ -2121,7 +2232,7 @@ app.post('/webhook', async (req, res) => {
             usuario: nombreUsuario
           };
 
-          await enviarBotones(from, `👷‍♂️ *Registro de Nómina:* ${formatoMoneda(montoNomina)}\n\n🏗️ *¿De qué obra es esta nómina?*`, [
+          await enviarBotones(from, `👷‍♂️ *Registro de Nómina (Manual):* ${formatoMoneda(montoNomina)}\n\n🏗️ *¿De qué obra es esta nómina?*`, [
             { id: 'NOMOBRA_Pelicano', title: 'Pelicano' },
             { id: 'NOMOBRA_Caldera', title: 'Caldera' },
             { id: 'NOMOBRA_PedroLoza', title: 'Pedro Loza' }
@@ -2151,7 +2262,6 @@ app.post('/webhook', async (req, res) => {
           return;
         }
 
-        // COMANDO DE EFECTIVO UNIFICADO
         const matchEfectivo = textBody.match(/^efectivo\s+(micke|rigo|paty|beto)\s+(\d+(\.\d+)?)/i);
         if (matchEfectivo) {
           const personaRecibe = matchEfectivo[1].charAt(0).toUpperCase() + matchEfectivo[1].slice(1).toLowerCase();
@@ -2176,7 +2286,6 @@ app.post('/webhook', async (req, res) => {
           return;
         }
 
-        // COMANDO DE CORTE UNIFICADO
         const matchCorte = textBody.match(/^(corte)\s+(micke|rigo|paty|beto)/i);
         if (matchCorte) {
           const personaCorte = matchCorte[2].charAt(0).toUpperCase() + matchCorte[2].slice(1).toLowerCase();
@@ -3060,9 +3169,37 @@ app.post('/webhook', async (req, res) => {
       } else if (msg.type === 'interactive') {
         const respuestaId = msg.interactive.button_reply?.id || msg.interactive.list_reply?.id;
 
-        // ==========================================
-        // MENÚ EFECTIVO Y CORTES UNIFICADO
-        // ==========================================
+        if (respuestaId === 'TIPO_NOMINA' || respuestaId === 'MENU_SUBIR_NOMINA') {
+          sesiones[from] = { tipoAccion: 'ESPERANDO_FOTO_NOMINA', usuario: nombreUsuario };
+          await enviarTexto(from, '📋 *Modo Nómina Activado.*\n\nPor favor, *envía la foto de la tabla de nómina*. La IA extraerá los datos automáticamente.');
+          res.sendStatus(200);
+          return;
+        }
+
+        if (respuestaId === 'TIPO_TICKET') {
+          await enviarBotones(from, '🏗️ *¿A qué Sucursal pertenece esta compra?*', [
+            { id: 'TICKOBRA_Pelicano', title: 'Pelicano' },
+            { id: 'TICKOBRA_Caldera', title: 'Caldera' },
+            { id: 'TICKOBRA_PedroLoza', title: 'Pedro Loza' }
+          ]);
+          res.sendStatus(200);
+          return;
+        }
+
+        if (respuestaId === 'NOM_RECORDAR_MANANA') {
+          await enviarTexto(from, '👍 Entendido. Mañana te recordaré nuevamente sobre la nómina.');
+          delete sesiones[from];
+          res.sendStatus(200);
+          return;
+        }
+
+        if (respuestaId === 'NOM_SUBIR_AHORITA') {
+          sesiones[from] = { tipoAccion: 'ESPERANDO_FOTO_NOMINA', usuario: nombreUsuario };
+          await enviarTexto(from, '📋 *Perfecto. Envía la foto de la nómina por aquí.*');
+          res.sendStatus(200);
+          return;
+        }
+
         if (respuestaId === 'MENU_RECIBIR_EFECTIVO') {
            await enviarBotones(from, '💰 *¿A quién se le entregó el efectivo?*', [
               { id: 'SEL_EFECTIVO_RIGO', title: 'A Rigo' },
@@ -3180,6 +3317,22 @@ app.post('/webhook', async (req, res) => {
               await enviarDocumentoWhatsApp(from, rutaPdfLocal, nombreArchivoPdf, captionTxt);
 
               if (fs.existsSync(rutaPdfLocal)) fs.unlinkSync(rutaPdfLocal);
+
+              // RECORDATORIO VIERNES / SÁBADO PARA MICKE
+              if (sesion.personaFiltro === 'Micke' || sesion.personaFiltro === 'Miguelonches') {
+                const diaHoy = new Date().getDay(); // 5 = Viernes, 6 = Sábado
+                if (diaHoy === 5) {
+                   await enviarBotones(from, '⚠️ *Recordatorio de Cierre:* ¿Deseas subir la nómina de esta semana ahorita?', [ 
+                     { id: 'NOM_SUBIR_AHORITA', title: 'Sí, subir foto' }, 
+                     { id: 'NOM_RECORDAR_MANANA', title: 'Recordarme mañana' } 
+                   ]);
+                } else if (diaHoy === 6) {
+                   await enviarBotones(from, '⚠️ *Cierre Obligatorio:* Manda la foto de la nómina ahorita, no seas cabrón 📋', [ 
+                     { id: 'NOM_SUBIR_AHORITA', title: 'Subir foto ahora' } 
+                   ]);
+                }
+              }
+
             } else {
               await enviarTexto(from, '⚠️ Error calculando la cartera de este usuario.');
             }
@@ -3272,14 +3425,11 @@ app.post('/webhook', async (req, res) => {
             try {
               const buffer = await descargarArchivoWhatsApp(sesion.mediaId);
               
-              // 1. Procesar IA (Desglosa materiales críticos, agrupa alimentos/consumos menores)
               const iaResult = await procesarTicketConIA(buffer);
               if (!iaResult || !iaResult.lineas || iaResult.lineas.length === 0) throw new Error("IA Empty");
 
-              // 2. Obtener / Crear Carpeta Mensual en Drive
               const folderMesId = await obtenerOcrearCarpetaMesTickets(DRIVE_FOLDER_TICKETS_ID);
 
-              // 3. Generar Nomenclatura Inteligente de Archivo (Dia_24_Oxxo_Bebidas_Suc_Pelicano.jpg)
               const diaActual = new Date().getDate().toString().padStart(2, '0');
               const obraLimpia = sesion.obra.replace(/^Suc\.\s*/i, '').replace(/\s+/g, '_');
               const resumenArchivo = iaResult.resumen_archivo || 'Compra_Varios';
@@ -3387,14 +3537,14 @@ app.post('/webhook', async (req, res) => {
                 obra: sesion.obra,
                 metodo: sesion.metodo,
                 subMetodo: sesion.subMetodo,
-                categoria: '32) NÓMINA DE OBRA',
+                categoria: '02) ALBAÑILERIA MDO',
                 monto: sesion.monto,
                 concepto: 'Pago de Nómina Semanal',
                 usuario: sesion.usuario,
                 estatusFactura: 'No Requiere 🔴',
                 linkFactura: 'N/A'
               });
-              await enviarTexto(from, `✅ *Nómina Registrada con Éxito*\n\n💵 *Monto:* ${formatoMoneda(sesion.monto)}\n🏗️ *Obra:* ${sesion.obra}\n💳 *Pago:* Efectivo`);
+              await enviarTexto(from, `✅ *Nómina Registrada con Éxito*\n\n💵 *Monto:* ${formatoMoneda(sesion.monto)}\n🏗️ *Obra:* ${sesion.obra}\n📂 *Categoría:* 02) ALBAÑILERIA MDO\n💳 *Pago:* Efectivo`);
               delete sesiones[from];
             } else {
               sesion.metodo = 'Transferencia';
@@ -3423,14 +3573,14 @@ app.post('/webhook', async (req, res) => {
               obra: sesion.obra,
               metodo: sesion.metodo,
               subMetodo: sesion.subMetodo,
-              categoria: '32) NÓMINA DE OBRA',
+              categoria: '02) ALBAÑILERIA MDO',
               monto: sesion.monto,
               concepto: 'Pago de Nómina Semanal',
               usuario: sesion.usuario,
               estatusFactura: 'No Requiere 🔴',
               linkFactura: 'N/A'
             });
-            await enviarTexto(from, `✅ *Nómina Registrada con Éxito*\n\n💵 *Monto:* ${formatoMoneda(sesion.monto)}\n🏗️ *Obra:* ${sesion.obra}\n💳 *Pago:* Transf (${sesion.subMetodo})`);
+            await enviarTexto(from, `✅ *Nómina Registrada con Éxito*\n\n💵 *Monto:* ${formatoMoneda(sesion.monto)}\n🏗️ *Obra:* ${sesion.obra}\n📂 *Categoría:* 02) ALBAÑILERIA MDO\n💳 *Pago:* Transf (${sesion.subMetodo})`);
             delete sesiones[from];
           }
           res.sendStatus(200);
